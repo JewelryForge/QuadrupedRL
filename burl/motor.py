@@ -21,9 +21,30 @@ class MotorMode(enum.Enum):
 
 
 class MotorBase(object):
-    def __init__(self, **kwargs):
-        self._kp: np.ndarray = np.asarray(kwargs.get('kp', 60))
-        self._kd: np.ndarray = np.asarray(kwargs.get('kd', 1))
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def frequency(self):
+        raise NotImplementedError
+
+    def reset(self):
+        pass
+
+    def update_observation(self, observation):
+        pass
+
+    def set_command(self, command, *args):
+        pass
+
+
+class MotorSim(MotorBase):
+    def __init__(self, frequency=240, kp=60, kd=1, **kwargs):
+        super(MotorSim, self).__init__()
+        assert frequency > 0
+        self._frequency = frequency
+        self._kp: np.ndarray = np.asarray(kp)
+        self._kd: np.ndarray = np.asarray(kd)
         pos_limits: np.ndarray | Iterable | float | None = kwargs.get('pos_limits', None)
         torque_limits: np.ndarray | Iterable | float | None = kwargs.get('torque_limits', 33.5)
         assert self._kd.shape == self._kp.shape
@@ -51,11 +72,19 @@ class MotorBase(object):
         self._observation_history = collections.deque(maxlen=50)
         self._observe_done = False
 
-    def update_observation(self, time, observation):
+    @property
+    def frequency(self):
+        return self._frequency
+
+    def reset(self):
+        self._observation_history.clear()
+        self._observe_done = False
+
+    def update_observation(self, observation):
         self._observe_done = True
         observation = np.asarray(observation)
         # assert observation.shape == self._shape
-        self._observation_history.append((time, observation))
+        self._observation_history.append(observation)
 
     def set_command(self, command, *args):
         if not self._observe_done:
@@ -69,10 +98,10 @@ class MotorBase(object):
     def _set_position(self, des_pos):
         if hasattr(self, '_pos_limits_upper'):
             des_pos = np.clip(des_pos, self._pos_limits_lower, self._pos_limits_upper)
-        t, pos = self._observation_history[-1]
+        pos = self._observation_history[-1]
         try:
-            t_p, pos_p = self._observation_history[-2]
-            vel = (pos - pos_p) / (t - t_p)
+            pos_p = self._observation_history[-2]
+            vel = (pos - pos_p) * self._frequency
         except IndexError:
             vel = 0
         return self._set_torque(self._kp * (des_pos - pos) - self._kd * vel)
@@ -85,13 +114,6 @@ class MotorBase(object):
     @property
     def mode(self):
         return self._mode
-
-    @mode.setter
-    def mode(self, m):
-        if isinstance(m, MotorMode):
-            self._mode = m
-        else:
-            print(f'Cannot set {m} as motor mode')
 
 
 if __name__ == '__main__':

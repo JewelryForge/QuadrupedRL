@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from state import ProprioceptiveObservation, PrivilegedInformation, Observation, Action
+from burl.state import ProprioceptiveObservation, PrivilegedInformation, Observation, Action
 
 
 class Teacher(nn.Module):
@@ -29,6 +29,15 @@ class Teacher(nn.Module):
         features = self.encoder(pi)
         generalized = torch.concat((obs, features), dim=1)
         return self.decoder(generalized)
+
+
+class Critic(nn.Module):
+    def __init__(self):
+        super(Critic, self).__init__()
+        pass
+
+    def forward(self, x):
+        pass
 
 
 if __name__ == '__main__':

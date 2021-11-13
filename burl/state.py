@@ -1,8 +1,8 @@
 import numpy as np
 
+
 # class PlainObservation:
 #     def __init__(self):
-
 
 
 class ProprioceptiveObservation:
