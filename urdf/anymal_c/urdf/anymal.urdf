@@ -2,7 +2,7 @@
 <!-- =================================================================================== -->
 <!--   Copyright 2020 ANYbotics, https://www.anybotics.com                               -->
 <!-- =================================================================================== -->
-<!-- This file contains the description of the ANYmal C robot. -->
+<!-- This file contains the description of the ANYmal C obj. -->
 <robot name="anymal">
     <!-- Base link -->
     <link name="base">

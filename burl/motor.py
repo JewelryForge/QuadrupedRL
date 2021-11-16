@@ -5,8 +5,9 @@ import enum
 from typing import Iterable
 
 import numpy as np
-
-np.set_printoptions(precision=3, linewidth=10000)
+from burl.bc import Observable
+from burl.sensors import MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2
+from burl.utils import make_class
 
 
 class MotorMode(enum.Enum):
@@ -20,34 +21,22 @@ class MotorMode(enum.Enum):
     PWM = enum.auto()
 
 
-class MotorBase(object):
-    def __init__(self, *args, **kwargs):
-        pass
+class MotorSim(Observable):
+    ALLOWED_SENSORS = {MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2}
 
-    @property
-    def frequency(self):
-        raise NotImplementedError
-
-    def reset(self):
-        pass
-
-    def update_observation(self, observation):
-        pass
-
-    def set_command(self, command, *args):
-        pass
-
-
-class MotorSim(MotorBase):
-    def __init__(self, frequency=240, kp=60, kd=1, **kwargs):
-        super(MotorSim, self).__init__()
-        assert frequency > 0
-        self._frequency = frequency
-        self._kp: np.ndarray = np.asarray(kp)
-        self._kd: np.ndarray = np.asarray(kd)
+    def __init__(self, num=1, **kwargs):
+        # self._num = num  # TODO: check if necessary
+        self._kp: np.ndarray = np.asarray(kwargs.get('kp', 60))
+        self._kd: np.ndarray = np.asarray(kwargs.get('kd', 1))
+        assert self._kd.shape == self._kp.shape
         pos_limits: np.ndarray | Iterable | float | None = kwargs.get('pos_limits', None)
         torque_limits: np.ndarray | Iterable | float | None = kwargs.get('torque_limits', 33.5)
-        assert self._kd.shape == self._kp.shape
+        self._frequency = kwargs.get('frequency', 240)
+        assert self._frequency > 0
+        self._pos, self._vel, self._acc = 0, 0, 0
+        _make_sensors = (make_class(s, dim=num) for s in kwargs.get('make_sensors', ()))
+        super().__init__(_make_sensors)
+
         if pos_limits:
             pos_limits = np.asarray(pos_limits)
             if not pos_limits.shape:
@@ -73,6 +62,10 @@ class MotorSim(MotorBase):
         self._observe_done = False
 
     @property
+    def mode(self):
+        return self._mode
+
+    @property
     def frequency(self):
         return self._frequency
 
@@ -83,8 +76,12 @@ class MotorSim(MotorBase):
     def update_observation(self, observation):
         self._observe_done = True
         observation = np.asarray(observation)
-        # assert observation.shape == self._shape
         self._observation_history.append(observation)
+        self._pos = observation
+        oh = self._observation_history
+        self._vel = (oh[-1] - oh[-2]) * self._frequency if len(oh) > 1 else 0
+        self._acc = (oh[-1] + oh[-3] - 2 * oh[-2]) * self._frequency ** 2 if len(oh) > 2 else 0
+        return self._process_sensors()
 
     def set_command(self, command, *args):
         if not self._observe_done:
@@ -98,23 +95,23 @@ class MotorSim(MotorBase):
     def _set_position(self, des_pos):
         if hasattr(self, '_pos_limits_upper'):
             des_pos = np.clip(des_pos, self._pos_limits_lower, self._pos_limits_upper)
-        pos = self._observation_history[-1]
-        try:
-            pos_p = self._observation_history[-2]
-            vel = (pos - pos_p) * self._frequency
-        except IndexError:
-            vel = 0
-        return self._set_torque(self._kp * (des_pos - pos) - self._kd * vel)
+        return self._set_torque(self._kp * (des_pos - self._pos) - self._kd * self._vel)
 
     def _set_torque(self, des_torque):
         if hasattr(self, '_torque_limits_upper'):
             return np.clip(des_torque, self._torque_limits_lower, self._torque_limits_upper)
         return des_torque
 
-    @property
-    def mode(self):
-        return self._mode
+    def get_position(self):
+        return self._pos
+
+    def get_velocity(self):
+        return self._vel
+
+    def get_acceleration(self):
+        return self._acc
 
 
 if __name__ == '__main__':
-    print(isinstance(2, MotorMode))
+    m = MotorSim()
+    print(m.__class__.__name__)
