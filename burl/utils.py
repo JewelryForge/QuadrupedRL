@@ -14,7 +14,7 @@ def tuple_compact_string(_tuple):
     return '(' + ' '.join(f'{f:.1f}' for f in _tuple) + ')'
 
 
-def make_class(cls, **properties):
+def make_cls(cls, **properties):
     def _make_class(*args, **kwargs):
         properties.update(**kwargs)
         return cls(*args, **properties)
@@ -68,5 +68,5 @@ class JointInfo(object):
 
 
 if __name__ == '__main__':
-    c = make_class(JointInfo)
+    c = make_cls(JointInfo)
     print(c.__closure__[0].cell_contents, c.__closure__[1].cell_contents)

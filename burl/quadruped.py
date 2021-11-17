@@ -11,7 +11,8 @@ from collections import namedtuple, deque
 
 from burl.bc import QuadrupedBase, Observable
 from burl.sensors import OrientationSensor, ContactStateSensor, OrientationRpySensor, GravityVectorSensor
-from burl.utils import normalize, unit, JointInfo, make_class
+from burl.transforms import Rpy
+from burl.utils import normalize, unit, JointInfo, make_cls
 from burl.motor import MotorSim, MotorMode
 
 JointState = namedtuple('JointState', ('pos', 'vel', 'reaction_force', 'torque'),
@@ -65,7 +66,7 @@ class QuadrupedSim(QuadrupedBase):
         _make_sensors = kwargs.get('make_sensors', ())
         super(QuadrupedSim, self).__init__(make_sensors=_make_sensors)
         _make_motor: Callable = kwargs.get('make_motor', MotorSim)
-        self._motor: MotorSim = _make_motor(num=12, frequency=self._frequency)
+        self._motor: MotorSim = _make_motor(self, num=12, frequency=self._frequency)
         self._subordinates.append(self._motor)
 
         # print('dim', self._motor.observation_dim)
@@ -75,7 +76,6 @@ class QuadrupedSim(QuadrupedBase):
         self._on_rack: bool = kwargs.get('on_rack', False)
         assert self._latency >= 0  # and self._time_step > 0
 
-        # self._env.setTimeStep(self._time_step)
         # self._observation_dim = sum(s.observation_dim for s in self._sensors)
         self._joint_states: list[JointState] = []
         self._base_pose: Pose = Pose()
@@ -138,12 +138,12 @@ class QuadrupedSim(QuadrupedBase):
         self._observation_history.clear()
         if self._on_rack:
             self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION,
-                                                      self._base_pose.orientation)
+                                                      self.orientation)
             self._env.resetBaseVelocity(self._quadruped, [0, 0, 0], [0, 0, 0])
         elif at_current_state:
-            x, y, _ = self._base_pose.position
+            x, y, _ = self.position
             z = self.INIT_POSITION[2]
-            _, _, yaw = self._env.getEulerFromQuaternion(self._base_pose.orientation)
+            _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
             orn_q = self._env.getQuaternionFromEuler([0.0, 0.0, yaw])
             self._env.resetBasePositionAndOrientation(self._quadruped, [x, y, z], orn_q)
             self._env.resetBaseVelocity(self._quadruped, [0, 0, 0], [0, 0, 0])
@@ -152,8 +152,12 @@ class QuadrupedSim(QuadrupedBase):
             self._env.resetBaseVelocity(self._quadruped, (0, 0, 0), (0, 0, 0))
         self._init_posture()
         self._motor.reset()
+        self.update_observation()
 
-    def update_observation(self, observation=None):
+    def random_dynamics(self, dynamics_parameters):
+        pass
+
+    def _on_update_observation(self):
         self._step_counter += 1
         joint_states = [JointState(*js) for js in self._env.getJointStates(self._quadruped, range(self._num_joints))]
         base_pose = Pose(*self._env.getBasePositionAndOrientation(self._quadruped))
@@ -167,12 +171,25 @@ class QuadrupedSim(QuadrupedBase):
         # So the quantities here shouldn't be noisy
         self._base_twist_in_base_frame = Twist(*self._transform_world2base(*self._base_twist))
         self._contact_states = observation.contact_states
-        # print('motor_ids', self._motor_ids)
-        # motor_pos = [self._joint_states[m]._pos for m in self._motor_ids]
-        motor_pos = [self._joint_states[m].pos for m in self._motor_ids]
-        motor_observation = self._motor.update_observation(motor_pos)
-        # print('motor_pos', *[f'{p:.3f}' for p in motor_pos])
-        return np.concatenate((self._process_sensors(), motor_observation))
+
+    def is_safe(self):
+        r, p, _ = Rpy.from_quaternion(self.orientation)
+        return abs(r) < np.pi / 6 and abs(p) < np.pi / 4
+
+    @property
+    def position(self):
+        return self._base_pose.position
+
+    @property
+    def orientation(self):
+        return self._base_pose.orientation
+
+    # def sensor_interface(self, quantity_name):
+    #     if quantity_name ==
+    #     quantity_interface_dict = {
+    #
+    #     }
+    #     return
 
     def get_pose(self):
         return self._base_pose
@@ -183,14 +200,12 @@ class QuadrupedSim(QuadrupedBase):
     def get_contact_states(self):
         return self._contact_states
 
-    def get_motor_position(self):
-        return self._motor.get_position()
+    def get_joint_states(self):
+        return (self._joint_states[m] for m in self._motor_ids)
 
-    def get_motor_velocity(self):
-        return self._motor.get_velocity()
-
-    def get_motor_acceleration(self):
-        return self._motor.get_acceleration()
+    def get_joint_history(self, moment, info='pos'):
+        pass
+        # return
 
     # [1, 3, 4, 6, 8, 9, 11, 13, 14, 16, 18, 19]
     def apply_command(self, motor_commands):
@@ -201,7 +216,6 @@ class QuadrupedSim(QuadrupedBase):
 
     def add_disturbance_on_base(self, force, pos=(0, 0, 0)):
         self._env.applyExternalForce(self._quadruped, -1, force, pos)
-
 
     def ik(self, leg: int | str, pos, frame='base'):
         assert ROBOT == 'a1'
@@ -317,7 +331,7 @@ class QuadrupedSim(QuadrupedBase):
 
     def _transform_world2base(self, *vectors):
         def _transform_once(vec):
-            _, orientation_inverse = self._env.invertTransform((0, 0, 0), self._base_pose.orientation)
+            _, orientation_inverse = self._env.invertTransform((0, 0, 0), self.orientation)
             relative_vec, _ = self._env.multiplyTransforms((0, 0, 0), orientation_inverse,
                                                            vec, (0, 0, 0, 1))
             return relative_vec
@@ -334,7 +348,7 @@ if __name__ == '__main__':
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     planeId = p.loadURDF("plane.urdf")
-    make_motor = make_class(MotorSim, make_sensors=[MotorEncoder])
+    make_motor = make_cls(MotorSim, make_sensors=[MotorEncoder])
     q = QuadrupedSim(pybullet_client=p, make_motor=make_motor, on_rack=True)
     print('dim', q.observation_dim)
     # q.print_joint_info()

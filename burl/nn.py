@@ -7,7 +7,7 @@ class Teacher(nn.Module):
     NUM_FEATURES = (72, 64, 256, 128, 64)
 
     def __init__(self):
-        super(Teacher, self).__init__()
+        super().__init__()
         self.encoder = nn.Sequential(
             nn.Linear(PrivilegedInformation.dim, self.NUM_FEATURES[0]),
             nn.Tanh(),
@@ -32,12 +32,22 @@ class Teacher(nn.Module):
 
 
 class Critic(nn.Module):
+    NUM_FEATURES = (256, 256, 256)
+
     def __init__(self):
-        super(Critic, self).__init__()
-        pass
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(PrivilegedInformation.dim, self.NUM_FEATURES[0]),
+            nn.ELU(),
+            nn.Linear(self.NUM_FEATURES[0], self.NUM_FEATURES[1]),
+            nn.ELU(),
+            nn.Linear(self.NUM_FEATURES[1], self.NUM_FEATURES[2]),
+            nn.ELU(),
+            nn.Linear(self.NUM_FEATURES[2], 1)
+        )
 
     def forward(self, x):
-        pass
+        return self.layers(x)
 
 
 if __name__ == '__main__':

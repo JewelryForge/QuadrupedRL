@@ -7,7 +7,7 @@ from typing import Iterable
 import numpy as np
 from burl.bc import Observable
 from burl.sensors import MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2
-from burl.utils import make_class
+from burl.utils import make_cls
 
 
 class MotorMode(enum.Enum):
@@ -22,10 +22,12 @@ class MotorMode(enum.Enum):
 
 
 class MotorSim(Observable):
+    # Observation dim is automatically given by 'num' attribute
     ALLOWED_SENSORS = {MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2}
 
-    def __init__(self, num=1, **kwargs):
+    def __init__(self, robot, num=1, **kwargs):
         # self._num = num  # TODO: check if necessary
+        self._robot = robot
         self._kp: np.ndarray = np.asarray(kwargs.get('kp', 60))
         self._kd: np.ndarray = np.asarray(kwargs.get('kd', 1))
         assert self._kd.shape == self._kp.shape
@@ -34,7 +36,7 @@ class MotorSim(Observable):
         self._frequency = kwargs.get('frequency', 240)
         assert self._frequency > 0
         self._pos, self._vel, self._acc = 0, 0, 0
-        _make_sensors = (make_class(s, dim=num) for s in kwargs.get('make_sensors', ()))
+        _make_sensors = (make_cls(s, dim=num) for s in kwargs.get('make_sensors', ()))
         super().__init__(_make_sensors)
 
         if pos_limits:
@@ -73,15 +75,14 @@ class MotorSim(Observable):
         self._observation_history.clear()
         self._observe_done = False
 
-    def update_observation(self, observation):
+    def _on_update_observation(self):
         self._observe_done = True
-        observation = np.asarray(observation)
+        observation = np.array([js.pos for js in self._robot.get_joint_states()])
         self._observation_history.append(observation)
         self._pos = observation
         oh = self._observation_history
         self._vel = (oh[-1] - oh[-2]) * self._frequency if len(oh) > 1 else 0
         self._acc = (oh[-1] + oh[-3] - 2 * oh[-2]) * self._frequency ** 2 if len(oh) > 2 else 0
-        return self._process_sensors()
 
     def set_command(self, command, *args):
         if not self._observe_done:

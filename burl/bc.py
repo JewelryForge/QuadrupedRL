@@ -7,21 +7,35 @@ class Observable(ABC):
     ALLOWED_SENSORS = {}
 
     def __init__(self, make_sensors=()):
-        self._sensors = []
-        self._subordinates = []
+        self._sensors: list[Sensor] = []
+        self._subordinates: list[Observable] = []
+        self._sensor_interfaces = {}
         self._make_sensors(make_sensors)
 
     @property
     def observation_dim(self):
-        return sum(s.observation_dim for s in self._sensors + self._subordinates)
+        return sum(s.observation_dim for s in self._sensors) + \
+               sum(s.observation_dim for s in self._subordinates)
 
     @abstractmethod
-    def update_observation(self, observation):
-        return self._process_sensors()
+    def _on_update_observation(self):
+        pass
+
+    def update_observation(self, recursively=True):
+        self._on_update_observation()
+        observation = self._process_sensors()
+        if not recursively:
+            return np.concatenate([observation, *(sub._read_sensor_caches() for sub in self._subordinates)])
+        return np.concatenate([observation, *(sub.update_observation() for sub in self._subordinates)])
 
     def _process_sensors(self):
         if self._sensors:
             return np.concatenate([s.observe() for s in self._sensors])
+        return np.array([])
+
+    def _read_sensor_caches(self):
+        if self._sensors:
+            return np.concatenate([s.observation for s in self._sensors])
         return np.array([])
 
     def _make_sensors(self, make_sensors):
@@ -39,9 +53,15 @@ class Observable(ABC):
 
 
 class Sensor(ABC):
+    quantity_name = 'quantity'
     def __init__(self, obj, dim):
         self._obj, self._dim = obj, dim
         self._checked = False
+        self._observation = None
+
+    @property
+    def observation(self):
+        return self._observation
 
     @property
     def observation_dim(self):
@@ -53,6 +73,7 @@ class Sensor(ABC):
             if len(observation.shape) != 1 or observation.shape[0] != self._dim:
                 raise RuntimeError('Ambiguous Observation!')
             self._checked = True
+        self._observation = observation
         return observation
 
     @abstractmethod
@@ -104,10 +125,6 @@ class QuadrupedBase(Observable, ABC):
     @abstractmethod
     def reset(self, *args):
         pass
-
-    @abstractmethod
-    def update_observation(self, observation=None):
-        return self._process_sensors()
 
     @abstractmethod
     def apply_command(self, motor_commands):
