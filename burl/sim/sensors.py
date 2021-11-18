@@ -1,5 +1,5 @@
-from burl.transforms import Rotation, Quaternion, Rpy
-from burl.bc import Sensor
+from burl.utils.transforms import Rotation, Rpy
+from burl.utils.bc import Sensor
 
 
 class ContactStateSensor(Sensor):

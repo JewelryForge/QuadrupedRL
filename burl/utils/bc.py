@@ -114,24 +114,35 @@ class NDArrayBased(np.ndarray):
         return matrix
 
 
-class QuadrupedBase(Observable, ABC):
+# class QuadrupedBase(Observable, ABC):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         pass
+#
+#     frequency = None
+#     action_limits = None
+#
+#     @abstractmethod
+#     def reset(self, *args):
+#         pass
+#
+#     @abstractmethod
+#     def apply_command(self, motor_commands):
+#         pass
+#
+#     @abstractmethod
+#     def ik(self, *args):
+#         pass
+
+class Task(ABC):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        pass
+        self._rewards = []
 
-    frequency = None
-    action_limits = None
-
-    @abstractmethod
-    def reset(self, *args):
+    def done(self):
         pass
 
     @abstractmethod
-    def apply_command(self, motor_commands):
-        pass
-
-    @abstractmethod
-    def ik(self, *args):
+    def __call__(self, info):
         pass
 
 

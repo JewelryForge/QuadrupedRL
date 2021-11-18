@@ -5,8 +5,8 @@ import enum
 from typing import Iterable
 
 import numpy as np
-from burl.bc import Observable
-from burl.sensors import MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2
+from burl.utils.bc import Observable
+from burl.sim.sensors import MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2
 from burl.utils import make_cls
 
 
@@ -59,6 +59,7 @@ class MotorSim(Observable):
                 assert all(self._torque_limits_lower < self._torque_limits_upper)
 
         self._mode = kwargs.get('mode', MotorMode.POSITION)
+        assert self._mode == MotorMode.POSITION
         # self._command_history = collections.deque(maxlen=50)
         self._observation_history = collections.deque(maxlen=50)
         self._observe_done = False

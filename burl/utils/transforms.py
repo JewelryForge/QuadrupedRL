@@ -1,5 +1,5 @@
 import numpy as np
-from burl.bc import NDArrayBased
+from burl.utils.bc import NDArrayBased
 
 
 class Rotation(NDArrayBased):

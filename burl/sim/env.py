@@ -7,21 +7,17 @@ from gym import spaces
 from gym.utils import seeding
 from pybullet_utils import bullet_client
 
-from burl.bc import Observable
-from burl.config import RenderParam
-from burl.quadruped import QuadrupedSim
-from burl.sensors import OrientationRpySensor, GravityVectorSensor
-from burl.terrain import make_plane
+from burl.utils.bc import Observable
+from burl.sim.config import RenderParam
+from burl.sim.quadruped import QuadrupedSim
+from burl.sim.sensors import OrientationRpySensor, GravityVectorSensor
+from burl.sim.terrain import make_plane
+from burl.rl.tg import end_trajectory_generator
 from burl.utils import make_cls
+from burl.rl.task import SimpleForwardTaskOnFlat
 
 
-def trajectory_generator(k, h=0.12):  # 0.2 in paper
-    # k = 2 * normalize(phase) / np.pi
-    if 0 < k <= 1:
-        return h * (-2 * k ** 3 + 3 * k ** 2)
-    if 1 < k <= 2:
-        return h * (2 * k ** 3 - 9 * k ** 2 + 12 * k - 4)
-    return 0
+# from reward import *
 
 
 class LocomotionEnv(gym.Env, Observable):
@@ -29,7 +25,8 @@ class LocomotionEnv(gym.Env, Observable):
 
     def __init__(self, **kwargs):
         self._render_cfg = kwargs.get('render_config', RenderParam())
-        self._gui = self._render_cfg.enable_rendering
+        # self._gui = self._render_cfg.enable_rendering
+        self._gui = kwargs.get('use_gui', False)
         if self._gui:
             self._env = bullet_client.BulletClient(pybullet.GUI)
             self._init_rendering()
@@ -43,7 +40,9 @@ class LocomotionEnv(gym.Env, Observable):
         self._robot: QuadrupedSim = _make_robot(sim_env=self._env)
         self._subordinates.append(self._robot)
 
-        self._terrain_generator = kwargs.get('terrain_generator', make_plane)
+        _make_task = kwargs.get('make_task', SimpleForwardTaskOnFlat)
+        self._task = _make_task(self)
+        self._terrain_generator = kwargs.get('terrain_generator', make_plane)  # TODO: RANDOMLY CHANGE TERRAIN
         self._random_state, self._random_seed = self.seed(kwargs.get('seed', None))
         self._sim_frequency = kwargs.get('sim_frequency', 240)
         self._action_frequency = kwargs.get('action_frequency', 120)
@@ -87,15 +86,20 @@ class LocomotionEnv(gym.Env, Observable):
         for _ in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
             if update_execution:
-                self._robot.apply_command(action)
+                torques = self._robot.apply_command(action)
             self._env.stepSimulation()
             if update_execution:
                 self._robot.update_observation()
             self._sim_step_counter += 1
         if not self._robot.is_safe():
-            self.reset()
+            pass
+            # self.reset()
         if self._gui:
             self._check_render_options()
+        info = self._robot.privileged_info._asdict()
+        info['action'] = action
+        info['torques'] = torques
+        return self.update_observation(False), self._task(info), not self._robot.is_safe(), info
 
     def reset(self, **kwargs):
         completely_reset = kwargs.get('completely_reset', False)
@@ -128,7 +132,7 @@ class LocomotionEnv(gym.Env, Observable):
             super().render(mode=mode)
 
     def close(self):
-        pass
+        self._env.disconnect()
 
     def _init_rendering(self):
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, True)
@@ -158,9 +162,10 @@ class LocomotionEnv(gym.Env, Observable):
         time_spent = time.time() - self._last_frame_time
         self._last_frame_time = time.time()
         time_to_sleep = self._num_action_repeats / self._sim_frequency - time_spent
+        # print(time_spent)
         if time_to_sleep > 0:
             time.sleep(time_to_sleep)
-        # Also keep the previous orientation of the camera set by the user.
+        # Keep the previous orientation of the camera set by the user.
         yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
         self._env.resetDebugVisualizerCamera(dist, yaw, pitch, self._robot.position)
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
@@ -184,11 +189,8 @@ if __name__ == '__main__':
     #     print(trajectory_generator(i))
 
     v = 0.3
-    make_robot = make_cls(QuadrupedSim, on_rack=False, make_sensors=[OrientationRpySensor, GravityVectorSensor])
-    # print(make_robot.__closure__)
-    # for c in make_robot.__closure__:
-    #     print(c.cell_contents)
-    e = LocomotionEnv(make_robot=make_robot)
+    make_robot = make_cls(QuadrupedSim, on_rack=False, make_sensors=[], frequency=400)
+    e = LocomotionEnv(make_robot=make_robot, sim_frequency=400, action_frequency=50)
 
     # print(e.action_space)
     q = e.robot
@@ -198,13 +200,13 @@ if __name__ == '__main__':
     phase = 0
     addition = np.array((0., 0., 0.))
 
-    for _ in range(100000):
+    for _ in range(1000):
         phase_p = phase % 4
         phase_p2 = (phase + 2) % 4
         base_pos = np.array((0, 0, -0.3))
-        addition1 = (v / gait_frequency * (2 - abs(phase_p - 2)) / 2, 0, trajectory_generator(phase_p))
+        addition1 = (v / gait_frequency * (2 - abs(phase_p - 2)) / 2, 0, end_trajectory_generator(phase_p))
         if phase > 2:
-            addition2 = (v / gait_frequency * (2 - abs(phase_p2 - 2)) / 2, 0, trajectory_generator(phase_p2))
+            addition2 = (v / gait_frequency * (2 - abs(phase_p2 - 2)) / 2, 0, end_trajectory_generator(phase_p2))
         else:
             addition2 = (0, 0, 0)
         # cmd0 = q.ik(0, base_pos + addition1, 'shoulder')
@@ -218,4 +220,5 @@ if __name__ == '__main__':
         cmd3 = q.ik(3, base_pos, 'shoulder')
         tq = e.step(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
         phase += phase_step
-        time.sleep(1. / 240.)
+        # time.sleep(1. / 240.)
+    e.close()
