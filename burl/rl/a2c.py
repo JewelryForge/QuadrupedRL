@@ -56,7 +56,7 @@ class Critic(nn.Module):
 class ActorCritic(nn.Module):
     is_recurrent = False
 
-    def __init__(self, actor, critic, num_actions=12, init_noise_std=1.0, **kwargs):
+    def __init__(self, actor, critic, num_actions=16, init_noise_std=1.0, **kwargs):
         if kwargs:
             print("ActorCritic got unexpected arguments, which will be ignored:",
                   [key for key in kwargs.keys()])
@@ -122,7 +122,6 @@ class ActorCritic(nn.Module):
 
 
 if __name__ == '__main__':
-    print(extended_observation_dim)
     ac = ActorCritic(Teacher(), Critic())
     # net = Teacher().to("cuda")
     # from torchsummary import summary

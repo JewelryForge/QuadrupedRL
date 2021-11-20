@@ -5,7 +5,8 @@ import enum
 from typing import Iterable
 
 import numpy as np
-from burl.utils.bc import Observable
+# from burl.utils.bc import Observable
+from burl.rl.state import MotorState
 from burl.sim.sensors import MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2
 from burl.utils import make_cls
 
@@ -21,9 +22,10 @@ class MotorMode(enum.Enum):
     PWM = enum.auto()
 
 
-class MotorSim(Observable):
+# class MotorSim(Observable):
+class MotorSim(object):
     # Observation dim is automatically given by 'num' attribute
-    ALLOWED_SENSORS = {MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2}
+    # ALLOWED_SENSORS = {MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2}
 
     def __init__(self, robot, num=1, **kwargs):
         # self._num = num  # TODO: check if necessary
@@ -35,9 +37,10 @@ class MotorSim(Observable):
         torque_limits: np.ndarray | Iterable | float | None = kwargs.get('torque_limits', 33.5)
         self._frequency = kwargs.get('frequency', 240)
         assert self._frequency > 0
+        self._num = num
         self._pos, self._vel, self._acc = 0, 0, 0
-        _make_sensors = (make_cls(s, dim=num) for s in kwargs.get('make_sensors', ()))
-        super().__init__(_make_sensors)
+        # _make_sensors = (make_cls(s, dim=num) for s in kwargs.get('make_sensors', ()))
+        # super().__init__(_make_sensors)
 
         if pos_limits:
             pos_limits = np.asarray(pos_limits)
@@ -76,14 +79,15 @@ class MotorSim(Observable):
         self._observation_history.clear()
         self._observe_done = False
 
-    def _on_update_observation(self):
+    def update_observation(self):
         self._observe_done = True
-        observation = np.array([js.pos for js in self._robot.get_joint_states()])
+        observation = np.asarray(self._robot.joint_states.position)
         self._observation_history.append(observation)
         self._pos = observation
         oh = self._observation_history
         self._vel = (oh[-1] - oh[-2]) * self._frequency if len(oh) > 1 else 0
         self._acc = (oh[-1] + oh[-3] - 2 * oh[-2]) * self._frequency ** 2 if len(oh) > 2 else 0
+        return MotorState(position=self._pos, velocity=self._vel, acceleration=self._acc)
 
     def set_command(self, command, *args):
         if not self._observe_done:
@@ -104,14 +108,14 @@ class MotorSim(Observable):
             return np.clip(des_torque, self._torque_limits_lower, self._torque_limits_upper)
         return des_torque
 
-    def get_position(self):
-        return self._pos
-
-    def get_velocity(self):
-        return self._vel
-
-    def get_acceleration(self):
-        return self._acc
+    # def get_position(self):
+    #     return self._pos
+    #
+    # def get_velocity(self):
+    #     return self._vel
+    #
+    # def get_acceleration(self):
+    #     return self._acc
 
 
 if __name__ == '__main__':

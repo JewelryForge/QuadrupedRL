@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from burl.rl.a2c import ActorCritic
-from burl.alg import RolloutStorage
+from burl.alg.rollout_storage import RolloutStorage
 
 
 class PPO:

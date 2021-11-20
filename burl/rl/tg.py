@@ -11,6 +11,7 @@ class LocomotionStateMachine(object):
         # The state machine is included in the training environment.
         self._time_step = time_step
         self._phases = normalize(np.random.random(4) * M_2_PI)
+        self._frequency = np.ones(4) * self.base_frequency
 
     @property
     def base_frequency(self):
@@ -20,12 +21,18 @@ class LocomotionStateMachine(object):
     def phases(self):
         return self._phases
 
+    @property
+    def frequency(self):
+        return self._frequency
+
     def update(self, frequency_offsets):
         frequency_offsets = np.asarray(frequency_offsets)
-        self._phases += (self.base_frequency + frequency_offsets) * self._time_step * M_2_PI
+        self._frequency = self.base_frequency + frequency_offsets
+        self._phases += self._frequency * self._time_step * M_2_PI
         self._phases = normalize(self._phases)  # [-pi, pi)
+        return self._phases
 
-    def priori_trajectory(self):
+    def get_priori_trajectory(self):
         # k: [-2, 2)
         return np.array([end_trajectory_generator(phi / np.pi * 2) for phi in self._phases])
 
@@ -45,9 +52,4 @@ def end_trajectory_generator(k, h=0.12):  # 0.2 in paper
 
 
 if __name__ == '__main__':
-    lsm = LocomotionStateMachine(0.1)
-    np.set_printoptions(3)
-    for _ in range(100):
-        lsm.update((0., 0., 0., 0.))
-        print(lsm.priori_trajectory())
-        # print(lsm._phases / M_2_PI)
+    pass

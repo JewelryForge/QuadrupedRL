@@ -3,53 +3,53 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 
-class Observable(ABC):
-    ALLOWED_SENSORS = {}
-
-    def __init__(self, make_sensors=()):
-        self._sensors: list[Sensor] = []
-        self._subordinates: list[Observable] = []
-        self._sensor_interfaces = {}
-        self._make_sensors(make_sensors)
-
-    @property
-    def observation_dim(self):
-        return sum(s.observation_dim for s in self._sensors) + \
-               sum(s.observation_dim for s in self._subordinates)
-
-    @abstractmethod
-    def _on_update_observation(self):
-        pass
-
-    def update_observation(self, recursively=True):
-        self._on_update_observation()
-        observation = self._process_sensors()
-        if not recursively:
-            return np.concatenate([observation, *(sub._read_sensor_caches() for sub in self._subordinates)])
-        return np.concatenate([observation, *(sub.update_observation() for sub in self._subordinates)])
-
-    def _process_sensors(self):
-        if self._sensors:
-            return np.concatenate([s.observe() for s in self._sensors])
-        return np.array([])
-
-    def _read_sensor_caches(self):
-        if self._sensors:
-            return np.concatenate([s.observation for s in self._sensors])
-        return np.array([])
-
-    def _make_sensors(self, make_sensors):
-        for make in make_sensors:
-            try:
-                cls = make.__closure__[0].cell_contents
-            except AttributeError:
-                cls = make
-            if cls not in self.ALLOWED_SENSORS:
-                raise RuntimeError(f'{cls.__name__} Not Supported For {self.__class__.__name__}')
-            try:
-                self._sensors.append(make(self, self.ALLOWED_SENSORS[cls]))
-            except TypeError:
-                self._sensors.append(make(self))
+# class Observable(ABC):
+#     ALLOWED_SENSORS = {}
+#
+#     def __init__(self, make_sensors=()):
+#         self._sensors: list[Sensor] = []
+#         self._subordinates: list[Observable] = []
+#         self._sensor_interfaces = {}
+#         self._make_sensors(make_sensors)
+#
+#     @property
+#     def observation_dim(self):
+#         return sum(s.observation_dim for s in self._sensors) + \
+#                sum(s.observation_dim for s in self._subordinates)
+#
+#     @abstractmethod
+#     def _on_update_observation(self):
+#         pass
+#
+#     def update_observation(self, recursively=True):
+#         self._on_update_observation()
+#         observation = self._process_sensors()
+#         if not recursively:
+#             return np.concatenate([observation, *(sub._read_sensor_caches() for sub in self._subordinates)])
+#         return np.concatenate([observation, *(sub.update_observation() for sub in self._subordinates)])
+#
+#     def _process_sensors(self):
+#         if self._sensors:
+#             return np.concatenate([s.observe() for s in self._sensors])
+#         return np.array([])
+#
+#     def _read_sensor_caches(self):
+#         if self._sensors:
+#             return np.concatenate([s.observation for s in self._sensors])
+#         return np.array([])
+#
+#     def _make_sensors(self, make_sensors):
+#         for make in make_sensors:
+#             try:
+#                 cls = make.__closure__[0].cell_contents
+#             except AttributeError:
+#                 cls = make
+#             if cls not in self.ALLOWED_SENSORS:
+#                 raise RuntimeError(f'{cls.__name__} Not Supported For {self.__class__.__name__}')
+#             try:
+#                 self._sensors.append(make(self, self.ALLOWED_SENSORS[cls]))
+#             except TypeError:
+#                 self._sensors.append(make(self))
 
 
 class Sensor(ABC):

@@ -19,8 +19,13 @@ class SimpleForwardTaskOnFlat(object):
         ]
         self._cmd = cmd
 
+    @property
+    def cmd(self):
+        return self._cmd
+
     def __call__(self, info):
-        linear, angular = info['base_state'][1].linear, info['base_state'][1].angular
+        base_state = info['base_state']
+        linear, angular = base_state.twist.linear, base_state.twist.angular
         rewards = [
             self._rewards[0](self._cmd, linear),
             self._rewards[1](self._cmd, angular),

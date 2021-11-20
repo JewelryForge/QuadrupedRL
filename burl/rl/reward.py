@@ -51,6 +51,7 @@ class BodyCollisionReward(Reward):
         pass
 
     def __call__(self, contact_states):
+        contact_states = list(contact_states)
         for i in range(1, 5):
             contact_states[i * 3] = False
         return -sum(contact_states)

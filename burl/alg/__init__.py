@@ -1,2 +1,2 @@
-from actor_critic import ActorCritic
-from rollout_storage import RolloutStorage
+from burl.alg.ppo import PPO
+from burl.alg.rollout_storage import RolloutStorage

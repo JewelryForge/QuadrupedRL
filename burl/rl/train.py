@@ -4,11 +4,10 @@ import attr
 from collections import deque
 import statistics
 
-from burl.rl.multi_env import VecEnv
 from burl.rl.state import ExtendedObservation, Action
 from burl.rl.tg import LocomotionStateMachine
-from burl.sim import QuadrupedSim, LocomotionEnv
-from burl.utils import make_cls
+from burl.sim import QuadrupedSim, TGEnv, EnvContainer
+from burl.utils import make_cls, timestamp
 from burl.alg.ppo import PPO
 from burl.rl.a2c import ActorCritic, Teacher, Critic
 
@@ -28,16 +27,16 @@ class TaskParam(object):
     save_interval = attr.ib(type=int, default=50)
 
 
+
 class OnPolicyRunner:
     def __init__(self, param=TaskParam(), log_dir='log', device='cuda'):
         self.cfg = param
         make_robot = make_cls(QuadrupedSim, on_rack=False, make_sensors=[],
                               frequency=self.cfg.execution_frequency)
-        self.envs = [LocomotionEnv(make_robot=make_robot, sim_frequency=self.cfg.sim_frequency,
-                                   action_frequency=self.cfg.action_frequency, use_gui=False)
-                     for _ in range(self.cfg.num_envs)]
-        self.stms = [LocomotionStateMachine(time_step=1 / self.cfg.action_frequency)
-                     for _ in range(self.cfg.num_envs)]
+        make_env = make_cls(TGEnv, make_robot=make_robot, sim_frequency=self.cfg.sim_frequency,
+                            action_frequency=self.cfg.action_frequency, use_gui=False)
+
+        self.env = EnvContainer(self.cfg.num_envs, make_env)
 
         self.device = torch.device(device)
         actor_critic = ActorCritic(Teacher(), Critic()).to(self.device)
@@ -48,13 +47,13 @@ class OnPolicyRunner:
                               (ExtendedObservation.dim,), (Action.dim,))
 
         # Log
-        self.log_dir = log_dir
+        self.log_dir = os.path.join(log_dir, timestamp())
         self.writer = None
         self.tot_timesteps = 0
         self.tot_time = 0
         self.current_learning_iteration = 0
 
-        _, _ = self.env.reset()
+        # _, _ = self.env.reset()
 
     def learn(self, num_learning_iterations, init_at_random_ep_len=False):
         # initialize writer
@@ -63,8 +62,8 @@ class OnPolicyRunner:
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf,
                                                              high=int(self.env.max_episode_length))
-        obs = self.env.get_observations()
-        privileged_obs = self.env.get_privileged_observations()
+        privileged_obs, obs = self.env.init_observations()
+        # privileged_obs = self.env.get_privileged_observations()
         critic_obs = privileged_obs if privileged_obs is not None else obs
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
@@ -83,11 +82,11 @@ class OnPolicyRunner:
             start = time.time()
             # Rollout
             with torch.inference_mode():
-                for i in range(self.num_steps_per_env):
+                for i in range(self.cfg.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs)
                     self.action_list.append(actions.cpu().numpy())
                     obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
-                    self.torque_list.append(self.env.torques.cpu().numpy())
+                    # self.torque_list.append(self.env.torques.cpu().numpy())
 
                     critic_obs = privileged_obs if privileged_obs is not None else obs
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(
@@ -126,7 +125,7 @@ class OnPolicyRunner:
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
 
     def log(self, locs, width=80, pad=35):
-        self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
+        self.tot_timesteps += self.cfg.num_steps_per_env * self.env.num_envs
         self.tot_time += locs['collection_time'] + locs['learn_time']
         iteration_time = locs['collection_time'] + locs['learn_time']
 
@@ -145,7 +144,7 @@ class OnPolicyRunner:
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
         mean_std = self.alg.actor_critic.std.mean()
-        fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
+        fps = int(self.cfg.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 
         self.writer.add_scalar('Loss/value_function', locs['mean_value_loss'], locs['it'])
         self.writer.add_scalar('Loss/surrogate', locs['mean_surrogate_loss'], locs['it'])
@@ -215,28 +214,3 @@ class OnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_inference
-
-
-def main():
-    param = TaskParam()
-    make_robot = make_cls(QuadrupedSim, on_rack=False, make_sensors=[], frequency=param.execution_frequency)
-    env = LocomotionEnv(make_robot=make_robot, sim_frequency=param.sim_frequency,
-                        action_frequency=param.action_frequency, use_gui=True)
-    env2 = LocomotionEnv(make_robot=make_robot, sim_frequency=param.sim_frequency,
-                         action_frequency=param.action_frequency, use_gui=False)
-    stm = LocomotionStateMachine(time_step=1 / param.action_frequency)
-    quadruped = env.robot
-
-    for _ in range(1000):
-        base_pos = np.array((0, 0, -0.3))
-        cmd0 = quadruped.ik(0, base_pos, 'shoulder')
-        cmd1 = quadruped.ik(1, base_pos, 'shoulder')
-        cmd2 = quadruped.ik(2, base_pos, 'shoulder')
-        cmd3 = quadruped.ik(3, base_pos, 'shoulder')
-        observation, reward, done, info = env.step(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
-        print(done)
-    env.close()
-
-
-if __name__ == '__main__':
-    main()

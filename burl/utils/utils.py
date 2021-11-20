@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import torch
 import numpy as np
 from torch import nn
@@ -121,3 +123,8 @@ def get_activation(activation_name):
         return activations[activation_name]
     except KeyError:
         raise RuntimeError("invalid activation function!")
+
+
+
+def timestamp():
+    return datetime.now().strftime('%b%d_%H-%M-%S')

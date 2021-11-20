@@ -85,6 +85,10 @@ class Quaternion(NDArrayBased):
         return matrix.squeeze()
 
     @classmethod
+    def identity(cls):
+        return cls((0, 0, 0, 1))
+
+    @classmethod
     def from_rpy(cls, rpy):
         rpy = np.asarray(rpy)
         sr, sp, sy = np.sin(rpy / 2)
