@@ -28,7 +28,7 @@ class MotorSim(object):
     # ALLOWED_SENSORS = {MotorEncoder, MotorEncoderDiff, MotorEncoderDiff2}
 
     def __init__(self, robot, num=1, **kwargs):
-        # self._num = num  # TODO: check if necessary
+        self._num = num
         self._robot = robot
         self._kp: np.ndarray = np.asarray(kwargs.get('kp', 60))
         self._kd: np.ndarray = np.asarray(kwargs.get('kd', 1))
@@ -37,7 +37,6 @@ class MotorSim(object):
         torque_limits: np.ndarray | Iterable | float | None = kwargs.get('torque_limits', 33.5)
         self._frequency = kwargs.get('frequency', 240)
         assert self._frequency > 0
-        self._num = num
         self._pos, self._vel, self._acc = 0, 0, 0
         # _make_sensors = (make_cls(s, dim=num) for s in kwargs.get('make_sensors', ()))
         # super().__init__(_make_sensors)

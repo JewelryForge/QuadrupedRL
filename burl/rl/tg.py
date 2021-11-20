@@ -3,7 +3,7 @@ from burl.utils import normalize, M_2_PI
 
 
 class LocomotionStateMachine(object):
-    def __init__(self, time_step):
+    def __init__(self, time_step, **kwargs):
         # We set the base frequency f 0 to zero when the zero command is given for 0.5 s,
         # which stops FTGs, and the robot stands still on the terrain.
         # f0 is set to 1.25 Hz when the direction command is given
@@ -12,6 +12,8 @@ class LocomotionStateMachine(object):
         self._time_step = time_step
         self._phases = normalize(np.random.random(4) * M_2_PI)
         self._frequency = np.ones(4) * self.base_frequency
+        self._lower_frequency = kwargs.get('lower_frequency', 0.5)
+        self._upper_frequency = kwargs.get('upper_frequency', 3.0)
 
     @property
     def base_frequency(self):
@@ -28,6 +30,7 @@ class LocomotionStateMachine(object):
     def update(self, frequency_offsets):
         frequency_offsets = np.asarray(frequency_offsets)
         self._frequency = self.base_frequency + frequency_offsets
+        self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
         self._phases += self._frequency * self._time_step * M_2_PI
         self._phases = normalize(self._phases)  # [-pi, pi)
         return self._phases

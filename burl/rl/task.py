@@ -14,9 +14,14 @@ class SimpleForwardTaskOnFlat(object):
             BodyCollisionReward(),
             TorqueReward()
         ]
+
         self._weights = [
-            0.05, 0.05, 0.04, 0.02, 2e-5
+            0.2, 0.05, 0.01, 0.02, 2e-5
         ]
+
+        # self._weights = [
+        #     0.05, 0.05, 0.04, 0.02, 2e-5
+        # ]
         self._cmd = cmd
 
     @property
@@ -33,7 +38,11 @@ class SimpleForwardTaskOnFlat(object):
             self._rewards[3](info['contact_states']),
             self._rewards[4](info['torques'])
         ]
+        # print(linear, angular)
+        # np.set_printoptions(3)
+        # print(np.array(rewards))
         weighted_rewards = [r * w for r, w in zip(rewards, self._weights)]
+        # print(np.array(weighted_rewards))
         # print(weighted_rewards)
         return sum(weighted_rewards)
 

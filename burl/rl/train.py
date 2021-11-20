@@ -7,6 +7,7 @@ import statistics
 from burl.rl.state import ExtendedObservation, Action
 from burl.rl.tg import LocomotionStateMachine
 from burl.sim import QuadrupedSim, TGEnv, EnvContainer
+from burl.sim.config import TaskParam
 from burl.utils import make_cls, timestamp
 from burl.alg.ppo import PPO
 from burl.rl.a2c import ActorCritic, Teacher, Critic
@@ -14,18 +15,6 @@ from burl.rl.a2c import ActorCritic, Teacher, Critic
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
-
-
-@attr.s
-class TaskParam(object):
-    action_frequency = attr.ib(type=float, default=50.)
-    sim_frequency = attr.ib(type=float, default=400.)
-    execution_frequency = attr.ib(type=float, default=400.)
-    num_steps_per_env = attr.ib(type=int, default=24)  # per iteration
-    max_iterations = attr.ib(type=int, default=1500)  # number of policy updates
-    num_envs = attr.ib(type=int, default=4)
-    save_interval = attr.ib(type=int, default=50)
-
 
 
 class OnPolicyRunner:
@@ -39,7 +28,7 @@ class OnPolicyRunner:
         self.env = EnvContainer(self.cfg.num_envs, make_env)
 
         self.device = torch.device(device)
-        actor_critic = ActorCritic(Teacher(), Critic()).to(self.device)
+        actor_critic = ActorCritic(Teacher(), Critic(), init_noise_std=0.1).to(self.device)
         self.alg = PPO(actor_critic, device=self.device)
 
         # init storage and model

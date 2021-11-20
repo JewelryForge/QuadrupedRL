@@ -27,7 +27,7 @@ class LocomotionEnv(gym.Env):
 
     def __init__(self, **kwargs):
         self._render_cfg = kwargs.get('render_config', RenderParam())
-        # self._gui = self._render_cfg.enable_rendering
+        # self._gui = self._render_cfg.rendering_enabled
         self._gui = kwargs.get('use_gui', False)
         if self._gui:
             self._env = bullet_client.BulletClient(pybullet.GUI)
@@ -99,19 +99,11 @@ class LocomotionEnv(gym.Env):
                 privileged_observation, observation = self._robot.update_observation()
 
             self._sim_step_counter += 1
-        # if not self._robot.is_safe():
-        #     pass
-        # self.reset()
         if self._gui:
             self._check_render_options()
-        self._robot._command_history
-        self._robot._observation_history
-        # WARNING: THIS ADD ATTRIBUTE TO P_OBS
         info = privileged_observation.__dict__.copy()
         info.update({'action': action, 'torques': torques})
         # print(torques)
-        # print('C', privileged_observation.contact_states)
-        # print('P', privileged_observation.__dict__)
         return (privileged_observation, observation), self._task(info), not self._robot.is_safe(), info
 
     def reset(self, **kwargs):
@@ -171,13 +163,13 @@ class LocomotionEnv(gym.Env):
         if (current := self._env.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
             self._reset_counter = current
             self.reset()
-
-        time_spent = time.time() - self._last_frame_time
-        self._last_frame_time = time.time()
-        time_to_sleep = self._num_action_repeats / self._sim_frequency - time_spent
-        # print(time_spent)
-        if time_to_sleep > 0:
-            time.sleep(time_to_sleep)
+        if self._render_cfg.sleeping_enabled:
+            time_spent = time.time() - self._last_frame_time
+            self._last_frame_time = time.time()
+            time_to_sleep = self._num_action_repeats / self._sim_frequency - time_spent
+            # print(time_spent)
+            if time_to_sleep > 0:
+                time.sleep(time_to_sleep)
         # Keep the previous orientation of the camera set by the user.
         yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
         self._env.resetDebugVisualizerCamera(dist, yaw, pitch, self._robot.position)
@@ -267,10 +259,10 @@ class EnvContainer(object):
                                               dtype=torch.float)
         self.extras = {}
         self._envs = [make_env() for _ in range(num_envs)]
+        # self._envs = [make_env(use_gui=True)] + [make_env(use_gui=False) for _ in range(num_envs-1)]
 
     def step(self, actions: torch.Tensor):
         actions = actions.cpu().numpy()
-        # FIXME: CHECK WHEN N=1
         observations, rewards, dones, _ = zip(*[e.step(a) for e, a in zip(self._envs, actions)])
         self.reset(i for i in range(self.num_envs) if dones[i] is True)
         # print(len(observations))
@@ -299,6 +291,7 @@ if __name__ == '__main__':
     torch.set_printoptions(2, linewidth=1000)
     envs.init_observations()
     print(*envs.step(torch.Tensor([[0] * 16] * 4)), sep='\n')
+
     # print(*envs.init_observations(), sep='\n')
 # if __name__ == '__main__':
 #     # for i in np.linspace(0, 2 * np.pi):

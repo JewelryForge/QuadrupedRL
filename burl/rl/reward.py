@@ -25,10 +25,13 @@ class AngularVelocityTruncatedReward(Reward):
         self._decay = decay
 
     def __call__(self, cmd, angular):
-        projected_angular = angular[2] * cmd[2]
-        if projected_angular >= self._upper:
-            return 1.0
-        return np.exp(-self._decay * (projected_angular - self._upper) ** 2)
+        if cmd[2] != 0.0:
+            projected_angular = angular[2] * cmd[2]
+            if projected_angular >= self._upper:
+                return 1.0
+            return np.exp(-self._decay * (projected_angular - self._upper) ** 2)
+        else:
+            return np.exp(-self._decay * angular[2] ** 2)
 
 
 class BaseStabilityReward(Reward):

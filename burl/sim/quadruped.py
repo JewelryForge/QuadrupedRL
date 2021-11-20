@@ -16,13 +16,6 @@ from burl.utils.transforms import Rpy, Quaternion
 from burl.utils import normalize, unit, JointInfo, make_cls
 from burl.sim.motor import MotorSim, MotorMode
 
-# TODO: DO NOT USE NAMEDTUPLE!!!
-# JointState = namedtuple('JointState', ('pos', 'vel', 'reaction_force', 'torque'),
-#                         defaults=(0., 0., (0., 0., 0., 0., 0., 0.), 0.))
-# ObservationRaw = namedtuple('ObservationRaw', ('joint_states', 'base_state', 'contact_states'))
-# Pose = namedtuple('Pose', ('position', 'orientation'), defaults=((0, 0, 0), (0, 0, 0, 1)))
-# Twist = namedtuple('Twist', ('linear', 'angular'), defaults=((0, 0, 0), (0, 0, 0)))
-
 ROBOT = 'a1'
 
 
@@ -54,7 +47,7 @@ class QuadrupedSim(object):
         COM_OFFSET = -np.array((0.012731, 0.002186, 0.000515))
         HIP_OFFSETS = np.array(((0.183, -0.047, 0.), (0.183, 0.047, 0.),
                                 (-0.183, -0.047, 0.), (-0.183, 0.047, 0.)))
-        STANCE_POSTURE = (0, 0.723, -1.445)
+        STANCE_POSTURE = np.array((0, 0.723, -1.445) * 4)
         TORQUE_LIMITS = (-33.5,) * 12, (33.5,) * 12
 
     ALLOWED_SENSORS = {ContactStateSensor: 12, OrientationSensor: 4, OrientationRpySensor: 3,
@@ -105,7 +98,7 @@ class QuadrupedSim(object):
         self._observation_noisy_history = deque(maxlen=100)
         self._command_history = deque(maxlen=100)
         for _ in range(2):
-            self._command_history.append(self.STANCE_POSTURE * 4)
+            self._command_history.append(self.STANCE_POSTURE)
         self._init_posture()
         if self._on_rack:
             self._create_rack_constraint()
@@ -139,17 +132,17 @@ class QuadrupedSim(object):
         for leg in self.LEG_NAMES:
             self._env.enableJointForceTorqueSensor(self._quadruped, self._get_joint_id(leg, -1))
 
-    def reset(self, at_current_state=True):
+    def reset(self, at_current_state=False):
         self._step_counter = 0
         self._observation_history.clear()
         self._observation_noisy_history.clear()
         self._command_history.clear()
         for _ in range(2):
-            self._command_history.append(self.STANCE_POSTURE * 4)
+            self._command_history.append(self.STANCE_POSTURE)
         if self._on_rack:
             self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION,
                                                       self.orientation)
-            self._env.resetBaseVelocity(self._quadruped, [0, 0, 0], [0, 0, 0])
+            self._env.resetBaseVelocity(self._quadruped, (0, 0, 0), (0, 0, 0))
         elif at_current_state:
             x, y, _ = self.position
             z = self.INIT_POSITION[2]
@@ -158,7 +151,7 @@ class QuadrupedSim(object):
             self._env.resetBasePositionAndOrientation(self._quadruped, [x, y, z], orn_q)
             self._env.resetBaseVelocity(self._quadruped, [0, 0, 0], [0, 0, 0])
         else:
-            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_POSITION, (0, 0, 0, 0))
+            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_POSITION, (0, 0, 0, 1))
             self._env.resetBaseVelocity(self._quadruped, (0, 0, 0), (0, 0, 0))
         self._init_posture()
         self._motor.reset()
@@ -173,9 +166,11 @@ class QuadrupedSim(object):
         joint_states = JointStates(*zip(*joint_states_raw))
         base_pose = Pose(*self._env.getBasePositionAndOrientation(self._quadruped))
         base_twist = Twist(*self._env.getBaseVelocity(self._quadruped))
+        base_twist_in_base_frame = Twist(*self._transform_world2base(base_pose.orientation, *base_twist))
         # print(self._get_contact_states())
         contact_states = ContactStates(self._get_contact_states())
-        base_state = BaseState(base_pose, base_twist)
+        # base_state = BaseState(base_pose, base_twist)
+        base_state = BaseState(base_pose, base_twist_in_base_frame)
         observation = ObservationRaw(base_state, joint_states, contact_states)
         # print(observation.contact_states)
         # print(contact_states)
@@ -186,15 +181,16 @@ class QuadrupedSim(object):
         self._base_pose, self._base_twist = observation_noisy.base_state
         # NOTICE: here 'base_twist_in_base_frame' should not be influenced by the noise of base pose
         # So the quantities here shouldn't be noisy
-        self._base_twist_in_base_frame = Twist(*self._transform_world2base(*self._base_twist))
+        # self._base_twist_in_base_frame = Twist(*self._transform_world2base(*self._base_twist))
         self._contact_states = observation_noisy.contact_states
         self._motor.update_observation()
         return observation, observation_noisy
         # self._privileged_info = observation
 
     def is_safe(self):
+        x, y, z = self.position
         r, p, _ = Rpy.from_quaternion(self.orientation)
-        return abs(r) < np.pi / 4 and abs(p) < np.pi / 4
+        return abs(r) < np.pi / 6 and abs(p) < np.pi / 6 and 0.2 < z < 0.6
 
     # @property
     # def privileged_info(self) -> None | ObservationRaw:
@@ -240,16 +236,7 @@ class QuadrupedSim(object):
         num_past_steps = int((self._latency - moment) * self._frequency)
         idx = 0 if len(self._observation_history) <= num_past_steps else -1 - num_past_steps
         joint_positions = self._observation_history[idx].joint_states.position
-        try:
-            return self._command_history[idx] - np.array(joint_positions)
-        except:
-            print(self._command_history)
-            print(len(self._command_history))
-            print(joint_positions)
-            print(len(joint_positions))
-            print('moment', moment)
-            print('idx', idx)
-            raise RuntimeError
+        return self._command_history[idx] - np.array(joint_positions)
 
     def get_joint_velocity_history(self, moment):
         assert moment < 0
@@ -260,6 +247,8 @@ class QuadrupedSim(object):
 
     # [1, 3, 4, 6, 8, 9, 11, 13, 14, 16, 18, 19]
     def apply_command(self, motor_commands):
+        motor_commands = np.clip(motor_commands, self.STANCE_POSTURE - 0.3,
+                                 self.STANCE_POSTURE + 0.3)
         motor_commands = np.asarray(motor_commands)
         self._command_history.append(motor_commands)
         torques = self._motor.set_command(motor_commands)
@@ -358,7 +347,7 @@ class QuadrupedSim(object):
 
     def _init_posture(self):
         for i in range(12):
-            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i % 3])
+            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i])
 
     def _init_joint_ids(self):
         joint_name_to_id = {}
@@ -407,9 +396,10 @@ class QuadrupedSim(object):
         # print(contact_states)
         return contact_states
 
-    def _transform_world2base(self, *vectors):
+    def _transform_world2base(self, base_orientation, *vectors):
         def _transform_once(vec):
-            _, orientation_inverse = self._env.invertTransform((0, 0, 0), self.orientation)
+            # _, orientation_inverse = self._env.invertTransform((0, 0, 0), self.orientation)
+            _, orientation_inverse = self._env.invertTransform((0, 0, 0), base_orientation)
             relative_vec, _ = self._env.multiplyTransforms((0, 0, 0), orientation_inverse,
                                                            vec, (0, 0, 0, 1))
             return relative_vec
