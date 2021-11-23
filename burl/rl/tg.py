@@ -1,5 +1,5 @@
 import numpy as np
-from burl.utils import normalize, M_2_PI
+from burl.utils import normalize
 
 
 class LocomotionStateMachine(object):
@@ -10,7 +10,7 @@ class LocomotionStateMachine(object):
         # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
         # The state machine is included in the training environment.
         self._time_step = time_step
-        self._phases = normalize(np.random.random(4) * M_2_PI)
+        self._phases = normalize(np.random.random(4) * 2 * np.pi)
         self._frequency = np.ones(4) * self.base_frequency
         self._lower_frequency = kwargs.get('lower_frequency', 0.5)
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
@@ -31,7 +31,7 @@ class LocomotionStateMachine(object):
         frequency_offsets = np.asarray(frequency_offsets)
         self._frequency = self.base_frequency + frequency_offsets
         self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
-        self._phases += self._frequency * self._time_step * M_2_PI
+        self._phases += self._frequency * self._time_step * 2 * np.pi
         self._phases = normalize(self._phases)  # [-pi, pi)
         return self._phases
 

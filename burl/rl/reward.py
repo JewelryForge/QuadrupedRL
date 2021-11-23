@@ -1,8 +1,11 @@
+from abc import ABC
+
 import numpy as np
 
 
-class Reward(object):
-    pass
+class Reward(ABC):
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
 
 
 class LinearVelocityTruncatedReward(Reward):

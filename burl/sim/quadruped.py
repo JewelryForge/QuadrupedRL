@@ -1,442 +1,458 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections import deque
+from typing import Deque
 
 import numpy as np
 import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
-from collections import namedtuple, deque
 
-# from burl.utils.bc import Observable
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState
-from burl.sim.sensors import OrientationSensor, ContactStateSensor, OrientationRpySensor, GravityVectorSensor
-from burl.utils.transforms import Rpy, Quaternion
-from burl.utils import normalize, unit, JointInfo, make_cls
-from burl.sim.motor import MotorSim, MotorMode
+from burl.sim.motor import MotorSim
+from burl.utils import normalize, unit, JointInfo, make_cls, PhysicsParam
+from burl.utils.transforms import Rpy, Rotation, Odometry
 
-ROBOT = 'a1'
+TP_ZERO3 = (0., 0., 0.)
+TP_Q0 = (0., 0., 0., 1.)
 
 
-class QuadrupedSim(object):
-    INIT_POSITION = [0, 0, .33]
-    INIT_RACK_POSITION = [0, 0, 1]
-    INIT_ORIENTATION = [0, 0, 0, 1]
+class Quadruped(object):
+    INIT_POSITION: np.ndarray
+    INIT_RACK_POSITION: np.ndarray
+    INIT_ORIENTATION: np.ndarray
     NUM_MOTORS = 12
-    if ROBOT == 'aliengo':
-        LEG_NAMES = ['FR', 'FL', 'RR', 'RL']
-        JOINT_TYPES = ['hip', 'thigh', 'calf', 'foot']
-        JOINT_SUFFIX = ['joint', 'joint', 'joint', 'fixed']
-        BASE_NAME = 'floating_base'
-        URDF_FILE = "/home/jewel/Workspaces/teacher-student/urdf/aliengo/xacro/aliengo.urdf"
-        COM_OFFSET = np.array((0.008465, 0.004045, -0.000763))
-        HIP_OFFSETS = np.array(((0.2399, -0.051, 0), (0.2399, 0.051, 0),
-                                (-0.2399, -0.051, 0), (-0.2399, 0.051, 0)))
-    elif ROBOT == 'a1':
-        BASE_NAME = 'imu_joint'
-        LEG_NAMES = ['FR', 'FL', 'RR', 'RL']
-        JOINT_TYPES = ['hip', 'upper', 'lower', 'toe']
-        JOINT_SUFFIX = ['joint', 'joint', 'joint', 'fixed']
-        URDF_FILE = '/home/jewel/Workspaces/teacher-student/urdf/a1/a1.urdf'
-        LINK_LENGTHS = [0.08505, 0.2, 0.2]
-        JOINT_FRICTION = 0.025
-        FOOT_LATERAL_FRICTION = 1.0
-        FOOT_SPINNING_FRICTION = 0.2
-        FOOT_RESTITUTION = 0.3
-        COM_OFFSET = -np.array((0.012731, 0.002186, 0.000515))
-        HIP_OFFSETS = np.array(((0.183, -0.047, 0.), (0.183, 0.047, 0.),
-                                (-0.183, -0.047, 0.), (-0.183, 0.047, 0.)))
-        STANCE_POSTURE = np.array((0, 0.723, -1.445) * 4)
-        TORQUE_LIMITS = (-33.5,) * 12, (33.5,) * 12
+    LEG_NAMES: tuple[str]
+    JOINT_TYPES: tuple[str]
+    JOINT_SUFFIX: tuple[str]
+    URDF_FILE: str
+    LINK_LENGTHS: np.ndarray
+    COM_OFFSET: np.ndarray
+    HIP_OFFSETS: np.ndarray
+    STANCE_HEIGHT: float
+    STANCE_POSTURE: np.ndarray
+    TORQUE_LIMITS: np.ndarray
 
-    ALLOWED_SENSORS = {ContactStateSensor: 12, OrientationSensor: 4, OrientationRpySensor: 3,
-                       GravityVectorSensor: 3, }
+    def __init__(self, sim_env=pybullet, frequency=400, make_motor=MotorSim, physics_param=PhysicsParam()):
+        self._env, self._frequency, self._cfg = sim_env, frequency, physics_param
+        self._motor: MotorSim = make_motor(self, num=12, frequency=frequency)
+        assert self._cfg.latency >= 0
 
-    def __init__(self, sim_env=pybullet, **kwargs):
-        self._env = sim_env
-        self._urdf_file: str = kwargs.get('_urdf_file', self.URDF_FILE)
-        self._self_collision_enabled: bool = kwargs.get('self_collision_enabled', False)
-        self._frequency = kwargs.get('frequency', 240)
-        # _make_sensors = kwargs.get('make_sensors', ())
-        # super(QuadrupedSim, self).__init__(make_sensors=_make_sensors)
-        _make_motor: Callable = kwargs.get('make_motor', MotorSim)
-        self._motor: MotorSim = _make_motor(self, num=12, frequency=self._frequency)
-        # self._subordinates.append(self._motor)
+        self._resetStates()
 
-        # print('dim', self._motor.observation_dim)
-        self._latency: float = kwargs.get('latency', 0)
-        # self._sensors = [m(self) for m in _make_sensors]
-        # self._noisy: bool = kwargs.get('noisy', False)
-        self._on_rack: bool = kwargs.get('on_rack', False)
-        assert self._latency >= 0  # and self._time_step > 0
+        self._latency_steps = int(self._cfg.latency * self._frequency)
+        self._quadruped = self._loadRobot()
+        self._analyseModelJoints()
+        self._resetPosture()
+        self.setPhysicsParams(physics_param)
 
-        # self._observation_dim = sum(s.observation_dim for s in self._sensors)
-        self._joint_states: JointStates = None
+        self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
+        self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
+        self._command_history: Deque[np.ndarray] = deque(maxlen=100)
+
+    def _resetStates(self):
         self._base_pose: Pose = None
         self._base_twist: Twist = None
         self._base_twist_in_base_frame: Twist = None
-        self._contact_states: ContactStates = None
-        # self._privileged_info = None
-        self._step_counter: int = 0
+        self._last_torque: np.ndarray = np.zeros(12)
+        self._disturbance: np.ndarray = np.zeros(3)
+        self._step_counter = 0
 
-        self._latency_steps = int(self._latency * self._frequency)
-        if self._on_rack:
-            # self._quadruped: int = self._load_robot_urdf()
-            self._quadruped: int = self._load_robot_urdf(self.INIT_RACK_POSITION)
-        else:
-            self._quadruped: int = self._load_robot_urdf()
+    def _loadRobot(self):
+        pos = self.INIT_RACK_POSITION if self._cfg.on_rack else self.INIT_POSITION
+        orn = self.INIT_ORIENTATION
+        flags = self._env.URDF_USE_SELF_COLLISION if self._cfg.self_collision_enabled else 0
+        robot = self._env.loadURDF(self.URDF_FILE, pos, orn, flags=flags)
+        if self._cfg.on_rack:
+            self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
+                                       jointType=self._env.JOINT_FIXED,
+                                       jointAxis=(0, 0, 0), parentFramePosition=(0, 0, 0),
+                                       childFramePosition=self.INIT_RACK_POSITION,
+                                       childFrameOrientation=self.INIT_ORIENTATION)
+        return robot
+
+    def _getJointIdByName(self, leg: str, joint_type: str):
+        if isinstance(leg, str):
+            leg = self.LEG_NAMES.index(leg)
+        if isinstance(joint_type, str):
+            joint_type = self.JOINT_TYPES.index(joint_type)
+        return self._getJointId(leg, joint_type)
+
+    def _getJointId(self, leg: int | str, joint_type: int | str = 0):
+        if joint_type < 0:
+            joint_type += 4
+        return self._joint_ids[leg * 4 + joint_type]
+
+    def _analyseModelJoints(self):
         self._num_joints = self._env.getNumJoints(self._quadruped)
-        self._joint_names = [self.BASE_NAME]
-        self._joint_names.extend('_'.join((l, j, s)) for l in self.LEG_NAMES
-                                 for j, s in zip(self.JOINT_TYPES, self.JOINT_SUFFIX))
+        self._joint_names = ['_'.join((l, j, s)) for l in self.LEG_NAMES
+                             for j, s in zip(self.JOINT_TYPES, self.JOINT_SUFFIX)]
 
-        self._joint_ids: list = self._init_joint_ids()
-        self._motor_ids: list = [self._get_joint_id(l, j) for l in range(4) for j in range(3)]
-        self._foot_ids: list = [self._get_joint_id(l, -1) for l in range(4)]
-        self._observation_history = deque(maxlen=100)
-        self._observation_noisy_history = deque(maxlen=100)
-        self._command_history = deque(maxlen=100)
-        for _ in range(2):
-            self._command_history.append(self.STANCE_POSTURE)
-        self._init_posture()
-        if self._on_rack:
-            self._create_rack_constraint()
-        self.set_physics_parameters()
+        joint_name_to_id = {}
+        for i in range(self._env.getNumJoints(self._quadruped)):
+            joint_info = self._env.getJointInfo(self._quadruped, i)
+            joint_name_to_id[joint_info[1].decode("UTF-8")] = joint_info[0]
+        self._joint_ids = [joint_name_to_id.get(n, -1) for n in self._joint_names]
+        self._motor_ids = [self._getJointId(l, j) for l in range(4) for j in range(3)]
+        self._foot_ids = [self._getJointId(l, -1) for l in range(4)]
 
-    @property
-    def robot_id(self):
-        return self._quadruped
+    def _resetPosture(self):
+        for i in range(12):
+            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i])
 
-    @property
-    def frequency(self):
-        return self._frequency
-
-    @property
-    def action_limits(self):
-        if self._motor.mode == MotorMode.TORQUE:
-            return self.TORQUE_LIMITS
-        elif self._motor.mode == MotorMode.POSITION:
-            return tuple(zip(*(JointInfo(self._env.getJointInfo(self._quadruped, m)).limits for m in self._motor_ids)))
-
-    def set_physics_parameters(self, **kwargs):  # TODO complete kwargs
+    def setPhysicsParams(self, params):
         # for m in self._motor_ids:
         #     self._env.changeDynamics(self, -1, linearDamping=0, angularDamping=0)
 
         for f in self._foot_ids:
-            self._env.changeDynamics(self._quadruped, f, spinningFriction=self.FOOT_SPINNING_FRICTION,
-                                     lateralFriction=self.FOOT_LATERAL_FRICTION)
+            self._env.changeDynamics(self._quadruped, f, spinningFriction=params.foot_spinning_friction,
+                                     lateralFriction=params.foot_lateral_friction)
         self._env.setPhysicsEngineParameter(enableConeFriction=0)
         self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
-                                            forces=[self.JOINT_FRICTION] * len(self._motor_ids))
-        for leg in self.LEG_NAMES:
-            self._env.enableJointForceTorqueSensor(self._quadruped, self._get_joint_id(leg, -1))
-
-    def reset(self, at_current_state=False):
-        self._step_counter = 0
-        self._observation_history.clear()
-        self._observation_noisy_history.clear()
-        self._command_history.clear()
-        for _ in range(2):
-            self._command_history.append(self.STANCE_POSTURE)
-        if self._on_rack:
-            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION,
-                                                      self.orientation)
-            self._env.resetBaseVelocity(self._quadruped, (0, 0, 0), (0, 0, 0))
-        elif at_current_state:
-            x, y, _ = self.position
-            z = self.INIT_POSITION[2]
-            _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
-            orn_q = self._env.getQuaternionFromEuler([0.0, 0.0, yaw])
-            self._env.resetBasePositionAndOrientation(self._quadruped, [x, y, z], orn_q)
-            self._env.resetBaseVelocity(self._quadruped, [0, 0, 0], [0, 0, 0])
-        else:
-            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_POSITION, (0, 0, 0, 1))
-            self._env.resetBaseVelocity(self._quadruped, (0, 0, 0), (0, 0, 0))
-        self._init_posture()
-        self._motor.reset()
-        return self.update_observation()
-
-    def random_dynamics(self, dynamics_parameters):
-        pass
-
-    def update_observation(self):
-        self._step_counter += 1
-        joint_states_raw = self._env.getJointStates(self._quadruped, self._motor_ids)
-        joint_states = JointStates(*zip(*joint_states_raw))
-        base_pose = Pose(*self._env.getBasePositionAndOrientation(self._quadruped))
-        base_twist = Twist(*self._env.getBaseVelocity(self._quadruped))
-        base_twist_in_base_frame = Twist(*self._transform_world2base(base_pose.orientation, *base_twist))
-        # print(self._get_contact_states())
-        contact_states = ContactStates(self._get_contact_states())
-        # base_state = BaseState(base_pose, base_twist)
-        base_state = BaseState(base_pose, base_twist_in_base_frame)
-        observation = ObservationRaw(base_state, joint_states, contact_states)
-        # print(observation.contact_states)
-        # print(contact_states)
-        self._observation_history.append(observation)
-        observation_noisy = self._get_observation(noisy=True)
-        self._observation_noisy_history.append(observation_noisy)
-        self._joint_states = observation_noisy.joint_states
-        self._base_pose, self._base_twist = observation_noisy.base_state
-        # NOTICE: here 'base_twist_in_base_frame' should not be influenced by the noise of base pose
-        # So the quantities here shouldn't be noisy
-        # self._base_twist_in_base_frame = Twist(*self._transform_world2base(*self._base_twist))
-        self._contact_states = observation_noisy.contact_states
-        self._motor.update_observation()
-        return observation, observation_noisy
-        # self._privileged_info = observation
+                                            forces=(params.joint_friction,) * len(self._motor_ids))
+        for leg in range(4):
+            self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
 
     def is_safe(self):
         x, y, z = self.position
         r, p, _ = Rpy.from_quaternion(self.orientation)
         return abs(r) < np.pi / 6 and abs(p) < np.pi / 6 and 0.2 < z < 0.6
 
-    # @property
-    # def privileged_info(self) -> None | ObservationRaw:
-    #     return self._privileged_info
-
-    @property
-    def position(self):
-        return self._base_pose.position
-
-    @property
-    def orientation(self):
-        return self._base_pose.orientation
-
-    @property
-    def joint_states(self):
-        return self._joint_states
-
-    # def sensor_interface(self, quantity_name):
-    #     if quantity_name ==
-    #     quantity_interface_dict = {
-    #
-    #     }
-    #     return
-
-    # def get_pose(self):
-    #     return self._base_pose
-    #
-    # def get_twist(self):
-    #     return self._base_twist_in_base_frame
-    #
-    # def get_contact_states(self):
-    #     return self._contact_states
-
-    # def get_joint_states(self):
-    #     return (self._joint_states[m] for m in self._motor_ids)
-
-    @property
-    def command_history(self):
-        return self._command_history
-
-    def get_joint_position_error_history(self, moment):
-        assert moment < 0
-        num_past_steps = int((self._latency - moment) * self._frequency)
-        idx = 0 if len(self._observation_history) <= num_past_steps else -1 - num_past_steps
-        joint_positions = self._observation_history[idx].joint_states.position
-        return self._command_history[idx] - np.array(joint_positions)
-
-    def get_joint_velocity_history(self, moment):
-        assert moment < 0
-        num_past_steps = int((self._latency - moment) * self._frequency)
-        idx = 0 if len(self._observation_history) <= num_past_steps else -1 - num_past_steps
-        joint_velocities = self._observation_history[idx].joint_states.velocity
-        return joint_velocities
-
-    # [1, 3, 4, 6, 8, 9, 11, 13, 14, 16, 18, 19]
-    def apply_command(self, motor_commands):
-        motor_commands = np.clip(motor_commands, self.STANCE_POSTURE - 0.3,
-                                 self.STANCE_POSTURE + 0.3)
+    def applyCommand(self, motor_commands):
+        # motor_commands = np.clip(motor_commands, self.STANCE_POSTURE - 0.3,
+        #                          self.STANCE_POSTURE + 0.3)
         motor_commands = np.asarray(motor_commands)
         self._command_history.append(motor_commands)
-        torques = self._motor.set_command(motor_commands)
+        torques = self._motor.apply_command(motor_commands)
         self._env.setJointMotorControlArray(self._quadruped, self._motor_ids,
                                             self._env.TORQUE_CONTROL, forces=torques)
+        self._last_torque = torques
         return torques
 
-    def add_disturbance_on_base(self, force, pos=(0, 0, 0)):
-        self._env.applyExternalForce(self._quadruped, -1, force, pos)
+    def reset(self, at_current_state=False):
+        self._resetStates()
+        self._observation_history.clear()
+        self._observation_noisy_history.clear()
+        self._command_history.clear()
+        if self._cfg.on_rack:
+            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
+            self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+        elif at_current_state:
+            x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2]
+            _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
+            orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
+            self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z), orn_q)
+            self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+        else:
+            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_POSITION, TP_Q0)
+            self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+        self._resetPosture()
+        self._motor.reset()
+        return self.updateObservation()
 
-    def ik(self, leg: int | str, pos, frame='base'):
-        if isinstance(leg, str):
-            leg = self.LEG_NAMES.index(leg)
+    def updateObservation(self):
+        self._step_counter += 1
+        self._base_pose = Pose(*self._env.getBasePositionAndOrientation(self._quadruped))
+        self._base_twist = Twist(*self._env.getBaseVelocity(self._quadruped))
+        self._base_twist_in_base_frame = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
+                                               self._rotateFromWorldToBase(self._base_twist.angular))
+        observation = ObservationRaw()
+        observation.base_state = BaseState(self._base_pose, self._base_twist_in_base_frame)
+        joint_states_raw = self._env.getJointStates(self._quadruped, range(self._num_joints))
+        observation.joint_states = JointStates(*zip(*joint_states_raw))
+        observation.foot_forces = self._getFootContactForces()
+        observation.contact_states = ContactStates(self._getContactStates())
+        self._observation_history.append(observation)
+        observation_noisy = self._estimateObservation()
+        self._observation_noisy_history.append(observation_noisy)
+        self._motor.update_observation()
+        return observation, observation_noisy
+
+    def ik(self, leg, pos, frame='base'):
         pos = np.asarray(pos)
-        if frame == 'hip':
+        if frame == 'base':
+            pass
+        elif frame == 'hip':
             pos += self.HIP_OFFSETS[leg]
         elif frame == 'shoulder':
             shoulder_length = self.LINK_LENGTHS[0]
             if self.LEG_NAMES[leg].endswith('R'):
                 shoulder_length *= -1
             pos = pos + self.HIP_OFFSETS[leg] + (0, shoulder_length, 0)
-        elif frame == 'base':
-            pass
         else:
             raise RuntimeError(f'Unknown Frame named {frame}')
 
-        world_link_pos, _ = self._env.multiplyTransforms(
-            self.position, self.orientation, pos, Quaternion.identity())
+        pos_world, _ = self._env.multiplyTransforms(self.position, self.orientation, pos, TP_Q0)
         all_joint_angles = self._env.calculateInverseKinematics(
-            self._quadruped, self._foot_ids[leg], world_link_pos, solver=0)
+            self._quadruped, self._foot_ids[leg], pos_world, solver=0)
 
-        # Extract the relevant joint angles.
-        # print(all_joint_angles)
         return all_joint_angles[leg * 3: leg * 3 + 3]
 
-    # def ik(self, leg: int | str, pos, frame='base'):
-    #     assert ROBOT == 'a1'
-    #     if isinstance(leg, str):
-    #         leg = self.LEG_NAMES.index(leg)
-    #     shoulder_length, thigh_length, shank_length = self.LINK_LENGTHS
-    #     # print(leg)
-    #     if self.LEG_NAMES[leg].endswith('R'):
-    #         shoulder_length *= -1
-    #
-    #     def _ik_hip_frame(_pos):
-    #         dx, dy, dz = _pos
-    #         distance = np.linalg.norm(_pos)
-    #         hip_angle_bias = np.arctan2(dy, dz)
-    #         _sum = np.arcsin(distance * shoulder_length / np.hypot(dy, dz) / distance)
-    #         opt1, opt2 = normalize(_sum - hip_angle_bias), normalize(np.pi - _sum - hip_angle_bias)
-    #         hip_angle = opt1 if abs(opt1) < abs(opt2) else opt2
-    #         shoulder_vector = np.array((0, np.cos(hip_angle), np.sin(hip_angle))) * shoulder_length
-    #         foot_position_shoulder = _pos - shoulder_vector
-    #         foot_distance_shoulder = np.linalg.norm(foot_position_shoulder)
-    #         thigh_length_2, shank_length_2, foot_distance_shoulder_2 = \
-    #             thigh_length ** 2, shank_length ** 2, foot_distance_shoulder ** 2
-    #         angle_shank = np.arccos((thigh_length_2 + shank_length_2 - foot_distance_shoulder_2)
-    #                                 / (2 * thigh_length * shank_length)) - np.pi
-    #         angle_thigh = np.arccos((thigh_length_2 + foot_distance_shoulder_2 - shank_length_2)
-    #                                 / (2 * thigh_length * foot_distance_shoulder))
-    #         normal = np.cross(shoulder_vector, np.cross((0, 0, -1), shoulder_vector))
-    #         angle_thigh -= np.arccos(np.dot(unit(normal), unit(foot_position_shoulder))) * np.sign(dx)
-    #         # print(np.dot(unit(normal), unit(foot_distance_shoulder)), angle_thigh)
-    #         return hip_angle, normalize(angle_thigh), normalize(angle_shank)
-    #
-    #     pos = np.asarray(pos)
-    #     if frame == 'world':
-    #         return _ik_hip_frame(self._transform_world2base(pos) - self.HIP_OFFSETS[leg])
-    #     if frame == 'base':
-    #         return _ik_hip_frame(pos - self.HIP_OFFSETS[leg])
-    #     if frame == 'hip':
-    #         return _ik_hip_frame(pos)
-    #     if frame == 'shoulder':
-    #         return _ik_hip_frame(pos + (0, shoulder_length, 0))
-    #     raise RuntimeError(f'Unknown Frame named {frame}')
+    def fk(self, leg, angles) -> Odometry:
+        raise NotImplementedError
 
-    def fk(self, leg):
-        pass
+    def addDisturbanceOnBase(self, force, pos=TP_ZERO3):
+        self._disturbance = force
+        self._env.applyExternalForce(self._quadruped, -1, force, pos)
 
-    def print_joint_info(self):
+    def _rotateFromWorld(self, vector_world, reference):
+        _, reference_inv = self._env.invertTransform(TP_ZERO3, reference)
+        rotated, _ = self._env.multiplyTransforms(TP_ZERO3, reference_inv, vector_world, TP_Q0)
+        return rotated
+
+    def _rotateFromWorldToBase(self, vector_world):
+        return self._rotateFromWorld(vector_world, self._base_pose.orientation)
+
+    def _getContactStates(self):
+        def _getContactState(link_id):
+            return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
+
+        contact_states = [_getContactState(i for i in range(self._num_joints))]
+        return contact_states
+
+    def _getFootContactForces(self):
+        contact_points = self._env.getContactPoints(bodyA=self._quadruped)
+        contact_dict = {}
+        for p in contact_points:
+            link_idx = p[3]
+            directions = p[7], p[11], p[13]
+            forces = p[9], p[10], p[12]
+            contact_dict[link_idx] = sum(np.array(d) * f for d, f in zip(directions, forces))
+        return np.concatenate([contact_dict.get(f, TP_ZERO3) for f in self._foot_ids])
+
+    def _estimateObservation(self):
+        # TODO: ADD NOISE
+        idx = 0 if len(self._observation_history) <= self._latency_steps else -self._latency_steps - 1
+        observation = self._observation_history[idx]
+        return self._addNoiseOnObservation(observation)
+
+    def _addNoiseOnObservation(self, observation):
+        return observation
+
+    @property
+    def position(self):  # without latency and noise
+        return self._base_pose.position
+
+    @property
+    def orientation(self):
+        return self._base_pose.orientation
+
+    def getObservation(self, noisy=False):
+        return self._observation_noisy_history[-1] if noisy else self._observation_history[-1]
+
+    def getBasePosition(self, noisy=False):
+        return self.getObservation(noisy).base_state.pose.position
+
+    def getBaseOrientation(self, noisy=False):
+        return self.getObservation(noisy).base_state.pose.orientation
+
+    def getBaseAxisZ(self, noisy=False):
+        return Rotation.from_quaternion(self.getBaseOrientation(noisy)).Z
+
+    def getBaseLinearVelocity(self):
+        return self._base_twist.linear
+
+    def getBaseAngularVelocity(self):
+        return self._base_twist.angular
+
+    def getBaseLinearVelocityInBaseFrame(self, noisy=False):
+        return self.getObservation(noisy).base_state.twist.linear
+
+    def getBaseAngularVelocityInBaseFrame(self, noisy=False):
+        return self.getObservation(noisy).base_state.twist.angular
+
+    def getContactStates(self):
+        return self._observation_history[-1].contact_states
+
+    def getFootContactForces(self):
+        return self._observation_history[-1].foot_forces
+
+    def getFootPositionInBaseFrame(self, leg):
+        joint_pos = self.getJointPositions(noisy=False)
+        return self.fk(leg, joint_pos[leg * 3: leg * 3 + 3])
+
+    def getFootPositionInWorldFrame(self, leg):
+        return self._env.getLinkState(self._quadruped, self._foot_ids[leg])[0]
+
+    # def getFootContactForces(self):
+    #     joint_pos = self.getJointPositions(noisy=False)
+    #     foot_odoms = [self.fk(i, joint_pos[i * 3: i * 3 + 3]) for i in range(4)]
+    #     reaction_forces = self._observation_history[-1].joint_states.reaction_force[self._foot_ids, :3]
+    #     return np.array([o.rotation @ f for o, f in zip(foot_odoms, reaction_forces)]).reshape(-1)
+
+    def getJointStates(self) -> JointStates:
+        return self._observation_history[-1].joint_states
+
+    def getJointPositions(self, noisy=False):
+        return self.getObservation(noisy).joint_states.position[self._motor_ids,]
+
+    def getJointVelocities(self, noisy=False):
+        return self.getObservation(noisy).joint_states.velocity[self._motor_ids,]
+
+    def getLastAppliedTorques(self):
+        return self._last_torque
+
+    def getBaseDisturbance(self):
+        return self._disturbance
+
+    def getCmdHistoryFromIndex(self, idx):
+        len_requirement = -idx if idx < 0 else idx + 1
+        return self.STANCE_POSTURE if len(self._command_history) < len_requirement else self._command_history[idx]
+
+    def getObservationHistoryFromIndex(self, idx, noisy=False) -> ObservationRaw:
+        len_requirement = -idx if idx < 0 else idx + 1
+        idx = 0 if len(self._observation_history) < len_requirement else idx
+        history = self._observation_noisy_history[idx] if noisy else self._observation_history[idx]
+        return history
+
+    def getJointPosHistoryFromIndex(self, idx, noisy=False):
+        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.position[self._motor_ids,]
+
+    def getJointPosErrHistoryFromIndex(self, idx, noisy=False):
+        return self.getCmdHistoryFromIndex(idx) - self.getJointPosHistoryFromIndex(idx, noisy)
+
+    def getJointVelHistoryFromIndex(self, idx, noisy=False):
+        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.velocity[self._motor_ids,]
+
+    def _getIndexFromMoment(self, moment):
+        assert moment < 0
+        return -1 - int((self._cfg.latency - moment) * self._frequency)
+
+    def getCmdHistoryFromMoment(self, moment):
+        return self.getCmdHistoryFromIndex(self._getIndexFromMoment(moment))
+
+    def getObservationHistoryFromMoment(self, moment, noisy=False) -> ObservationRaw:
+        return self.getObservationHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
+
+    def getJointPosHistoryFromMoment(self, moment, noisy=False):
+        return self.getJointPosHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
+
+    def getJointPosErrHistoryFromMoment(self, moment, noisy=False):
+        return self.getJointPosErrHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
+
+    def getJointVelHistoryFromMoment(self, moment, noisy=False):
+        return self.getJointVelHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
+
+    def printJointInfos(self):
         for i in range(p.getNumJoints(self._quadruped)):
             print(JointInfo(p.getJointInfo(self._quadruped, i)))
 
-    def _load_robot_urdf(self, pos=None, orn=None):
-        if self._self_collision_enabled:
-            return self._env.loadURDF(
-                self._urdf_file,
-                pos if pos else self.INIT_POSITION,
-                orn if orn else self.INIT_ORIENTATION,
-                flags=self._env.URDF_USE_SELF_COLLISION)
-        else:
-            return self._env.loadURDF(
-                self._urdf_file,
-                pos if pos else self.INIT_POSITION,
-                orn if orn else self.INIT_ORIENTATION)
 
-    def _init_posture(self):
-        for i in range(12):
-            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i])
+class A1(Quadruped):
+    INIT_POSITION = [0, 0, .33]
+    INIT_RACK_POSITION = [0, 0, 1]
+    INIT_ORIENTATION = [0, 0, 0, 1]
+    NUM_MOTORS = 12
+    LEG_NAMES = ['FR', 'FL', 'RR', 'RL']
+    JOINT_TYPES = ['hip', 'upper', 'lower', 'toe']
+    JOINT_SUFFIX = ['joint', 'joint', 'joint', 'fixed']
+    URDF_FILE = '/home/jewel/Workspaces/teacher-student/urdf/a1/a1.urdf'
+    LINK_LENGTHS = np.array((0.08505, 0.2, 0.2))
+    COM_OFFSET = -np.array((0.012731, 0.002186, 0.000515))
+    HIP_OFFSETS = np.array(((0.183, -0.047, 0.), (0.183, 0.047, 0.),
+                            (-0.183, -0.047, 0.), (-0.183, 0.047, 0.)))
+    STANCE_HEIGHT = 0.3
+    STANCE_POSTURE = np.array((0, 0.723, -1.445) * 4)
+    TORQUE_LIMITS = np.array(((-33.5,) * 12, (33.5,) * 12))
 
-    def _init_joint_ids(self):
-        joint_name_to_id = {}
-        for i in range(self._env.getNumJoints(self._quadruped)):
-            joint_info = self._env.getJointInfo(self._quadruped, i)
-            joint_name_to_id[joint_info[1].decode("UTF-8")] = joint_info[0]
-        return [joint_name_to_id.get(n, -1) for n in self._joint_names]
-
-    def _get_joint_id(self, leg: int | str, joint_type: int | str = 0):
-        if leg == -1 or leg == self.BASE_NAME:  # BASE
-            return self._joint_ids[0]
-        if isinstance(joint_type, str):
-            joint_type = self.JOINT_TYPES.index(joint_type)
+    def ik_absolute(self, leg: int | str, pos, frame='base'):
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
-        if joint_type < 0:
-            joint_type += 4
-        return self._joint_ids[1 + leg * 4 + joint_type]
+        shoulder_length, thigh_length, shank_length = self.LINK_LENGTHS
+        # print(leg)
+        if self.LEG_NAMES[leg].endswith('R'):
+            shoulder_length *= -1
 
-    def _create_rack_constraint(self):
-        self._env.createConstraint(self._quadruped, -1,
-                                   childBodyUniqueId=-1,
-                                   childLinkIndex=-1,
-                                   jointType=self._env.JOINT_FIXED,
-                                   jointAxis=[0, 0, 0],
-                                   parentFramePosition=[0, 0, 0],
-                                   childFramePosition=self.INIT_RACK_POSITION,
-                                   childFrameOrientation=self.INIT_ORIENTATION)
+        def _ik_hip_frame(_pos):
+            dx, dy, dz = _pos
+            distance = np.linalg.norm(_pos)
+            hip_angle_bias = np.arctan2(dy, dz)
+            _sum = np.arcsin(distance * shoulder_length / np.hypot(dy, dz) / distance)
+            opt1, opt2 = normalize(_sum - hip_angle_bias), normalize(np.pi - _sum - hip_angle_bias)
+            hip_angle = opt1 if abs(opt1) < abs(opt2) else opt2
+            shoulder_vector = np.array((0, np.cos(hip_angle), np.sin(hip_angle))) * shoulder_length
+            foot_position_shoulder = _pos - shoulder_vector
+            foot_distance_shoulder = np.linalg.norm(foot_position_shoulder)
+            thigh_length_2, shank_length_2, foot_distance_shoulder_2 = \
+                thigh_length ** 2, shank_length ** 2, foot_distance_shoulder ** 2
+            angle_shank = np.arccos((thigh_length_2 + shank_length_2 - foot_distance_shoulder_2)
+                                    / (2 * thigh_length * shank_length)) - np.pi
+            angle_thigh = np.arccos((thigh_length_2 + foot_distance_shoulder_2 - shank_length_2)
+                                    / (2 * thigh_length * foot_distance_shoulder))
+            normal = np.cross(shoulder_vector, np.cross((0, 0, -1), shoulder_vector))
+            angle_thigh -= np.arccos(np.dot(unit(normal), unit(foot_position_shoulder))) * np.sign(dx)
+            return hip_angle, normalize(angle_thigh), normalize(angle_shank)
 
-    def _get_observation(self, noisy=True) -> ObservationRaw:
-        if len(self._observation_history) <= self._latency_steps:
-            return self._observation_history[0]
-        else:
-            return self._observation_history[-(self._latency_steps + 1)]
+        pos = np.asarray(pos)
+        if frame == 'world':  # FIXME: COORDINATE TRANSFORMATION SEEMS TO BE WRONG
+            return _ik_hip_frame(self._rotateFromWorldToBase(pos) - self.HIP_OFFSETS[leg])
+        if frame == 'base':
+            return _ik_hip_frame(pos - self.HIP_OFFSETS[leg])
+        if frame == 'hip':
+            return _ik_hip_frame(pos)
+        if frame == 'shoulder':
+            return _ik_hip_frame(pos + (0, shoulder_length, 0))
+        raise RuntimeError(f'Unknown Frame named {frame}')
 
-    def _get_contact_states(self):
-        def _get_contact_state(link_id):
+    def fk(self, leg: int, angles) -> Odometry:
+        def _mdh_matrix(alpha, a, d, theta):
+            ca, sa, ct, st = np.cos(alpha), np.sin(alpha), np.cos(theta), np.sin(theta)
+            return Odometry(((ct, -st, 0),
+                             (st * ca, ct * ca, -sa),
+                             (st * sa, ct * sa, ca)),
+                            (a, -sa * d, ca * d))
+
+        shoulder_length, thigh_length, shank_length = self.LINK_LENGTHS
+        if self.LEG_NAMES[leg].endswith('L'):
+            shoulder_length *= -1
+        a1, a2, a3 = angles
+        transformation = Odometry(((0, 0, 1),
+                                   (-1, 0, 0),
+                                   (0, -1, 0)),
+                                  self.HIP_OFFSETS[leg]) @ \
+                         _mdh_matrix(0, 0, 0, a1) @ \
+                         _mdh_matrix(0, shoulder_length, 0, np.pi / 2) @ \
+                         _mdh_matrix(-np.pi / 2, 0, 0, a2) @ \
+                         _mdh_matrix(0, thigh_length, 0, a3) @ \
+                         _mdh_matrix(0, shank_length, 0, 0) @ \
+                         Odometry(((0, 0, -1),
+                                   (-1, 0, 0),
+                                   (0, 1, 0)))
+        return transformation
+
+    def _getContactStates(self):
+        def _getContactState(link_id):
             return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
 
-        base_contact = _get_contact_state(0)
-        contact_states = []
+        base_contact = _getContactState(0)
+        contact_states = [base_contact]
+        # NOTICE: THIS IS SPECIFICALLY FOR A1
         for leg in range(4):  # FIXME: CONTACT JUDGEMENT SHOULD BE THOUGHT OVER
-            base_contact = base_contact or _get_contact_state(leg * 5 + 1) or _get_contact_state(leg * 5 + 2)
-            contact_states.extend(_get_contact_state(leg * 5 + i) for i in range(3, 6))
-        contact_states.insert(0, base_contact)
-        # print(contact_states)
+            base_contact = base_contact or _getContactState(leg * 5 + 1) or _getContactState(leg * 5 + 2)
+            contact_states.extend([_getContactState(leg * 5 + i) for i in range(3, 6)])
         return contact_states
-
-    def _transform_world2base(self, base_orientation, *vectors):
-        def _transform_once(vec):
-            # _, orientation_inverse = self._env.invertTransform((0, 0, 0), self.orientation)
-            _, orientation_inverse = self._env.invertTransform((0, 0, 0), base_orientation)
-            relative_vec, _ = self._env.multiplyTransforms((0, 0, 0), orientation_inverse,
-                                                           vec, (0, 0, 0, 1))
-            return relative_vec
-
-        if len(vectors) == 1:
-            return _transform_once(vectors[0])
-        return (_transform_once(v) for v in vectors)
 
 
 if __name__ == '__main__':
-    from burl.sim.sensors import MotorEncoder
-
-    np.set_printoptions(precision=3, linewidth=1000)
+    np.set_printoptions(precision=2, suppress=True, linewidth=1000)
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     planeId = p.loadURDF("plane.urdf")
-    make_motor = make_cls(MotorSim, make_sensors=[MotorEncoder])
-    q = QuadrupedSim(pybullet_client=p, make_motor=make_motor, on_rack=False)
-    # print('dim', q.observation_dim)
-    # q.print_joint_info()
+    make_motor = make_cls(MotorSim)
+    physics_param = PhysicsParam()
+    physics_param.on_rack = False
+    q = A1(sim_env=p, frequency=400, make_motor=make_motor, physics_param=physics_param)
+    q.printJointInfos()
     p.setGravity(0, 0, -9.8)
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)
-    print(q.action_limits)
     for _ in range(100000):
-        # if _ % 1000 == 0:
-        #     q.reset()
         p.stepSimulation()
-        q.update_observation()
-        # print(q.step())
+        q.updateObservation()
         time.sleep(1. / 240.)
         cmd0 = q.ik(0, (0, 0, -0.3), 'shoulder')
         cmd1 = q.ik(1, (0, 0, -0.3), 'shoulder')
         cmd2 = q.ik(2, (0, 0, -0.3), 'shoulder')
         cmd3 = q.ik(3, (0, 0, -0.3), 'shoulder')
-        # cmd0 = q.ik(0, (0, -0.08505, -0.3), 'hip')
-        # cmd1 = q.ik(1, (0, 0.08505, -0.3), 'hip')
-        # cmd2 = q.ik(2, (0, -0.08505, -0.3), 'hip')
-        # cmd3 = q.ik(3, (0, 0.08505, -0.3), 'hip')
-        # print('cmd', [cmd0, cmd1, cmd2, cmd3])
-        tq = q.apply_command(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
+        tq = q.applyCommand(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
+        print(q.getFootPositionInWorldFrame(1))

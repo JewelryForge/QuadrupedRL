@@ -1,5 +1,22 @@
 import numpy as np
-from burl.utils.bc import NDArrayBased
+
+
+class NDArrayBased(np.ndarray):
+    def __new__(cls, matrix, skip_check=False):
+        matrix = np.asarray(matrix)
+        if skip_check:
+            return matrix.view(cls)
+        if cls.is_valid(matrix):
+            return cls.preprocess(matrix).view(cls)
+        raise RuntimeError(f'Invalid {cls}')
+
+    @classmethod
+    def is_valid(cls, matrix):
+        return True
+
+    @classmethod
+    def preprocess(cls, matrix):
+        return matrix
 
 
 class Rotation(NDArrayBased):
@@ -46,12 +63,6 @@ class Rotation(NDArrayBased):
                 f'[{self[1, 0]: .3f} {self[1, 1]: .3f} {self[1, 2]: .3f} ]\n'
                 f'[{self[2, 0]: .3f} {self[2, 1]: .3f} {self[2, 2]: .3f} ]\n')
 
-    def __mul__(self, other):
-        return np.dot(self, other).view(np.ndarray)
-
-    def __rmul__(self, other):
-        return np.dot(other, self).view(np.ndarray)
-
     def __setitem__(self, key, value):
         raise RuntimeError('Cannot Set Item Directly')
 
@@ -68,9 +79,32 @@ class Rotation(NDArrayBased):
         return self[:, 2].view(np.ndarray)
 
 
-# class Odometry3d(object):
-#     def __init__(self, ):
-#         pass
+ARR_ZERO3 = np.zeros(3)
+ARR_EYE3 = np.eye(3)
+
+
+class Odometry(object):
+    def __init__(self, rotation=ARR_EYE3, translation=ARR_ZERO3):
+        self.rotation, self.translation = np.asarray(rotation), np.asarray(translation)
+
+    def multiply(self, other):
+        if isinstance(other, Odometry):
+            return Odometry(self.rotation @ other.rotation,
+                            self.translation + self.rotation @ other.translation)
+        if isinstance(other, np.ndarray):
+            return self.rotation @ other + self.translation
+        raise RuntimeError(f"Unsupported datatype '{type(other)}' for multiplying")
+
+    def __matmul__(self, other):
+        return self.multiply(other)
+
+    def __imatmul__(self, other):
+        self.rotation @= other.rotation
+        self.translation += self.rotation @ other.translation
+
+    def __repr__(self):
+        return str(np.concatenate((self.rotation, np.expand_dims(self.translation, axis=1)), axis=1))
+
 
 class Quaternion(NDArrayBased):
     THRESHOLD = 1e-5
@@ -126,7 +160,6 @@ class Quaternion(NDArrayBased):
 
 
 class Rpy(NDArrayBased):
-
     @classmethod
     def preprocess(cls, matrix):
         return matrix.squeeze()
@@ -161,6 +194,16 @@ class Rpy(NDArrayBased):
     @property
     def y(self):
         return self[2].view(float)
+
+
+def rpy_velocity_from_angular(rpy, angular):
+    r, p, y = rpy
+    sr, cr = np.sin(r), np.cos(r)
+    cp, tp = np.cos(p), np.tan(p)
+    trans = np.array(((1, sr * tp, cr * tp),
+                      (0, cr, -sr),
+                      (0, sr / cp, cr / cp)))
+    return np.dot(trans, angular)
 
 
 if __name__ == '__main__':

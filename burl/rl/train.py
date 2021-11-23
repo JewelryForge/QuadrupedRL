@@ -1,31 +1,28 @@
-import time
 import os
-import attr
-from collections import deque
 import statistics
+import time
+from collections import deque
 
-from burl.rl.state import ExtendedObservation, Action
-from burl.rl.tg import LocomotionStateMachine
-from burl.sim import QuadrupedSim, TGEnv, EnvContainer
-from burl.sim.config import TaskParam
-from burl.utils import make_cls, timestamp
-from burl.alg.ppo import PPO
-from burl.rl.a2c import ActorCritic, Teacher, Critic
-
-import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
+
+from burl.alg.ppo import PPO
+from burl.rl.a2c import ActorCritic, Teacher, Critic
+from burl.rl.state import ExtendedObservation, Action
+from burl.sim import TGEnv, EnvContainer, A1, TaskParam
+from burl.utils import make_cls, timestamp
 
 
 class OnPolicyRunner:
     def __init__(self, param=TaskParam(), log_dir='log', device='cuda'):
         self.cfg = param
-        make_robot = make_cls(QuadrupedSim, on_rack=False, make_sensors=[],
+        make_robot = make_cls(A1, on_rack=False, make_sensors=[],
                               frequency=self.cfg.execution_frequency)
         make_env = make_cls(TGEnv, make_robot=make_robot, sim_frequency=self.cfg.sim_frequency,
                             action_frequency=self.cfg.action_frequency, use_gui=False)
 
         self.env = EnvContainer(self.cfg.num_envs, make_env)
+        # self.env = EnvContainerMultiProcess(self.cfg.num_envs, make_env, num_processes=4)
 
         self.device = torch.device(device)
         actor_critic = ActorCritic(Teacher(), Critic(), init_noise_std=0.1).to(self.device)
@@ -74,7 +71,9 @@ class OnPolicyRunner:
                 for i in range(self.cfg.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs)
                     self.action_list.append(actions.cpu().numpy())
+                    # now = time.time()
                     obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
+                    # print('step_time', (time.time() - now))
                     # self.torque_list.append(self.env.torques.cpu().numpy())
 
                     critic_obs = privileged_obs if privileged_obs is not None else obs

@@ -2,6 +2,23 @@ import attr
 
 
 @attr.s
+class PhysicsParam(object):
+    self_collision_enabled = attr.ib(type=bool, default=False)
+    latency = attr.ib(type=float, default=0.)
+    on_rack = attr.ib(type=bool, default=False)
+    joint_friction = attr.ib(type=float, default=0.025)
+    foot_lateral_friction = attr.ib(type=float, default=1.)
+    foot_spinning_friction = attr.ib(type=float, default=0.2)
+    foot_restitution = attr.ib(type=float, default=0.3)
+
+@attr.s
+class SimParam(object):
+    action_frequency = attr.ib(type=float, default=50.)
+    sim_frequency = attr.ib(type=float, default=400.)
+    execution_frequency = attr.ib(type=float, default=400.)
+
+
+@attr.s
 class RenderParam(object):
     rendering_enabled = attr.ib(type=bool, default=True)
     sleeping_enabled = attr.ib(type=bool, default=False)

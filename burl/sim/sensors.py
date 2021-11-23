@@ -1,5 +1,37 @@
+from abc import ABC, abstractmethod
+import numpy as np
+
 from burl.utils.transforms import Rotation, Rpy
-from burl.utils.bc import Sensor
+
+
+class Sensor(ABC):
+    quantity_name = 'quantity'
+
+    def __init__(self, obj, dim):
+        self._obj, self._dim = obj, dim
+        self._checked = False
+        self._observation = None
+
+    @property
+    def observation(self):
+        return self._observation
+
+    @property
+    def observation_dim(self):
+        return self._dim
+
+    def observe(self):
+        observation = np.asarray(self._on_observe())
+        if not self._checked:
+            if len(observation.shape) != 1 or observation.shape[0] != self._dim:
+                raise RuntimeError('Ambiguous Observation!')
+            self._checked = True
+        self._observation = observation
+        return observation
+
+    @abstractmethod
+    def _on_observe(self):
+        raise NotImplementedError
 
 
 class ContactStateSensor(Sensor):
