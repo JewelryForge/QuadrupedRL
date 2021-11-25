@@ -5,7 +5,7 @@ import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
 
-from burl.rl.state import ExtendedObservation
+from burl.rl.state import ExtendedObservation, Action
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
 from burl.sim.terrain import make_plane
@@ -129,11 +129,14 @@ class QuadrupedEnv(object):
                 self._robot.updateObservation()
         if self._gui:
             self._updateRendering()
-        return (self.makeStandardObservation(True), self.makeStandardObservation(False),
-                self._task.calculateReward(), self._robot.is_safe() or self._task.done(), {})
+        time_out = self._sim_step_counter >= self._cfg.max_sim_iterations
+        # print(not self._robot.is_safe(), self._task.done())
+        return (self.makeStandardObservation(True), self.makeStandardObservation(False), self._task.calculateReward(),
+                (not self._robot.is_safe()) or self._task.done() or time_out, {'time_out': time_out})
 
     def reset(self, **kwargs):
         completely_reset = kwargs.get('completely_reset', False)
+        self._sim_step_counter = 0
         if completely_reset:
             raise NotImplementedError
         return self._robot.reset()
@@ -172,18 +175,28 @@ class TGEnv(QuadrupedEnv):
         # print(eo.__dict__)
         return (eo.to_array() - eo.offset) * eo.scale
 
-    def step(self, action):
+    def step(self, action: Action):
         # 0 ~ 3 additional frequencies
         # 4 ~ 11 foot position residual
-        self._stm.update(action[:4])
+        self._stm.update(action.leg_frequencies)
         priori = self._stm.get_priori_trajectory() - self.robot.STANCE_HEIGHT
-        residuals = action[4:]
-        for i in range(4):
-            residuals[i * 3 + 2] += priori[i]
+        if False:
+            h2b = self._robot.getHorizontalFrameInBaseFrame(False)  # FIXME: HERE SHOULD BE TRUE
+            priori_in_base_frame = [h2b @ (0, 0, z) for z in priori]
+            residuals = action.foot_pos_residuals + np.concatenate(priori_in_base_frame)
+        else:
+            residuals = action.foot_pos_residuals
+            for i in range(4):
+                residuals[i * 3 + 2] += priori[i]
+
         # NOTICE: HIP IS USED IN PAPER
         commands = [self._robot.ik(i, residuals[i * 3: i * 3 + 3], 'shoulder') for i in range(4)]
         # TODO: COMPLETE NOISY OBSERVATION CONVERSIONS
         return super().step(np.concatenate(commands))
+
+    def reset(self, **kwargs):
+        self._stm.reset()
+        return super().reset()
 
 
 # if __name__ == '__main__':
@@ -206,8 +219,18 @@ if __name__ == '__main__':
     make_motor = make_cls(MotorSim)
     physics_param = PhysicsParam()
     physics_param.on_rack = False
-    env = TGEnv()
+    render_param = RenderParam()
+    render_param.rendering_enabled = True
+    env = QuadrupedEnv(render_param=render_param)
+    robot = env.robot
+    # env = TGEnv(render_param=render_param)
     env.initObservation()
     for _ in range(100000):
         time.sleep(1. / 240.)
-        env.step([0.] * 16)
+        act = Action()
+        # env.step(act)
+        cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
+        cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
+        cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
+        cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
+        env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))

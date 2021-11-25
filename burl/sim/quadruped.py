@@ -250,6 +250,22 @@ class Quadruped(object):
     def getBaseAxisZ(self, noisy=False):
         return Rotation.from_quaternion(self.getBaseOrientation(noisy)).Z
 
+    def getBaseRpy(self, noisy=False):
+        return Rpy.from_quaternion(self.getBaseOrientation(noisy))
+
+    def getHorizontalFrameInBaseFrame(self, noisy=False):
+        rot = Rotation.from_quaternion(self.getBaseOrientation(noisy))
+        # z = rot.Z
+        # y = unit(np.array((0, z[2], -z[1])))
+        # x = np.cross(y, z)
+        # print(x, y, z, np.array((x, y, z)).transpose(), sep='\n', end='\n\n')
+        _, _, y = self.getBaseRpy(noisy)
+        sy, cy = np.sin(y), np.cos(y)
+        x = (cy, sy, 0)
+        y = (-sy, cy, 0)
+        z = (0, 0, 1)
+        return rot.transpose() @ np.array((x, y, z)).transpose()
+
     def getBaseLinearVelocity(self):
         return self._base_twist.linear
 
@@ -437,6 +453,7 @@ class A1(Quadruped):
 if __name__ == '__main__':
     np.set_printoptions(precision=2, suppress=True, linewidth=1000)
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
+
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     planeId = p.loadURDF("plane.urdf")
     make_motor = make_cls(MotorSim)
@@ -449,10 +466,10 @@ if __name__ == '__main__':
     for _ in range(100000):
         p.stepSimulation()
         q.updateObservation()
-        time.sleep(1. / 240.)
+        time.sleep(1. / 24)
         cmd0 = q.ik(0, (0, 0, -0.3), 'shoulder')
         cmd1 = q.ik(1, (0, 0, -0.3), 'shoulder')
         cmd2 = q.ik(2, (0, 0, -0.3), 'shoulder')
         cmd3 = q.ik(3, (0, 0, -0.3), 'shoulder')
         tq = q.applyCommand(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
-        print(q.getFootPositionInWorldFrame(1))
+        print(q.getHorizontalFrameInBaseFrame())

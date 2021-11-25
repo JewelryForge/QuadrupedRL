@@ -5,11 +5,12 @@ import numpy as np
 M_PI = np.pi
 M_2_PI = 2 * M_PI
 
+
 def normalize(x):
     return x - ((x + M_PI) // M_2_PI) * M_2_PI
 
 
-def unit(x: np.ndarray):
+def unit(x: np.ndarray) -> np.ndarray:
     return x / np.linalg.norm(x)
 
 
@@ -70,5 +71,16 @@ class JointInfo(object):
 
         return ', '.join(analysis)
 
+
 def timestamp():
     return datetime.now().strftime('%b%d_%H-%M-%S')
+
+
+def random_sample(indices, batch_size):
+    indices = np.asarray(np.random.permutation(indices))
+    batches = indices[:len(indices) // batch_size * batch_size].reshape(-1, batch_size)
+    for batch in batches:
+        yield batch
+    r = len(indices) % batch_size
+    if r:
+        yield indices[-r:]

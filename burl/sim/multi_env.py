@@ -1,50 +1,49 @@
 import math
 from abc import ABC, abstractmethod
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Pipe
 from typing import Tuple, Union
 
 import numpy as np
 import torch
 
-from burl.rl.state import ExtendedObservation
+from burl.rl.state import ExtendedObservation, Action
+from burl.sim.env import TGEnv
 
 
 class EnvContainer(object):
     num_obs = ExtendedObservation.dim
     num_privileged_obs = ExtendedObservation.dim
 
-    def __init__(self, num_envs, make_env, use_gui=False, device='cuda'):
+    def __init__(self, num_envs, make_env, device='cuda'):
         self.num_envs = num_envs
         self.device = device
         self.max_episode_length = 1000
         self.episode_length_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
         self.extras = {}
         self._num_envs = num_envs
-        if use_gui:
-            self._envs = [make_env(use_gui=True)] + [make_env(use_gui=False) for _ in range(num_envs - 1)]
-        else:
-            self._envs = [make_env() for _ in range(num_envs)]
+        self._envs: list[TGEnv] = [make_env() for _ in range(num_envs)]
 
     def step(self, actions: torch.Tensor):
-        actions = actions.cpu().numpy()
-        pri_observations, observations, rewards, dones, _ = zip(*[e.step(a) for e, a in zip(self._envs, actions)])
-        self.reset(i for i in range(self.num_envs) if dones[i] is True)
+        actions = [Action.from_array(action.cpu().numpy()) for action in actions]
+        # actions = actions.cpu().numpy()
+        pri_observations, observations, rewards, dones, infos = zip(*[e.step(a) for e, a in zip(self._envs, actions)])
+        infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), {})
+                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
 
-    def reset(self, env_ids):
-        for i in env_ids:
-            # print(i, 'reset')
-            self._envs[i].reset()
+    def reset(self, dones):
+        for env, done in zip(self._envs, dones):
+            if done:
+                env.reset()
 
     def init_observations(self):
         # TO MY ASTONISHMENT, A LIST COMPREHENSION IS FASTER THAN A GENERATOR!!!
-        return (torch.Tensor(np.asarray(o)) for o in zip(*[env.init_observation() for env in self._envs]))
+        return (torch.Tensor(np.asarray(o)) for o in zip(*[env.initObservation() for env in self._envs]))
 
 
 class EnvContainerMultiProcess(EnvContainer):
     def __init__(self, num_envs, make_env, num_processes=4, device='cuda'):
-        super().__init__(num_envs, make_env, False, device)
+        super().__init__(num_envs, make_env, device)
         self._num_processes = num_processes
         self._queues = [Queue() for _ in range(num_processes)]
 
@@ -52,23 +51,55 @@ class EnvContainerMultiProcess(EnvContainer):
         self._queues[queue_id].put(self._envs[env_id].step(action))
 
     def step(self, actions: torch.Tensor):
-        actions = actions.cpu().numpy()
+        actions = [Action.from_array(action.cpu().numpy()) for action in actions]
         results = []
         for i in range(math.ceil(self.num_envs / self._num_processes)):
             processes = []
             remains = min(self.num_envs - i * self._num_processes, self._num_processes)
             for j in range(remains):
                 idx = i * self._num_processes + j
-                p = Process(self.step_in_process(actions[idx], env_id=idx, queue_id=j))
+                p = Process(target=self.step_in_process, args=(actions[idx], idx, j))
                 processes.append(p)
                 p.start()
             for p, q in zip(processes, self._queues):
-                p.join()
                 results.append(q.get())
-        pri_observations, observations, rewards, dones, _ = zip(*results)
-        self.reset(i for i in range(self.num_envs) if dones[i] is True)
+                p.join()
+        pri_observations, observations, rewards, dones, infos = zip(*results)
+        infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), {})
+                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
+
+
+class EnvContainerMultiProcess2(EnvContainer):
+    def __init__(self, num_envs, make_env, device='cuda'):
+        super().__init__(num_envs, make_env, device)
+        self._num_processes = num_envs
+        # self._input_queues: list[Queue[Action]] = [Queue() for _ in range(num_envs)]
+        # self._output_queues = [Queue() for _ in range(num_envs)]
+        self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(num_envs)])
+        self._processes = [Process(target=self.step_in_process, args=(env, conn,))
+                           for env, conn in zip(self._envs, self._conn1)]
+
+    def step_in_process(self, env, conn):
+        while True:
+            action = conn.recv()
+            obs = env.step(action)
+            print('s_bef')
+            conn.send(obs)
+            print('s_aft')
+
+    def step(self, actions: torch.Tensor):
+        actions = [Action.from_array(action.cpu().numpy()) for action in actions]
+        print('here1')
+        for action, conn in zip(actions, self._conn2):
+            conn.send(action)
+            print('here2', action)
+        results = [conn.recv() for conn in self._conn2]
+        print('here3')
+        pri_observations, observations, rewards, dones, infos = zip(*results)
+        infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
+        return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
+                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
 
 
 class VecEnv(ABC):

@@ -7,25 +7,24 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from burl.alg.ppo import PPO
-from burl.rl.a2c import ActorCritic, Teacher, Critic
+from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 from burl.rl.state import ExtendedObservation, Action
-from burl.sim import TGEnv, EnvContainer, A1, TaskParam
-from burl.utils import make_cls, timestamp
+from burl.sim import TGEnv, EnvContainer, A1, EnvContainerMultiProcess2
+from burl.utils import make_cls, timestamp, TaskParam
 
 
 class OnPolicyRunner:
     def __init__(self, param=TaskParam(), log_dir='log', device='cuda'):
-        self.cfg = param
-        make_robot = make_cls(A1, on_rack=False, make_sensors=[],
-                              frequency=self.cfg.execution_frequency)
-        make_env = make_cls(TGEnv, make_robot=make_robot, sim_frequency=self.cfg.sim_frequency,
-                            action_frequency=self.cfg.action_frequency, use_gui=False)
+        self.cfg = param.train_param
+        make_robot = make_cls(A1, physics_param=param.sim_param)
+        make_env = make_cls(TGEnv, make_robot=make_robot,
+                            sim_param=param.sim_param, render_param=param.render_param)
 
         self.env = EnvContainer(self.cfg.num_envs, make_env)
-        # self.env = EnvContainerMultiProcess(self.cfg.num_envs, make_env, num_processes=4)
+        # self.env = EnvContainerMultiProcess2(self.cfg.num_envs, make_env)
 
         self.device = torch.device(device)
-        actor_critic = ActorCritic(Teacher(), Critic(), init_noise_std=0.1).to(self.device)
+        actor_critic = ActorCritic(ActorTeacher(), Critic(), init_noise_std=self.cfg.init_noise_std).to(self.device)
         self.alg = PPO(actor_critic, device=self.device)
 
         # init storage and model
@@ -49,14 +48,13 @@ class OnPolicyRunner:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf,
                                                              high=int(self.env.max_episode_length))
         privileged_obs, obs = self.env.init_observations()
-        # privileged_obs = self.env.get_privileged_observations()
         critic_obs = privileged_obs if privileged_obs is not None else obs
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         ep_infos = []
-        rewbuffer = deque(maxlen=100)
-        lenbuffer = deque(maxlen=100)
+        rewbuffer = deque(maxlen=10)
+        lenbuffer = deque(maxlen=10)
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
 
@@ -70,16 +68,16 @@ class OnPolicyRunner:
             with torch.inference_mode():
                 for i in range(self.cfg.num_steps_per_env):
                     actions = self.alg.act(obs, critic_obs)
-                    self.action_list.append(actions.cpu().numpy())
-                    # now = time.time()
                     obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
-                    # print('step_time', (time.time() - now))
+                    # print(dones)
                     # self.torque_list.append(self.env.torques.cpu().numpy())
-
                     critic_obs = privileged_obs if privileged_obs is not None else obs
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(
                         self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
+                    self.env.reset(dones)
+
+                    self.action_list.append(actions.cpu().numpy())
 
                     if self.log_dir is not None:
                         # Book keeping

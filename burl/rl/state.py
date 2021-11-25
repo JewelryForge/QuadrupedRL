@@ -9,6 +9,9 @@ class ArrayAttr(object):
         super().__setattr__(key, np.asarray(value, dtype=float))
 
 
+freq_scale = np.pi / 200
+
+
 class ProprioceptiveObservation(ArrayAttr):
     dim = 60
 
@@ -30,12 +33,12 @@ class ProprioceptiveObservation(ArrayAttr):
         zero(8), (1.5,) * 4  # ftg phases & frequencies
     ))
 
-    scale = np.concatenate((  # NOTICE: differ from paper
-        one(3), (0.2,) * 3,  # command & gravity_vector
+    scale = np.concatenate((
+        (1.5,) * 3, (5.0,) * 3,  # command & gravity_vector
         (2.,) * 6, (2.0,) * 12,  # base twist & joint pos
         # FIXME: why joint_prev_pos_err so large
         (0.5, 0.4, 0.3) * 4, (6.5, 4.5, 3.5) * 4,  # joint vel &  joint_prev_pos_err
-        one(8), one(4)  # ftg phases & frequencies; latter 400/pi in paper, why?
+        (1.5,) * 8, (2.0 / freq_scale,) * 4  # ftg phases & frequencies; latter 400/pi in paper, why?
     ))
 
     def to_array(self):
@@ -57,37 +60,41 @@ class Observation(ProprioceptiveObservation):
 
     def __init__(self):
         super(Observation, self).__init__()
-        self.base_frequency = np.array((1.25,))
         self.joint_pos_err_his = zero(24)
         self.joint_vel_his = zero(24)
         self.joint_pos_target = zero(12)
         self.joint_prev_pos_target = zero(12)
+        self.base_frequency = np.array((1.25,))
 
-    offset = np.concatenate(
-        (ProprioceptiveObservation.offset,
-         (1.25,), zero(24), zero(24),  # base_frequency & joint_pos_err_his & joint_vel_his
-         (0, 0.723, -1.445) * 8,  # joint_pos_target * 2
-         ))
+    offset = np.concatenate((
+        ProprioceptiveObservation.offset,
+        zero(24), zero(24),  # joint_pos_err_his & joint_vel_his
+        (0, 0.723, -1.445) * 8,  # joint_pos_target * 2
+        (1.25,)  # base_frequency
+    ))
 
     scale = np.concatenate((
         ProprioceptiveObservation.scale,
-        (1,), (5.,) * 24, (0.5, 0.4, 0.3) * 8,  # base_frequency & joint_pos_err_his & joint_vel_his
+        (5.,) * 24, (0.5, 0.4, 0.3) * 8,  # joint_pos_err_his & joint_vel_his
         (2.0,) * 24,  # joint_pos_target * 2
+        (1,),  # base_frequency NOTICE: differ from paper
     ))
 
     def to_array(self):
         return np.concatenate((
             super().to_array(),
-            self.base_frequency,
             self.joint_pos_err_his,
             self.joint_vel_his,
             self.joint_pos_target,
-            self.joint_prev_pos_target
+            self.joint_prev_pos_target,
+            self.base_frequency
         ))
 
 
 class PrivilegedInformation(object):
     dim = 79
+    TERRAIN_CLIP = 0.25
+    FORCE_CLIP = np.array((25, 25, 50) * 4)
 
     offset = np.concatenate((
         (0,) * 36, (0, 0, 1) * 4,  # terrain scan & normal
@@ -99,7 +106,7 @@ class PrivilegedInformation(object):
     scale = np.concatenate((
         (10,) * 36, (1, 1, 1) * 4,  # terrain scan & normal
         (2,) * 12,  # contact states
-        (0.01, 0.01, 0.2) * 4,  # contact forces
+        (0.01, 0.01, 0.02) * 4,  # contact forces
         (1.,) * 4, (1.,) * 3  # friction & disturbance
     ))
 
@@ -113,10 +120,10 @@ class PrivilegedInformation(object):
 
     def to_array(self):
         return np.concatenate((
-            self.terrain_scan,
+            np.clip(self.terrain_scan, -self.TERRAIN_CLIP, self.TERRAIN_CLIP),
             self.terrain_normal,
             self.contact_states,
-            self.foot_contact_forces,
+            np.clip(self.foot_contact_forces, -self.FORCE_CLIP, self.FORCE_CLIP),
             self.foot_friction_coeffs,
             self.external_disturbance
         ))
@@ -145,9 +152,19 @@ class Action:
         self.leg_frequencies = zero(4)
         self.foot_pos_residuals = zero(12)
 
-    def from_array(self, arr: np.ndarray):
-        self.leg_frequencies = arr[:4]
-        self.foot_pos_residuals = arr[4:]
+    offset = np.zeros(16)
+
+    scale = np.concatenate((
+        (0.5 * freq_scale,) * 4, (0.1, 0.1, 0.025) * 4
+    ))
+
+    @classmethod
+    def from_array(cls, arr: np.ndarray):
+        arr = arr * cls.scale + cls.offset
+        action = Action()
+        action.leg_frequencies = arr[:4]
+        action.foot_pos_residuals = arr[4:]
+        return action
 
 
 class MotorState(ArrayAttr):
