@@ -40,6 +40,9 @@ class EnvContainer(object):
         # TO MY ASTONISHMENT, A LIST COMPREHENSION IS FASTER THAN A GENERATOR!!!
         return (torch.Tensor(np.asarray(o)) for o in zip(*[env.initObservation() for env in self._envs]))
 
+    def close(self):
+        pass
+
 
 class EnvContainerMultiProcess(EnvContainer):
     def __init__(self, num_envs, make_env, num_processes=4, device='cuda'):
@@ -74,32 +77,51 @@ class EnvContainerMultiProcess2(EnvContainer):
     def __init__(self, num_envs, make_env, device='cuda'):
         super().__init__(num_envs, make_env, device)
         self._num_processes = num_envs
-        # self._input_queues: list[Queue[Action]] = [Queue() for _ in range(num_envs)]
-        # self._output_queues = [Queue() for _ in range(num_envs)]
         self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(num_envs)])
         self._processes = [Process(target=self.step_in_process, args=(env, conn,))
                            for env, conn in zip(self._envs, self._conn1)]
+        for p in self._processes:
+            p.start()
 
     def step_in_process(self, env, conn):
+        obs = env.initObservation()
+        conn.send(obs)
         while True:
             action = conn.recv()
-            obs = env.step(action)
-            print('s_bef')
-            conn.send(obs)
-            print('s_aft')
+            if action == 'reset':
+                env.reset()
+            elif isinstance(action, Action):
+                obs = env.step(action)
+                conn.send(obs)
+            elif action is None:
+                return
+            else:
+                raise RuntimeError(f'Unknown action {action}')
 
     def step(self, actions: torch.Tensor):
         actions = [Action.from_array(action.cpu().numpy()) for action in actions]
-        print('here1')
         for action, conn in zip(actions, self._conn2):
             conn.send(action)
-            print('here2', action)
         results = [conn.recv() for conn in self._conn2]
-        print('here3')
         pri_observations, observations, rewards, dones, infos = zip(*results)
         infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
                 torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
+
+    def close(self):
+        for conn in self._conn2:
+            conn.send(None)
+        for proc in self._processes:
+            proc.join()
+
+    def init_observations(self):
+        results = [conn.recv() for conn in self._conn2]
+        return (torch.Tensor(np.asarray(o)) for o in zip(*results))
+
+    def reset(self, dones):
+        for conn, done in zip(self._conn2, dones):
+            if done:
+                conn.send('reset')
 
 
 class VecEnv(ABC):

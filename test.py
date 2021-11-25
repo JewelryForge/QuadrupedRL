@@ -47,7 +47,7 @@ def main(model_dir):
 
 if __name__ == '__main__':
     log_dir = 'log/' + sorted(os.listdir('log'))[-1]
-    recent_log = 1400
-    # recent_log = max(int(m.lstrip('model_').rstrip('.pt')) for m in os.listdir(log_dir) if m.startswith('model'))
+    # recent_log = 1400
+    recent_log = max(int(m.lstrip('model_').rstrip('.pt')) for m in os.listdir(log_dir) if m.startswith('model'))
     main(os.path.join(log_dir, f'model_{recent_log}.pt'))
     # print(sorted())

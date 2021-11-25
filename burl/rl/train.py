@@ -20,8 +20,8 @@ class OnPolicyRunner:
         make_env = make_cls(TGEnv, make_robot=make_robot,
                             sim_param=param.sim_param, render_param=param.render_param)
 
-        self.env = EnvContainer(self.cfg.num_envs, make_env)
-        # self.env = EnvContainerMultiProcess2(self.cfg.num_envs, make_env)
+        # self.env = EnvContainer(self.cfg.num_envs, make_env)
+        self.env = EnvContainerMultiProcess2(self.cfg.num_envs, make_env)
 
         self.device = torch.device(device)
         actor_critic = ActorCritic(ActorTeacher(), Critic(), init_noise_std=self.cfg.init_noise_std).to(self.device)

@@ -15,7 +15,7 @@ class BasicTask(object):
         )
 
         self._weights = (
-            0.06, 0.05, 0.03, 0.02, 2e-5
+            0.08, 0.05, 0.03, 0.02, 2e-5
         )
 
         # self._weights = (
@@ -40,10 +40,10 @@ class BasicTask(object):
             self._rewards[4](torques)
         )
         weighted_rewards = [r * w for r, w in zip(rewards, self._weights)]
-        print(np.array(linear), np.array(angular))
-        print(np.array(rewards))
-        print(np.array(weighted_rewards))
-        print()
+        # print(np.array(linear), np.array(angular))
+        # print(np.array(rewards))
+        # print(np.array(weighted_rewards))
+        # print()
         return sum(weighted_rewards)
 
     def reset(self):
