@@ -11,7 +11,7 @@ from pybullet_utils import bullet_client
 
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState
 from burl.sim.motor import MotorSim
-from burl.utils import normalize, unit, JointInfo, make_cls, PhysicsParam
+from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg
 from burl.utils.transforms import Rpy, Rotation, Odometry
 
 TP_ZERO3 = (0., 0., 0.)
@@ -34,18 +34,19 @@ class Quadruped(object):
     STANCE_POSTURE: np.ndarray
     TORQUE_LIMITS: np.ndarray
 
-    def __init__(self, sim_env=pybullet, frequency=400, make_motor=MotorSim, physics_param=PhysicsParam()):
-        self._env, self._frequency, self._cfg = sim_env, frequency, physics_param
-        self._motor: MotorSim = make_motor(self, num=12, frequency=frequency)
-        assert self._cfg.latency >= 0
+    def __init__(self, sim_env=pybullet, make_motor=MotorSim):
+        self._env, self._frequency = sim_env, g_cfg.execution_frequency
+        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
+        assert g_cfg.latency >= 0
+        self._latency = g_cfg.latency
 
         self._resetStates()
 
-        self._latency_steps = int(self._cfg.latency * self._frequency)
+        self._latency_steps = int(self._latency * g_cfg.execution_frequency)
         self._quadruped = self._loadRobot()
         self._analyseModelJoints()
         self._resetPosture()
-        self.setPhysicsParams(physics_param)
+        self.setPhysicsParams()
 
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
@@ -60,11 +61,11 @@ class Quadruped(object):
         self._step_counter = 0
 
     def _loadRobot(self):
-        pos = self.INIT_RACK_POSITION if self._cfg.on_rack else self.INIT_POSITION
+        pos = self.INIT_RACK_POSITION if g_cfg.on_rack else self.INIT_POSITION
         orn = self.INIT_ORIENTATION
-        flags = self._env.URDF_USE_SELF_COLLISION if self._cfg.self_collision_enabled else 0
+        flags = self._env.URDF_USE_SELF_COLLISION if g_cfg.self_collision_enabled else 0
         robot = self._env.loadURDF(self.URDF_FILE, pos, orn, flags=flags)
-        if self._cfg.on_rack:
+        if g_cfg.on_rack:
             self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                        jointType=self._env.JOINT_FIXED,
                                        jointAxis=(0, 0, 0), parentFramePosition=(0, 0, 0),
@@ -101,16 +102,16 @@ class Quadruped(object):
         for i in range(12):
             self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i])
 
-    def setPhysicsParams(self, params):
+    def setPhysicsParams(self, **kwargs):
         # for m in self._motor_ids:
         #     self._env.changeDynamics(self, -1, linearDamping=0, angularDamping=0)
 
         for f in self._foot_ids:
-            self._env.changeDynamics(self._quadruped, f, spinningFriction=params.foot_spinning_friction,
-                                     lateralFriction=params.foot_lateral_friction)
+            self._env.changeDynamics(self._quadruped, f, spinningFriction=g_cfg.foot_spinning_friction,
+                                     lateralFriction=g_cfg.foot_lateral_friction)
         self._env.setPhysicsEngineParameter(enableConeFriction=0)
         self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
-                                            forces=(params.joint_friction,) * len(self._motor_ids))
+                                            forces=(g_cfg.joint_friction,) * len(self._motor_ids))
         for leg in range(4):
             self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
 
@@ -135,7 +136,7 @@ class Quadruped(object):
         self._observation_history.clear()
         self._observation_noisy_history.clear()
         self._command_history.clear()
-        if self._cfg.on_rack:
+        if g_cfg.on_rack:
             self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
             self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
         elif at_current_state:
@@ -333,7 +334,7 @@ class Quadruped(object):
 
     def _getIndexFromMoment(self, moment):
         assert moment < 0
-        return -1 - int((self._cfg.latency - moment) * self._frequency)
+        return -1 - int((self._latency - moment) * self._frequency)
 
     def getCmdHistoryFromMoment(self, moment):
         return self.getCmdHistoryFromIndex(self._getIndexFromMoment(moment))

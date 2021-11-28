@@ -1,7 +1,7 @@
 import torch
 
 from burl.alg.ac import ActorCritic
-from burl.utils.config import AlgParam
+from burl.utils import g_dev, g_cfg
 
 use_gae = True
 
@@ -24,32 +24,29 @@ class RolloutStorage(object):
             self.__init__()
 
     def __init__(self, num_envs, num_transitions_per_env,
-                 obs_shape, privileged_obs_shape, actions_shape, device='cuda'):
-
-        self.device = device
-
+                 obs_shape, privileged_obs_shape, actions_shape):
         self.obs_shape = obs_shape
         self.privileged_obs_shape = privileged_obs_shape
         self.actions_shape = actions_shape
 
         # Core
-        self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=self.device)
+        self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=g_dev)
         if privileged_obs_shape[0] is not None:
             self.privileged_observations = torch.zeros(num_transitions_per_env, num_envs,
-                                                       *privileged_obs_shape, device=self.device)
+                                                       *privileged_obs_shape, device=g_dev)
         else:
             self.privileged_observations = None
-        self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
-        self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
+        self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
+        self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=g_dev)
+        self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev).byte()
 
         # For PPO
-        self.actions_log_prob = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.values = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.returns = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
-        self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        self.actions_log_prob = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
+        self.values = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
+        self.returns = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
+        self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
+        self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=g_dev)
+        self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=g_dev)
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -103,7 +100,7 @@ class RolloutStorage(object):
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
         batch_size = self.num_envs * self.num_transitions_per_env
         mini_batch_size = batch_size // num_mini_batches
-        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)
+        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=g_dev)
 
         observations = self.observations.flatten(0, 1)
         if self.privileged_observations is not None:
@@ -141,18 +138,13 @@ class RolloutStorage(object):
 class PPO(object):
     actor_critic: ActorCritic
 
-    def __init__(self, actor_critic, alg_param: AlgParam, device):
-        self.cfg = alg_param
-        self.device = device
+    def __init__(self, actor_critic):
         self.actor_critic = actor_critic
-        self.actor_critic.to(self.device)
-        self.storage = None  # initialized later
-        self.optimizer = torch.optim.Adam(self.actor_critic.parameters(), lr=self.cfg.learning_rate)
+        self.actor_critic.to(g_dev)
+        self.optimizer = torch.optim.Adam(self.actor_critic.parameters(), lr=g_cfg.learning_rate)
         self.transition = RolloutStorage.Transition()
-
-    def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape):
-        self.storage = RolloutStorage(num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape,
-                                      action_shape, self.device)
+        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (g_cfg.p_obs_dim,), (g_cfg.p_obs_dim,),
+                                      (g_cfg.action_dim,))
 
     def test_mode(self):
         self.actor_critic.test()
@@ -178,8 +170,8 @@ class PPO(object):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
         if 'time_out' in infos:
-            self.transition.rewards += self.cfg.gamma * torch.squeeze(
-                self.transition.values * infos['time_out'].unsqueeze(1).to(self.device), 1)
+            self.transition.rewards += g_cfg.gamma * torch.squeeze(
+                self.transition.values * infos['time_out'].unsqueeze(1).to(g_dev), 1)
 
         # Record the transition
         self.storage.add_transitions(self.transition)
@@ -188,12 +180,12 @@ class PPO(object):
 
     def compute_returns(self, last_critic_obs):
         last_values = self.actor_critic.evaluate(last_critic_obs).detach()
-        self.storage.compute_returns(last_values, self.cfg.gamma, self.cfg.lambda_)
+        self.storage.compute_returns(last_values, g_cfg.gamma, g_cfg.lambda_)
 
     def update(self):
         mean_value_loss = 0
         mean_surrogate_loss = 0
-        cfg = self.cfg
+        cfg = g_cfg
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(cfg.num_mini_batches, cfg.num_learning_epochs)
         else:

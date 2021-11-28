@@ -11,16 +11,14 @@ from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
 from burl.sim.terrain import make_plane
 from burl.rl.tg import LocomotionStateMachine
-from burl.utils import make_cls, RenderParam, SimParam, PhysicsParam
+from burl.utils import make_cls, g_cfg
 from burl.rl.task import BasicTask
 from burl.utils.transforms import Rpy
 
 
 class QuadrupedEnv(object):
-    def __init__(self, make_robot=A1, make_task=BasicTask,
-                 sim_param=SimParam(), render_param=RenderParam()):
-        self._cfg, self._render_cfg = sim_param, render_param
-        self._gui = render_param.rendering_enabled
+    def __init__(self, make_robot=A1, make_task=BasicTask):
+        self._gui = g_cfg.rendering_enabled
         if self._gui:
             self._env = bullet_client.BulletClient(pybullet.GUI)
             self._initRendering()
@@ -30,18 +28,16 @@ class QuadrupedEnv(object):
             self._env = pybullet
 
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
-        self._robot: Quadruped = make_robot(sim_env=self._env, frequency=sim_param.execution_frequency)
+        self._robot: Quadruped = make_robot(sim_env=self._env)
         self._task = make_task(self)
         # TODO: RANDOMLY CHANGE TERRAIN
         self._terrain_generator = make_plane
-        self._sim_frequency = sim_param.sim_frequency
-        self._action_frequency = sim_param.action_frequency
-        assert self._sim_frequency >= sim_param.execution_frequency >= self._action_frequency
+        assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
         self._terrain = self._terrain_generator(self._env)
         self._setPhysicsParameters()
-        self._num_action_repeats = int(self._sim_frequency / self._action_frequency)
-        self._num_execution_repeats = int(self._sim_frequency / sim_param.execution_frequency)
+        self._num_action_repeats = int(g_cfg.sim_frequency / g_cfg.action_frequency)
+        self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
         print(f'Action Repeats for {self._num_action_repeats} time(s)')
         print(f'Execution Repeats For {self._num_execution_repeats} time(s)')
         self._sim_step_counter = 0
@@ -67,24 +63,24 @@ class QuadrupedEnv(object):
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
 
-        if self._render_cfg.egl_rendering:  # TODO: WHAT DOES THE PLUGIN DO?
+        if g_cfg.egl_rendering:  # TODO: WHAT DOES THE PLUGIN DO?
             self._env.loadPlugin('eglRendererPlugin')
         self._last_frame_time = time.time()
 
     def _setPhysicsParameters(self):
         # self._env.resetSimulation()
         # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
-        self._env.setTimeStep(1 / self._sim_frequency)
+        self._env.setTimeStep(1 / g_cfg.sim_frequency)
         self._env.setGravity(0, 0, -9.8)
 
     def _updateRendering(self):
         if (current := self._env.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
             self._reset_counter = current
             self.reset()
-        if self._render_cfg.sleeping_enabled:
+        if g_cfg.sleeping_enabled:
             time_spent = time.time() - self._last_frame_time
             self._last_frame_time = time.time()
-            time_to_sleep = self._num_action_repeats / self._sim_frequency - time_spent
+            time_to_sleep = self._num_action_repeats / g_cfg.sim_frequency - time_spent
             if time_to_sleep > 0:
                 time.sleep(time_to_sleep)
         # Keep the previous orientation of the camera set by the user.
@@ -132,7 +128,7 @@ class QuadrupedEnv(object):
                 self._robot.updateObservation()
         if self._gui:
             self._updateRendering()
-        time_out = self._sim_step_counter >= self._cfg.max_sim_iterations
+        time_out = self._sim_step_counter >= g_cfg.max_sim_iterations
         info = {'time_out': time_out, 'torques': torques}
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
@@ -154,13 +150,7 @@ class QuadrupedEnv(object):
         if len(self._action_buffer) < 3:
             return 0
         actions = [self._action_buffer[-i - 1] for i in range(3)]
-        m = np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * self._cfg.action_frequency ** 2
-        # if m > 100:
-        #     print(m)
-        #     print(*actions, sep='\n', end='\n')
-        #     print((actions[0] - 2 * actions[1] + actions[2]) * self._cfg.action_frequency ** 2)
-        #     print()
-        return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * self._cfg.action_frequency ** 2
+        return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
 
     def getTerrainScan(self, x, y, orientation):
         interval = 0.1
@@ -184,7 +174,7 @@ class QuadrupedEnv(object):
 class TGEnv(QuadrupedEnv):
     def __init__(self, **kwargs):
         super(TGEnv, self).__init__(**kwargs)
-        self._stm = LocomotionStateMachine(1 / self._action_frequency)
+        self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency)
 
     def makeStandardObservation(self, privileged=True):
         eo: ExtendedObservation = super().makeStandardObservation(privileged)

@@ -167,4 +167,6 @@ class TorquePenalty(Reward):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
+    r = LinearVelocityReward()
+    print(r.__class__.__name__)
     pass

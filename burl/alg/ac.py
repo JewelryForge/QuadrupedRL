@@ -2,28 +2,32 @@ import torch
 from torch import nn
 
 from burl.rl.state import PrivilegedInformation, Observation, Action, ExtendedObservation
+from burl.utils import g_cfg
 
 
 class ActorTeacher(nn.Module):
     NUM_FEATURES = (72, 64, 256, 128, 64)
+    INPUT_DIM = ExtendedObservation.dim
+    OUTPUT_DIM = Action.dim
+    activation = nn.Tanh
 
     def __init__(self):
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Linear(PrivilegedInformation.dim, self.NUM_FEATURES[0]),
-            nn.Tanh(),
+            self.activation(),
             nn.Linear(self.NUM_FEATURES[0], self.NUM_FEATURES[1]),
-            nn.Tanh()
+            self.activation()
         )
 
         self.decoder = nn.Sequential(
             nn.Linear(Observation.dim + self.NUM_FEATURES[1], self.NUM_FEATURES[2]),
-            nn.Tanh(),
+            self.activation(),
             nn.Linear(self.NUM_FEATURES[2], self.NUM_FEATURES[3]),
-            nn.Tanh(),
+            self.activation(),
             nn.Linear(self.NUM_FEATURES[3], self.NUM_FEATURES[4]),
-            nn.Tanh(),
-            nn.Linear(self.NUM_FEATURES[4], Action.dim)
+            self.activation(),
+            nn.Linear(self.NUM_FEATURES[4], self.OUTPUT_DIM)
         )
 
     def forward(self, x):
@@ -35,16 +39,19 @@ class ActorTeacher(nn.Module):
 
 class Critic(nn.Module):
     NUM_FEATURES = (256, 128, 64)
+    INPUT_DIM = ExtendedObservation.dim
+    OUTPUT_DIM = 1
+    activation = nn.ELU
 
     def __init__(self):
         super().__init__()
         self.layers = nn.Sequential(
             nn.Linear(ExtendedObservation.dim, self.NUM_FEATURES[0]),
-            nn.ELU(),
+            self.activation(),
             nn.Linear(self.NUM_FEATURES[0], self.NUM_FEATURES[1]),
-            nn.ELU(),
+            self.activation(),
             nn.Linear(self.NUM_FEATURES[1], self.NUM_FEATURES[2]),
-            nn.ELU(),
+            self.activation(),
             nn.Linear(self.NUM_FEATURES[2], 1)
         )
 
@@ -55,27 +62,19 @@ class Critic(nn.Module):
 class ActorCritic(nn.Module):
     is_recurrent = False
 
-    def __init__(self, actor, critic, num_actions=16, init_noise_std=1.0, **kwargs):
-        if kwargs:
-            print("ActorCritic got unexpected arguments, which will be ignored:",
-                  [key for key in kwargs.keys()])
+    def __init__(self, actor: ActorTeacher, critic: Critic):
         super(ActorCritic, self).__init__()
 
         # Policy and value function
         self.actor, self.critic = actor, critic
-
         print(f"Actor: {self.actor}")
         print(f"Critic: {self.critic}")
 
         # Action noise
-        self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
+        self.std = nn.Parameter(g_cfg.init_noise_std * torch.ones(actor.OUTPUT_DIM))
         self.distribution = None
-        # disable args validation for speedup
         torch.distributions.Normal.set_default_validate_args = False
 
-        # seems that we get better performance without init
-        # self.init_memory_weights(self.memory_a, 0.001, 0.)
-        # self.init_memory_weights(self.memory_c, 0.001, 0.)
 
     @staticmethod
     def init_weights(sequential, scales):  # not used at the moment

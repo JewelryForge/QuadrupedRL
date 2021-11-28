@@ -1,21 +1,15 @@
-import logging
 import math
-from abc import ABC, abstractmethod
 from multiprocessing import Process, Queue, Pipe
-from typing import Tuple, Union
 
 import numpy as np
 import torch
 
-from burl.rl.state import ExtendedObservation, Action
+from burl.rl.state import Action
 from burl.sim.env import TGEnv
 
 
 class EnvContainer(object):
-    num_obs = ExtendedObservation.dim
-    num_privileged_obs = ExtendedObservation.dim
-
-    def __init__(self, num_envs, make_env, device='cuda'):
+    def __init__(self, num_envs, make_env):
         self.num_envs = num_envs
         self.device = device
         self.max_episode_length = 1000
@@ -52,8 +46,8 @@ class EnvContainer(object):
 
 
 class EnvContainerMultiProcess(EnvContainer):
-    def __init__(self, num_envs, make_env, num_processes=4, device='cuda'):
-        super().__init__(num_envs, make_env, device)
+    def __init__(self, num_envs, make_env, num_processes=4):
+        super().__init__(num_envs, make_env)
         self._num_processes = num_processes
         self._queues = [Queue() for _ in range(num_processes)]
 
@@ -78,8 +72,8 @@ class EnvContainerMultiProcess(EnvContainer):
 
 
 class EnvContainerMultiProcess2(EnvContainer):
-    def __init__(self, num_envs, make_env, device='cuda'):
-        super().__init__(num_envs, make_env, device)
+    def __init__(self, num_envs, make_env):
+        super().__init__(num_envs, make_env)
         self._num_processes = num_envs
         self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(num_envs)])
         self._processes = [Process(target=self.step_in_process, args=(env, conn,))
@@ -87,7 +81,8 @@ class EnvContainerMultiProcess2(EnvContainer):
         for p in self._processes:
             p.start()
 
-    def step_in_process(self, env, conn):
+    @staticmethod
+    def step_in_process(env, conn):
         obs = env.initObservation()
         conn.send(obs)
         while True:
@@ -123,35 +118,3 @@ class EnvContainerMultiProcess2(EnvContainer):
         for conn, done in zip(self._conn2, dones):
             if done:
                 conn.send('reset')
-
-
-class VecEnv(ABC):
-    num_envs: int
-    num_obs: int
-    num_privileged_obs: int
-    num_actions: int
-    max_episode_length: int
-    privileged_obs_buf: torch.Tensor
-    obs_buf: torch.Tensor
-    rew_buf: torch.Tensor
-    reset_buf: torch.Tensor
-    episode_length_buf: torch.Tensor  # current episode duration
-    extras: dict
-    device: torch.device
-
-    @abstractmethod
-    def step(self, actions: torch.Tensor) -> Tuple[
-        torch.Tensor, Union[torch.Tensor, None], torch.Tensor, torch.Tensor, dict]:
-        pass
-
-    @abstractmethod
-    def reset(self, env_ids: Union[list, torch.Tensor]):
-        pass
-
-    @abstractmethod
-    def get_observations(self) -> torch.Tensor:
-        pass
-
-    @abstractmethod
-    def get_privileged_observations(self) -> Union[torch.Tensor, None]:
-        pass

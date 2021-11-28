@@ -1,63 +1,86 @@
-from attr import ib, attrs
+import torch
 
-@attrs
+from burl.rl.state import ExtendedObservation, Action
+
+
 class PhysicsParam(object):
-    self_collision_enabled = ib(type=bool, default=False)
-    latency = ib(type=float, default=0.)
-    on_rack = ib(type=bool, default=False)
-    joint_friction = ib(type=float, default=0.025)
-    foot_lateral_friction = ib(type=float, default=1.)
-    foot_spinning_friction = ib(type=float, default=0.2)
-    foot_restitution = ib(type=float, default=0.3)
-
-
-@attrs
-class SimParam(PhysicsParam):
-    action_frequency = ib(type=float, default=50.)
-    sim_frequency = ib(type=float, default=400.)
-    execution_frequency = ib(type=float, default=400.)
-    max_sim_iterations = ib(type=int, default=8000)  # 20s
-
-
-@attrs
-class RenderParam(object):
-    rendering_enabled = ib(type=bool, default=False)
-    sleeping_enabled = ib(type=bool, default=False)
-    camera_distance = ib(type=float, default=1.0)
-    camera_yaw = ib(type=float, default=0)
-    camera_pitch = ib(type=float, default=-30)
-    render_width = ib(type=int, default=480)
-    render_height = ib(type=int, default=360)
-    egl_rendering = ib(type=bool, default=False)
-
-@attrs
-class AlgParam(object):
-    num_steps_per_env = ib(type=int, default=128)
-    num_learning_epochs = ib(type=int, default=4)
-    num_mini_batches = ib(type=int, default=1)
-    clip_param = ib(type=float, default=0.2)
-    gamma = ib(type=float, default=0.995)
-    lambda_ = ib(type=float, default=0.95)
-    value_loss_coef = ib(type=float, default=1.0)
-    entropy_coef = ib(type=float, default=0.0)
-    learning_rate = ib(type=float, default=1e-4)
-    max_grad_norm = ib(type=float, default=1.0)
-    use_clipped_value_loss = ib(type=bool, default=True)
-    schedule = ib(type=str, default='fixed')
-    desired_kl = ib(type=float, default=0.01)
-
-
-@attrs
-class TrainParam(AlgParam):
-    num_iterations = ib(type=int, default=1500)
-    num_envs = ib(type=int, default=4)
-    init_noise_std = ib(type=float, default=0.05)
-    save_interval = ib(type=int, default=50)
-    device = ib(type=str, default='cuda')
-
-
-class TaskParam(object):
     def __init__(self):
-        self.sim_param = SimParam()
-        self.train_param = TrainParam()
-        self.render_param = RenderParam()
+        self.self_collision_enabled = False
+        self.latency = 0.
+        self.on_rack = False
+        self.joint_friction = 0.025
+        self.foot_lateral_friction = 1.0
+        self.foot_spinning_friction = 0.2
+        self.foot_restitution = 0.3
+
+
+class SimParam(PhysicsParam):
+    def __init__(self):
+        super().__init__()
+        self.action_frequency = 50.0
+        self.sim_frequency = 400.
+        self.execution_frequency = 400.
+        self.max_sim_iterations = 8000  # 20s
+
+
+class RenderParam(object):
+    def __init__(self):
+        self.rendering_enabled = False
+        self.sleeping_enabled = False
+        self.egl_rendering = False
+
+
+class AlgParam(object):
+    def __init__(self):
+        self.storage_len = 256
+        self.num_learning_epochs = 4
+        self.num_mini_batches = 1
+        self.clip_param = 0.2
+        self.gamma = 0.995
+        self.lambda_ = 0.95
+        self.value_loss_coef = 1.0
+        self.entropy_coef = 0.
+        self.learning_rate = 1e-4
+        self.max_grad_norm = 1.0
+        self.use_clipped_value_loss = True
+        self.schedule = 'fixed'
+        self.desired_kl = 0.01
+
+
+class TrainParam(AlgParam):
+    def __init__(self):
+        super().__init__()
+        self.num_iterations = 10000
+        self.num_envs = 4
+        self.init_noise_std = 0.05
+        self.save_interval = 50
+        self.obs_dim = ExtendedObservation.dim
+        self.p_obs_dim = ExtendedObservation.dim
+        self.action_dim = Action.dim
+        self.device = torch.device('cuda')
+        self.log_dir = 'log'
+
+
+class TaskParam(SimParam, RenderParam, TrainParam):
+    def __init__(self):
+        SimParam.__init__(self)
+        RenderParam.__init__(self)
+        TrainParam.__init__(self)
+
+    def __setattr__(self, key, value):
+        object.__setattr__(self, key, value)
+        if key == 'device':
+            try:
+                global g_dev
+                g_dev = g_cfg.device
+            except NameError:
+                pass
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, "_instance"):
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+
+g_cfg = TaskParam()
+g_dev = g_cfg.device
