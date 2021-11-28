@@ -67,8 +67,6 @@ class ActorCritic(nn.Module):
 
         # Policy and value function
         self.actor, self.critic = actor, critic
-        print(f"Actor: {self.actor}")
-        print(f"Critic: {self.critic}")
 
         # Action noise
         self.std = nn.Parameter(g_cfg.init_noise_std * torch.ones(actor.OUTPUT_DIM))

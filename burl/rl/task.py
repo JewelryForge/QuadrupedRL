@@ -2,7 +2,6 @@ from collections import deque
 import numpy as np
 
 from burl.rl.reward import *
-from burl.sim.quadruped import Quadruped
 
 
 class RewardManager(object):
@@ -15,6 +14,7 @@ class RewardManager(object):
         if storage:
             self.reward_buffer = deque(maxlen=2000)
             self.weighted_reward_buffer = deque(maxlen=2000)
+        self._details = {}
 
     @property
     def rewards(self):
@@ -24,9 +24,14 @@ class RewardManager(object):
     def weights(self):
         return self._weights
 
+    @property
+    def details(self):
+        return self._details
+
     def calculate_weighted_rewards(self, *args):
         assert len(args) == len(self._rewards)
         rewards = [r(*arg) for r, arg in zip(self._rewards, args)]
+        self._details = dict(zip((r.__class__.__name__ for r in self._rewards), rewards))
         self.reward_buffer.append(rewards)
         weighted_rewards = [r * w for r, w in zip(rewards, self._weights)]
         self.weighted_reward_buffer.append(weighted_rewards)
@@ -46,7 +51,7 @@ class RewardManager(object):
 class BasicTask(object):
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
         self._env = env
-        self._robot: Quadruped = env.robot
+        self._robot = env.robot
         rewards = (
             (LinearVelocityReward(), 0.1),
             (AngularVelocityReward(), 0.05),
@@ -58,12 +63,21 @@ class BasicTask(object):
             (BodyCollisionPenalty(), 0.02),
             (TorquePenalty(), 0.03)
         )
-        self.reward_manager = RewardManager(*rewards)
+        self._reward_names = [r.__class__.__name__ for r, _ in rewards]
+        self._reward_manager = RewardManager(*rewards)
         self._cmd = cmd
 
     @property
     def cmd(self):
         return self._cmd
+
+    @property
+    def reward_names(self):
+        return self._reward_names
+
+    @property
+    def num_rewards(self):
+        return len(self._reward_names)
 
     def calculateReward(self):
         linear = self._robot.getBaseLinearVelocityInBaseFrame()
@@ -86,7 +100,7 @@ class BasicTask(object):
             (contact_states,),  # Collision Pen
             (torques,)  # Torque Pen
         )
-        reward = self.reward_manager.calculate_weighted_rewards(*args)
+        reward = self._reward_manager.calculate_weighted_rewards(*args)
         # print(np.array(linear), np.array(angular))
         # print(Rpy.from_quaternion(orientation))
         # print(np.array(rewards))
@@ -96,6 +110,9 @@ class BasicTask(object):
         # logging.debug('REW:', str(np.array(rewards)))
         # logging.debug('WEIGHTED:', str(np.array(weighted_rewards)))
         return reward
+
+    def getRewardDetails(self):
+        return self._reward_manager.details
 
     def reset(self):
         pass

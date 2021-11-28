@@ -11,15 +11,11 @@ from burl.sim.env import TGEnv
 class EnvContainer(object):
     def __init__(self, num_envs, make_env):
         self.num_envs = num_envs
-        self.device = device
-        self.max_episode_length = 1000
-        self.extras = {}
         self._num_envs = num_envs
         self._envs: list[TGEnv] = [make_env() for _ in range(num_envs)]
 
     def step(self, actions: torch.Tensor):
         actions = [Action.from_array(action.cpu().numpy()) for action in actions]
-        # logging.debug('ACTION:', *(action.__dict__ for action in actions))
         return self.merge_results([e.step(a) for e, a in zip(self._envs, actions)])
 
     def __del__(self):
@@ -28,9 +24,15 @@ class EnvContainer(object):
     @staticmethod
     def merge_results(results):
         pri_observations, observations, rewards, dones, infos = zip(*results)
-        infos = {k: torch.tensor(np.array([info[k] for info in infos])) for k in infos[0]}
+        infos_merged = {}
+        for k in infos[0]:
+            if isinstance(infos[0][k], dict):
+                info_item = [info[k] for info in infos]
+                infos_merged[k] = {k: torch.tensor(np.array([info[k] for info in info_item])) for k in info_item[0]}
+            else:
+                infos_merged[k] = torch.tensor(np.array([info[k] for info in infos]))
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
+                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos_merged)
 
     def reset(self, dones):
         for env, done in zip(self._envs, dones):

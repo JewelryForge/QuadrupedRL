@@ -3,8 +3,6 @@ import torch
 from burl.alg.ac import ActorCritic
 from burl.utils import g_dev, g_cfg
 
-use_gae = True
-
 
 class RolloutStorage(object):
     class Transition(object):
@@ -166,12 +164,11 @@ class PPO(object):
         self.transition.critic_observations = critic_obs
         return self.transition.actions
 
-    def process_env_step(self, rewards, dones, infos):
+    def process_env_step(self, rewards, dones, time_outs):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
-        if 'time_out' in infos:
-            self.transition.rewards += g_cfg.gamma * torch.squeeze(
-                self.transition.values * infos['time_out'].unsqueeze(1).to(g_dev), 1)
+        self.transition.rewards += g_cfg.gamma * torch.squeeze(
+            self.transition.values * time_outs.unsqueeze(1).to(g_dev), 1)
 
         # Record the transition
         self.storage.add_transitions(self.transition)

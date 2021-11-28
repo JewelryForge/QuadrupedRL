@@ -129,10 +129,11 @@ class QuadrupedEnv(object):
         if self._gui:
             self._updateRendering()
         time_out = self._sim_step_counter >= g_cfg.max_sim_iterations
-        info = {'time_out': time_out, 'torques': torques}
+        reward = self._task.calculateReward()
+        info = {'time_out': time_out, 'torques': torques, 'reward_details': self._task.getRewardDetails()}
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
-                self._task.calculateReward(),
+                reward,
                 (not self._robot.is_safe()) or self._task.done() or time_out,
                 info)
 
@@ -148,7 +149,7 @@ class QuadrupedEnv(object):
 
     def getActionMutation(self):
         if len(self._action_buffer) < 3:
-            return 0
+            return 0.0
         actions = [self._action_buffer[-i - 1] for i in range(3)]
         return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
 
@@ -224,12 +225,10 @@ class TGEnv(QuadrupedEnv):
 if __name__ == '__main__':
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    physics_param = PhysicsParam()
-    physics_param.on_rack = False
-    render_param = RenderParam()
-    render_param.rendering_enabled = True
+    g_cfg.on_rack = False
+    g_cfg.rendering_enabled = True
     # env = QuadrupedEnv(render_param=render_param)
-    env = TGEnv(render_param=render_param)
+    env = TGEnv()
     robot = env.robot
     env.initObservation()
     for _ in range(100000):

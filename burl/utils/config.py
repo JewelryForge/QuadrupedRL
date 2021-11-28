@@ -51,7 +51,7 @@ class TrainParam(AlgParam):
     def __init__(self):
         super().__init__()
         self.num_iterations = 10000
-        self.num_envs = 4
+        self.num_envs = 8
         self.init_noise_std = 0.05
         self.save_interval = 50
         self.obs_dim = ExtendedObservation.dim
@@ -59,6 +59,8 @@ class TrainParam(AlgParam):
         self.action_dim = Action.dim
         self.device = torch.device('cuda')
         self.log_dir = 'log'
+        self.run_name = None
+
 
 
 class TaskParam(SimParam, RenderParam, TrainParam):

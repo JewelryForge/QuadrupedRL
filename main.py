@@ -3,14 +3,23 @@ import sys
 sys.path.append('.')
 from burl.rl.train import OnPolicyRunner
 from burl.utils import g_cfg
+import wandb
+
+
+def update_cfg_from_args():
+    args = sys.argv[1:]
+    assert len(args) % 2 == 0
+    for i in range(len(args) // 2):
+        name, value = args[2 * i], args[2 * i + 1]
+        assert name.startswith('--')
+        name = name.removeprefix('--')
+        assert hasattr(g_cfg, name)
+        setattr(g_cfg, name, value)
 
 
 def main():
-    g_cfg.num_steps_per_env = 256
-    g_cfg.num_iterations = 10000
-    g_cfg.rendering_enabled = False
-    g_cfg.sleeping_enabled = False
-    g_cfg.num_envs = 8
+    update_cfg_from_args()
+    wandb.init(project='teacher-student', config=g_cfg.__dict__)
     runner = OnPolicyRunner()
     runner.learn()
 
