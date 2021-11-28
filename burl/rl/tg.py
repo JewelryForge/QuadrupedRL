@@ -2,9 +2,11 @@ import numpy as np
 from burl.utils import normalize
 
 
-
 class LocomotionStateMachine(object):
     FIXED_INIT = True
+    # INIT_ANGLES = (0, 1.5, 0.5, 1.0)
+    INIT_ANGLES = (0.0, 1.0, 1.0, 0.0)
+
     def __init__(self, time_step, **kwargs):
         # We set the base frequency f 0 to zero when the zero command is given for 0.5 s,
         # which stops FTGs, and the robot stands still on the terrain.
@@ -13,7 +15,7 @@ class LocomotionStateMachine(object):
         # The state machine is included in the training environment.
         self._time_step = time_step
         if self.FIXED_INIT:
-            self._phases = normalize(np.array((0, 0.5, 1.0, 1.5)) * np.pi)
+            self._phases = normalize(np.array(self.INIT_ANGLES) * np.pi)
         else:
             self._phases = normalize(np.random.random(4) * 2 * np.pi)
         self._frequency = np.ones(4) * self.base_frequency
@@ -34,7 +36,7 @@ class LocomotionStateMachine(object):
 
     def reset(self):
         if self.FIXED_INIT:
-            self._phases = normalize(np.array((0, 0.5, 1.0, 1.5)) * np.pi)
+            self._phases = normalize(np.array(self.INIT_ANGLES) * np.pi)
         else:
             self._phases = normalize(np.random.random(4) * 2 * np.pi)
 

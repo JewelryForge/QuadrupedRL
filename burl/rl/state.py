@@ -27,14 +27,14 @@ class ProprioceptiveObservation(ArrayAttr):
         self.ftg_frequencies = zero(4)
 
     offset = np.concatenate((
-        zero(3), (0., 0., 0.95),  # command & gravity_vector
+        zero(3), (0., 0., 0.998),  # command & gravity_vector
         zero(6), (0, 0.723, -1.445) * 4,  # base twist & joint pos
         zero(12), zero(12),  # joint vel &  joint_prev_pos_err
         zero(8), (1.5,) * 4  # ftg phases & frequencies
     ))
 
     scale = np.concatenate((
-        (1.5,) * 3, (5.0,) * 3,  # command & gravity_vector
+        (1.0,) * 3, (5.0,) * 3,  # command & gravity_vector
         (2.,) * 6, (2.0,) * 12,  # base twist & joint pos
         # FIXME: why joint_prev_pos_err so large
         (0.5, 0.4, 0.3) * 4, (6.5, 4.5, 3.5) * 4,  # joint vel &  joint_prev_pos_err
@@ -133,12 +133,17 @@ class ExtendedObservation(Observation, PrivilegedInformation):
     dim = Observation.dim + PrivilegedInformation.dim
     offset = np.concatenate((Observation.offset, PrivilegedInformation.offset))
     scale = np.concatenate((Observation.scale, PrivilegedInformation.scale))
+    # l = []
 
     def __init__(self):
         Observation.__init__(self)
         PrivilegedInformation.__init__(self)
 
     def to_array(self):
+        # self.l.append(np.concatenate((
+        #     Observation.to_array(self),
+        #     PrivilegedInformation.to_array(self)
+        # )))
         return np.concatenate((
             Observation.to_array(self),
             PrivilegedInformation.to_array(self)

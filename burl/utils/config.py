@@ -32,12 +32,12 @@ class RenderParam(object):
 
 @attrs
 class AlgParam(object):
-    num_steps_per_env = ib(type=int, default=24)
-    num_learning_epochs = ib(type=int, default=1)
+    num_steps_per_env = ib(type=int, default=128)
+    num_learning_epochs = ib(type=int, default=4)
     num_mini_batches = ib(type=int, default=1)
     clip_param = ib(type=float, default=0.2)
     gamma = ib(type=float, default=0.995)
-    lam = ib(type=float, default=0.95)
+    lambda_ = ib(type=float, default=0.95)
     value_loss_coef = ib(type=float, default=1.0)
     entropy_coef = ib(type=float, default=0.0)
     learning_rate = ib(type=float, default=1e-4)
@@ -48,8 +48,8 @@ class AlgParam(object):
 
 
 @attrs
-class TrainParam(object):
-    max_iterations = ib(type=int, default=1500)
+class TrainParam(AlgParam):
+    num_iterations = ib(type=int, default=1500)
     num_envs = ib(type=int, default=4)
     init_noise_std = ib(type=float, default=0.05)
     save_interval = ib(type=int, default=50)

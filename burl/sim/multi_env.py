@@ -1,3 +1,4 @@
+import logging
 import math
 from abc import ABC, abstractmethod
 from multiprocessing import Process, Queue, Pipe
@@ -18,16 +19,22 @@ class EnvContainer(object):
         self.num_envs = num_envs
         self.device = device
         self.max_episode_length = 1000
-        self.episode_length_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
         self.extras = {}
         self._num_envs = num_envs
         self._envs: list[TGEnv] = [make_env() for _ in range(num_envs)]
 
     def step(self, actions: torch.Tensor):
         actions = [Action.from_array(action.cpu().numpy()) for action in actions]
-        # actions = actions.cpu().numpy()
-        pri_observations, observations, rewards, dones, infos = zip(*[e.step(a) for e, a in zip(self._envs, actions)])
-        infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
+        # logging.debug('ACTION:', *(action.__dict__ for action in actions))
+        return self.merge_results([e.step(a) for e, a in zip(self._envs, actions)])
+
+    def __del__(self):
+        self.close()
+
+    @staticmethod
+    def merge_results(results):
+        pri_observations, observations, rewards, dones, infos = zip(*results)
+        infos = {k: torch.tensor(np.array([info[k] for info in infos])) for k in infos[0]}
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
                 torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
 
@@ -67,10 +74,7 @@ class EnvContainerMultiProcess(EnvContainer):
             for p, q in zip(processes, self._queues):
                 results.append(q.get())
                 p.join()
-        pri_observations, observations, rewards, dones, infos = zip(*results)
-        infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
-        return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
+        return self.merge_results(results)
 
 
 class EnvContainerMultiProcess2(EnvContainer):
@@ -103,10 +107,7 @@ class EnvContainerMultiProcess2(EnvContainer):
         for action, conn in zip(actions, self._conn2):
             conn.send(action)
         results = [conn.recv() for conn in self._conn2]
-        pri_observations, observations, rewards, dones, infos = zip(*results)
-        infos = {k: torch.tensor([info[k] for info in infos]) for k in infos[0]}
-        return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos)
+        return self.merge_results(results)
 
     def close(self):
         for conn in self._conn2:
