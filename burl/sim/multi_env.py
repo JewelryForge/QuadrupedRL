@@ -1,4 +1,5 @@
 import math
+from collections import Iterable
 from multiprocessing import Process, Queue, Pipe
 
 import numpy as np
@@ -9,10 +10,13 @@ from burl.sim.env import TGEnv
 
 
 class EnvContainer(object):
-    def __init__(self, num_envs, make_env):
+    def __init__(self, make_env, num_envs=None):
         self.num_envs = num_envs
-        self._num_envs = num_envs
-        self._envs: list[TGEnv] = [make_env() for _ in range(num_envs)]
+        if isinstance(make_env, Iterable):
+            self._envs: list[TGEnv] = [make() for make in make_env]
+            self.num_envs = len(self._envs)
+        else:
+            self._envs: list[TGEnv] = [make_env() for _ in range(self.num_envs)]
 
     def step(self, actions: torch.Tensor):
         actions = [Action.from_array(action.cpu().numpy()) for action in actions]
@@ -48,8 +52,8 @@ class EnvContainer(object):
 
 
 class EnvContainerMultiProcess(EnvContainer):
-    def __init__(self, num_envs, make_env, num_processes=4):
-        super().__init__(num_envs, make_env)
+    def __init__(self, make_env, num_envs=None, num_processes=4):
+        super().__init__(make_env, num_envs)
         self._num_processes = num_processes
         self._queues = [Queue() for _ in range(num_processes)]
 
@@ -74,10 +78,9 @@ class EnvContainerMultiProcess(EnvContainer):
 
 
 class EnvContainerMultiProcess2(EnvContainer):
-    def __init__(self, num_envs, make_env):
-        super().__init__(num_envs, make_env)
-        self._num_processes = num_envs
-        self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(num_envs)])
+    def __init__(self, make_env, num_envs=None):
+        super().__init__(make_env, num_envs)
+        self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(self.num_envs)])
         self._processes = [Process(target=self.step_in_process, args=(env, conn,))
                            for env, conn in zip(self._envs, self._conn1)]
         for p in self._processes:

@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append('.')
-from burl.rl.train import OnPolicyRunner
+from burl.rl.runner import OnPolicyRunner
 from burl.utils import g_cfg
 import wandb
 
@@ -19,7 +19,7 @@ def update_cfg_from_args():
 
 def main():
     update_cfg_from_args()
-    wandb.init(project='teacher-student', config=g_cfg.__dict__)
+    wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name)
     runner = OnPolicyRunner()
     runner.learn()
 

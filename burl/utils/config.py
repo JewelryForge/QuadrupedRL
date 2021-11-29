@@ -62,12 +62,21 @@ class TrainParam(AlgParam):
         self.run_name = None
 
 
+class TerrainParam(object):
+    def __init__(self):
+        self.trn_size = 30
+        self.trn_downsample = 5
+        self.trn_roughness = 0.1
+        self.trn_resolution = 0.05
+        self.trn_offset = (0., 0., 0.)
 
-class TaskParam(SimParam, RenderParam, TrainParam):
+
+class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam):
     def __init__(self):
         SimParam.__init__(self)
         RenderParam.__init__(self)
         TrainParam.__init__(self)
+        TerrainParam.__init__(self)
 
     def __setattr__(self, key, value):
         object.__setattr__(self, key, value)

@@ -452,15 +452,16 @@ class A1(Quadruped):
 
 
 if __name__ == '__main__':
+    from burl.sim.terrain import RandomUniformTerrain
+
     np.set_printoptions(precision=2, suppress=True, linewidth=1000)
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
 
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    planeId = p.loadURDF("plane.urdf")
+    terrain = RandomUniformTerrain(p, size=30, downsample=5, scale=(0.05, 0.05, 1))
     make_motor = make_cls(MotorSim)
-    physics_param = PhysicsParam()
-    physics_param.on_rack = False
-    q = A1(sim_env=p, frequency=400, make_motor=make_motor, physics_param=physics_param)
+    g_cfg.on_rack = False
+    q = A1(sim_env=p, make_motor=make_motor)
     q.printJointInfos()
     p.setGravity(0, 0, -9.8)
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)

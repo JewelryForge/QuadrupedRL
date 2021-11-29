@@ -5,7 +5,7 @@ from burl.rl.reward import *
 
 
 class RewardManager(object):
-    def __init__(self, *rewards_weights, storage=True):
+    def __init__(self, *rewards_weights, storage=False):
         self._rewards, self._weights = [], []
         for r, w in rewards_weights:
             self._rewards.append(r)
@@ -32,20 +32,14 @@ class RewardManager(object):
         assert len(args) == len(self._rewards)
         rewards = [r(*arg) for r, arg in zip(self._rewards, args)]
         self._details = dict(zip((r.__class__.__name__ for r in self._rewards), rewards))
-        self.reward_buffer.append(rewards)
         weighted_rewards = [r * w for r, w in zip(rewards, self._weights)]
-        self.weighted_reward_buffer.append(weighted_rewards)
+        if self.storage:
+            self.reward_buffer.append(rewards)
+            self.weighted_reward_buffer.append(weighted_rewards)
         return sum(weighted_rewards)
 
     def analyse(self, painting=True):
-        assert self.storage
-        mean = np.mean(self.reward_buffer, axis=0)
-        std = np.std(self.reward_buffer, axis=0)
-        weighted_mean = np.mean(self.weighted_reward_buffer, axis=0)
-        weighted_std = np.std(self.weighted_reward_buffer, axis=0)
-        print('Reward\t\tMean\t\tStd\t\t')
-        for m, s, r in zip(mean, std, self._rewards):
-            print(f'{r.__class__.__name__}\t{m:.3f}\t{s:.3f}')
+        pass
 
 
 class BasicTask(object):
@@ -125,3 +119,14 @@ class BasicTask(object):
                 any(joint_diff < -self.MAX_MOVEMENT_ANGLE):
             return True
         return False
+
+
+class RandomCmdTask(BasicTask):
+    def __init__(self, env, seed=None):
+        np.random.seed(seed)
+        angle = np.random.random() * 2 * np.pi
+        super().__init__(env, (np.cos(angle), np.sin(angle), 0))
+
+    def reset(self):
+        angle = np.random.random() * 2 * np.pi
+        self._cmd = (np.cos(angle), np.sin(angle), 0)

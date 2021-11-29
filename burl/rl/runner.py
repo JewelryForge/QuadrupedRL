@@ -8,24 +8,21 @@ import wandb
 
 from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 from burl.alg.ppo import PPO
-from burl.rl.task import BasicTask
+from burl.rl.task import BasicTask, RandomCmdTask
 from burl.sim import TGEnv, A1, EnvContainerMultiProcess2
-from burl.utils import make_cls, timestamp, g_cfg, g_dev, logger
+from burl.utils import make_cls, g_cfg, g_dev, logger
 
 
 class OnPolicyRunner:
     def __init__(self):
         make_robot = make_cls(A1)
         make_task = make_cls(BasicTask)
+        # make_task = make_cls(RandomCmdTask)
         make_env = make_cls(TGEnv, make_task=make_task, make_robot=make_robot)
-        self.env = EnvContainerMultiProcess2(g_cfg.num_envs, make_env)
+        self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
         actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_dev)
         self.alg = PPO(actor_critic)
 
-        # Log
-        self.log_dir = os.path.join(g_cfg.log_dir, timestamp())
-        self.total_timesteps = 0
-        self.total_time = 0
         self.current_iter = 0
 
     def learn(self):
@@ -83,8 +80,8 @@ class OnPolicyRunner:
     def log(self, locs, width=30):
         logger.info(f"{'#' * width}")
         logger.info(f"Iteration {locs['it']}/{locs['total_iter']}")
-        logger.info(f"Collection Time: {locs['collection_time']}")
-        logger.info(f"Learning Time: {locs['learning_time']}")
+        logger.info(f"Collection Time: {locs['collection_time']:.3f}")
+        logger.info(f"Learning Time: {locs['learning_time']:.3f}")
 
         fps = int(g_cfg.storage_len * self.env.num_envs / (locs['collection_time'] + locs['learning_time']))
         logs = {'Loss/value_function': locs['mean_value_loss'],
@@ -103,6 +100,7 @@ class OnPolicyRunner:
                          'Train/mean_episode_length': eps_len_mean}),
             logger.info(f"{'Mean Reward:'} {reward_mean:.3f}")
             logger.info(f"{'Mean EpsLen:'} {eps_len_mean:.3f}")
+        logger.info(f"Total Frames: {locs['it'] * g_cfg.num_envs * g_cfg.storage_len}")
 
         wandb.log(logs)
 

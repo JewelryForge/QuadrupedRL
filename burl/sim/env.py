@@ -6,46 +6,45 @@ import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
 
-from burl.rl.state import ExtendedObservation, Action
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
-from burl.sim.terrain import make_plane
+from burl.sim.terrain import PlainTerrain, RandomUniformTerrain
+from burl.rl.state import ExtendedObservation, Action
 from burl.rl.tg import LocomotionStateMachine
-from burl.utils import make_cls, g_cfg
 from burl.rl.task import BasicTask
+from burl.utils import make_cls, g_cfg, logger
 from burl.utils.transforms import Rpy
 
 
 class QuadrupedEnv(object):
     def __init__(self, make_robot=A1, make_task=BasicTask):
         self._gui = g_cfg.rendering_enabled
-        if self._gui:
-            self._env = bullet_client.BulletClient(pybullet.GUI)
-            self._initRendering()
-        else:
-            self._env = bullet_client.BulletClient(pybullet.DIRECT)
-        if False:
-            self._env = pybullet
-
+        self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT)
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
+        # self._terrain = PlainTerrain(self._env)
+        self._terrain = RandomUniformTerrain(self._env, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
+                                             resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=2)
+        if self._gui:
+            self._initRendering()
         self._robot: Quadruped = make_robot(sim_env=self._env)
         self._task = make_task(self)
-        # TODO: RANDOMLY CHANGE TERRAIN
-        self._terrain_generator = make_plane
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
-        self._terrain = self._terrain_generator(self._env)
         self._setPhysicsParameters()
         self._num_action_repeats = int(g_cfg.sim_frequency / g_cfg.action_frequency)
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
-        print(f'Action Repeats for {self._num_action_repeats} time(s)')
-        print(f'Execution Repeats For {self._num_execution_repeats} time(s)')
+        logger.debug(f'Action Repeats for {self._num_action_repeats} time(s)')
+        logger.debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
         self._sim_step_counter = 0
         self._action_buffer = deque(maxlen=10)
 
     @property
     def robot(self):
         return self._robot
+
+    @property
+    def terrain(self):
+        return self._terrain
 
     def initObservation(self):
         self.updateObservation()
@@ -57,14 +56,16 @@ class QuadrupedEnv(object):
     def _initRendering(self):
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, True)
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, True)
+
         # if hasattr(self._task, '_draw_ref_model_alpha'):
         #     self._show_reference_id = pybullet.addUserDebugParameter("show reference", 0, 1,
         #                                                              self._task._draw_ref_model_alpha)
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
+        self._env.changeVisualShape(self._terrain.id, -1, rgbaColor=(1, 1, 1, 1))
 
-        if g_cfg.egl_rendering:  # TODO: WHAT DOES THE PLUGIN DO?
-            self._env.loadPlugin('eglRendererPlugin')
+        # if g_cfg.egl_rendering:  # TODO: WHAT DOES THE PLUGIN DO?
+        #     self._env.loadPlugin('eglRendererPlugin')
         self._last_frame_time = time.time()
 
     def _setPhysicsParameters(self):
@@ -140,6 +141,7 @@ class QuadrupedEnv(object):
     def reset(self, **kwargs):
         completely_reset = kwargs.get('completely_reset', False)
         self._sim_step_counter = 0
+        self._task.reset()
         if completely_reset:
             raise NotImplementedError
         return self._robot.reset()
@@ -163,7 +165,7 @@ class QuadrupedEnv(object):
         return [self.getTerrainHeight(x + p[0], y + p[1]) for p in points]
 
     def getTerrainHeight(self, x, y):
-        return 0.0
+        return self._terrain.getHeight(x, y)
 
     def getTerrainNormal(self, x, y):
         return (0., 0., 1.)
@@ -207,27 +209,12 @@ class TGEnv(QuadrupedEnv):
         return super().reset()
 
 
-# if __name__ == '__main__':
-#     np.set_printoptions(precision=2, linewidth=1000)
-#     make_motor = make_cls(MotorSim)
-#     physics_param = PhysicsParam()
-#     physics_param.on_rack = False
-#     env = QuadrupedEnv()
-#     env.updateObservation()
-#     for _ in range(100000):
-#         time.sleep(1. / 240.)
-#         cmd0 = env.robot.ik(0, (0, 0, -0.3), 'shoulder')
-#         cmd1 = env.robot.ik(1, (0, 0, -0.3), 'shoulder')
-#         cmd2 = env.robot.ik(2, (0, 0, -0.3), 'shoulder')
-#         cmd3 = env.robot.ik(3, (0, 0, -0.3), 'shoulder')
-#         env.step(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
-
 if __name__ == '__main__':
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
     g_cfg.on_rack = False
     g_cfg.rendering_enabled = True
-    # env = QuadrupedEnv(render_param=render_param)
+    # env = QuadrupedEnv()
     env = TGEnv()
     robot = env.robot
     env.initObservation()

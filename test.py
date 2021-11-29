@@ -19,7 +19,7 @@ class Player:
         make_robot = make_cls(A1)
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
-        self.env = EnvContainer(1, make_env)
+        self.env = EnvContainer(make_env, 1)
         g_cfg.init_noise_std = 0.
         self.actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_dev)
         self.actor_critic.load_state_dict(torch.load(model_dir)['model_state_dict'])
@@ -47,10 +47,9 @@ def main(model_dir):
 
 
 if __name__ == '__main__':
-    np.set_printoptions(3, linewidth=1000, suppress=True)
     logging.basicConfig(level=logging.DEBUG)
     log_dir = 'wandb/latest-run/files'
-    recent_log = 2000
+    recent_log = 1200
     # recent_log = max(int(m.removeprefix('model_').removesuffix('.pt'))
     #                  for m in os.listdir(log_dir) if m.startswith('model'))
     main(os.path.join(log_dir, f'model_{recent_log}.pt'))
