@@ -1,5 +1,6 @@
 import time
 from collections import deque
+from itertools import chain
 
 import numpy as np
 import pybullet
@@ -12,20 +13,24 @@ from burl.sim.terrain import PlainTerrain, RandomUniformTerrain
 from burl.rl.state import ExtendedObservation, Action
 from burl.rl.tg import LocomotionStateMachine
 from burl.rl.task import BasicTask
-from burl.utils import make_cls, g_cfg, logger
+from burl.utils import make_cls, g_cfg, logger, set_logger_level
 from burl.utils.transforms import Rpy
+import pkgutil
 
 
 class QuadrupedEnv(object):
     def __init__(self, make_robot=A1, make_task=BasicTask):
         self._gui = g_cfg.rendering_enabled
-        self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT)
+        self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
-        # self._terrain = PlainTerrain(self._env)
-        self._terrain = RandomUniformTerrain(self._env, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
-                                             resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=2)
+        if g_cfg.plain:
+            self._terrain = PlainTerrain(self._env)
+        else:
+            self._terrain = RandomUniformTerrain(self._env, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
+                                                 resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=2)
+        # self._loadEgl()
         if self._gui:
-            self._initRendering()
+            self._prepareRendering()
         self._robot: Quadruped = make_robot(sim_env=self._env)
         self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
@@ -35,6 +40,8 @@ class QuadrupedEnv(object):
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
         logger.debug(f'Action Repeats for {self._num_action_repeats} time(s)')
         logger.debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
+        if self._gui:
+            self._initRendering()
         self._sim_step_counter = 0
         self._action_buffer = deque(maxlen=10)
 
@@ -53,20 +60,40 @@ class QuadrupedEnv(object):
     def updateObservation(self):
         return self._robot.updateObservation()
 
-    def _initRendering(self):
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, True)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, True)
+    def _loadEgl(self):
+        if egl := pkgutil.get_loader('eglRenderer'):
+            print(egl.get_filename())
+            self._env.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+        else:
+            self._env.loadPlugin("eglRendererPlugin")
 
-        # if hasattr(self._task, '_draw_ref_model_alpha'):
-        #     self._show_reference_id = pybullet.addUserDebugParameter("show reference", 0, 1,
-        #                                                              self._task._draw_ref_model_alpha)
+    def _prepareRendering(self):
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, False)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, False)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_TINY_RENDERER, False)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SHADOWS, False)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RGB_BUFFER_PREVIEW, False)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_DEPTH_BUFFER_PREVIEW, False)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
+
+    def _initRendering(self):
+        if g_cfg.extra_visualization:
+            self._contact_visual_shape = self._env.createVisualShape(shapeType=pybullet.GEOM_BOX,
+                                                                     halfExtents=(0.03, 0.03, 0.03),
+                                                                     rgbaColor=(0.8, 0., 0., 0.6))
+            self._terrain_visual_shape = self._env.createVisualShape(shapeType=pybullet.GEOM_SPHERE,
+                                                                     radius=0.01,
+                                                                     rgbaColor=(0., 0.8, 0., 0.6))
+            self._contact_obj_ids = []
+            self._terrain_indicators = [self._env.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
+                                        for _ in range(36)]
+
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
-        self._env.changeVisualShape(self._terrain.id, -1, rgbaColor=(1, 1, 1, 1))
 
-        # if g_cfg.egl_rendering:  # TODO: WHAT DOES THE PLUGIN DO?
-        #     self._env.loadPlugin('eglRendererPlugin')
         self._last_frame_time = time.time()
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, True)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, True)
 
     def _setPhysicsParameters(self):
         # self._env.resetSimulation()
@@ -84,10 +111,26 @@ class QuadrupedEnv(object):
             time_to_sleep = self._num_action_repeats / g_cfg.sim_frequency - time_spent
             if time_to_sleep > 0:
                 time.sleep(time_to_sleep)
-        # Keep the previous orientation of the camera set by the user.
-        yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
-        self._env.resetDebugVisualizerCamera(dist, yaw, pitch, self._robot.position)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
+        if g_cfg.moving_camera:
+            yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
+            self._env.resetDebugVisualizerCamera(dist, yaw, pitch, self._robot.position)
+        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
+        if g_cfg.extra_visualization:
+            for obj in self._contact_obj_ids:
+                self._env.removeBody(obj)
+            self._contact_obj_ids.clear()
+            for cp in self._env.getContactPoints(bodyA=self._robot.id):
+                pos, normal, normal_force = cp[5], cp[7], cp[9]
+                if normal_force > 0.1:
+                    obj = self._env.createMultiBody(baseVisualShapeIndex=self._contact_visual_shape,
+                                                    basePosition=pos)
+                    self._contact_obj_ids.append(obj)
+
+            r = self._robot
+            foot_xy = [r.getFootPositionInWorldFrame(i)[:2] for i in range(4)]
+            positions = chain(*[self.getAbundantTerrainInfo(x, y, r.orientation) for x, y in foot_xy])
+            for idc, pos in zip(self._terrain_indicators, positions):
+                self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
     def makeStandardObservation(self, privileged=True):
         eo = ExtendedObservation()
@@ -107,17 +150,18 @@ class QuadrupedEnv(object):
         eo.joint_pos_target = r.getCmdHistoryFromIndex(-1)
         eo.joint_prev_pos_target = r.getCmdHistoryFromIndex(-2)
         foot_xy = [r.getFootPositionInWorldFrame(i)[:2] for i in range(4)]
-        eo.terrain_scan = np.concatenate([self.getTerrainScan(*xy, r.orientation) for xy in foot_xy])
-        eo.terrain_normal = np.concatenate([self.getTerrainNormal(*xy) for xy in foot_xy])
+        eo.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.orientation) for x, y in foot_xy])
+        eo.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
         eo.contact_states = r.getContactStates()[1:]
         eo.foot_contact_forces = r.getFootContactForces()
-        eo.foot_friction_coeffs = [self.getTerrainFrictionCoeff(*xy) for xy in foot_xy]
+        eo.foot_friction_coeffs = [self.getTerrainFrictionCoeff(x, y) for x, y in foot_xy]
         eo.external_disturbance = r.getBaseDisturbance()
         return eo
 
     def step(self, action):
         # NOTICE: ADDING LATENCY ARBITRARILY FROM A DISTRIBUTION IS NOT REASONABLE
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
+        # start = time.time()
         self._action_buffer.append(action)
         for _ in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
@@ -132,6 +176,7 @@ class QuadrupedEnv(object):
         time_out = self._sim_step_counter >= g_cfg.max_sim_iterations
         reward = self._task.calculateReward()
         info = {'time_out': time_out, 'torques': torques, 'reward_details': self._task.getRewardDetails()}
+        # logger.debug(f'Step time: {time.time() - start}')
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
                 reward,
@@ -155,20 +200,23 @@ class QuadrupedEnv(object):
         actions = [self._action_buffer[-i - 1] for i in range(3)]
         return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
 
-    def getTerrainScan(self, x, y, orientation):
+    def getAbundantTerrainInfo(self, x, y, orientation):
         interval = 0.1
         yaw = Rpy.from_quaternion(orientation).y
         dx, dy = interval * np.cos(yaw), interval * np.sin(yaw)
         points = ((dx - dy, dx + dy), (dx, dy), (dx + dy, -dx + dy),
                   (-dy, dx), (0, 0), (dy, -dx),
                   (-dx - dy, dx - dy), (-dx, -dy), (-dx + dy, -dx - dy))
-        return [self.getTerrainHeight(x + p[0], y + p[1]) for p in points]
+        return [(xp := x + dx, yp := y + dy, self.getTerrainHeight(xp, yp)) for dx, dy in points]
+
+    def getTerrainScan(self, x, y, orientation):
+        return [p[2] for p in self.getAbundantTerrainInfo(x, y, orientation)]
 
     def getTerrainHeight(self, x, y):
         return self._terrain.getHeight(x, y)
 
     def getTerrainNormal(self, x, y):
-        return (0., 0., 1.)
+        return self._terrain.getNormal(x, y)
 
     def getTerrainFrictionCoeff(self, x, y):
         return 0.0
@@ -183,6 +231,7 @@ class TGEnv(QuadrupedEnv):
         eo: ExtendedObservation = super().makeStandardObservation(privileged)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
+        logger.debug(eo.__dict__)
         return (eo.to_array() - eo.offset) * eo.scale
 
     def step(self, action: Action):
@@ -210,16 +259,18 @@ class TGEnv(QuadrupedEnv):
 
 
 if __name__ == '__main__':
-    np.set_printoptions(precision=2, linewidth=1000)
-    make_motor = make_cls(MotorSim)
+    g_cfg.moving_camera = False
+    g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.rendering_enabled = True
+    set_logger_level(logger.DEBUG)
+    np.set_printoptions(precision=2, linewidth=1000)
+    make_motor = make_cls(MotorSim)
     # env = QuadrupedEnv()
     env = TGEnv()
     robot = env.robot
     env.initObservation()
     for _ in range(100000):
-        time.sleep(1. / 240.)
         act = Action()
         env.step(act)
         # cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')

@@ -1,4 +1,3 @@
-import logging
 import sys
 
 import torch
@@ -8,7 +7,7 @@ import os
 sys.path.append('.')
 
 from burl.sim import A1, TGEnv, EnvContainer
-from burl.utils import make_cls, g_cfg, g_dev, logger
+from burl.utils import make_cls, g_cfg, g_dev, logger, set_logger_level
 from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 
 
@@ -16,6 +15,7 @@ class Player:
     def __init__(self, model_dir):
         g_cfg.rendering_enabled = True
         g_cfg.sleeping_enabled = True
+        g_cfg.trn_roughness = 0.03
         make_robot = make_cls(A1)
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
@@ -47,10 +47,9 @@ def main(model_dir):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
+    set_logger_level(logger.DEBUG)
     log_dir = 'wandb/latest-run/files'
-    recent_log = 1200
+    recent_log = 350
     # recent_log = max(int(m.removeprefix('model_').removesuffix('.pt'))
     #                  for m in os.listdir(log_dir) if m.startswith('model'))
     main(os.path.join(log_dir, f'model_{recent_log}.pt'))
-    # print(sorted())

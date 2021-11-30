@@ -2,4 +2,4 @@ from burl.utils.utils import normalize, unit, make_cls, timestamp, JointInfo, ra
 
 from burl.utils.config import g_cfg, g_dev
 
-from burl.utils.log import logger
+from burl.utils.log import logger, set_logger_level

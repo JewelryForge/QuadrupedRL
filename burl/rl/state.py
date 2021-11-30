@@ -97,14 +97,14 @@ class PrivilegedInformation(object):
     FORCE_CLIP = np.array((25, 25, 50) * 4)
 
     offset = np.concatenate((
-        (0,) * 36, (0, 0, 1) * 4,  # terrain scan & normal
+        (0.02,) * 36, (0., 0., 0.98) * 4,  # terrain scan & normal
         (0.5, 0.5, 0.5) * 4,  # contact states
         (0, 0, 30.0) * 4,  # contact forces
         (0., 0., 0., 0.), (0., 0., 0.)  # friction & disturbance
     ))
 
     scale = np.concatenate((
-        (10,) * 36, (1, 1, 1) * 4,  # terrain scan & normal
+        (10.,) * 36, (5., 5., 10.) * 4,  # terrain scan & normal
         (2,) * 12,  # contact states
         (0.01, 0.01, 0.02) * 4,  # contact forces
         (1.,) * 4, (1.,) * 3  # friction & disturbance
@@ -133,17 +133,12 @@ class ExtendedObservation(Observation, PrivilegedInformation):
     dim = Observation.dim + PrivilegedInformation.dim
     offset = np.concatenate((Observation.offset, PrivilegedInformation.offset))
     scale = np.concatenate((Observation.scale, PrivilegedInformation.scale))
-    # l = []
 
     def __init__(self):
         Observation.__init__(self)
         PrivilegedInformation.__init__(self)
 
     def to_array(self):
-        # self.l.append(np.concatenate((
-        #     Observation.to_array(self),
-        #     PrivilegedInformation.to_array(self)
-        # )))
         return np.concatenate((
             Observation.to_array(self),
             PrivilegedInformation.to_array(self)

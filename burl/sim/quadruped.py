@@ -52,6 +52,10 @@ class Quadruped(object):
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
 
+    @property
+    def id(self):
+        return self._quadruped
+
     def _resetStates(self):
         self._base_pose: Pose = None
         self._base_twist: Twist = None
@@ -219,7 +223,8 @@ class Quadruped(object):
             link_idx = p[3]
             directions = p[7], p[11], p[13]
             forces = p[9], p[10], p[12]
-            contact_dict[link_idx] = sum(np.array(d) * f for d, f in zip(directions, forces))
+            contact_dict[link_idx] = contact_dict.get(link_idx, (0., 0., 0.)) + \
+                                     sum(np.array(d) * f for d, f in zip(directions, forces))
         return np.concatenate([contact_dict.get(f, TP_ZERO3) for f in self._foot_ids])
 
     def _estimateObservation(self):
@@ -256,10 +261,6 @@ class Quadruped(object):
 
     def getHorizontalFrameInBaseFrame(self, noisy=False):
         rot = Rotation.from_quaternion(self.getBaseOrientation(noisy))
-        # z = rot.Z
-        # y = unit(np.array((0, z[2], -z[1])))
-        # x = np.cross(y, z)
-        # print(x, y, z, np.array((x, y, z)).transpose(), sep='\n', end='\n\n')
         _, _, y = self.getBaseRpy(noisy)
         sy, cy = np.sin(y), np.cos(y)
         x = (cy, sy, 0)
@@ -357,7 +358,7 @@ class Quadruped(object):
 
 
 class A1(Quadruped):
-    INIT_POSITION = [0, 0, .33]
+    INIT_POSITION = [0, 0, .43]
     INIT_RACK_POSITION = [0, 0, 1]
     INIT_ORIENTATION = [0, 0, 0, 1]
     NUM_MOTORS = 12

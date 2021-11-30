@@ -43,7 +43,6 @@ def get_logger(name=__name__,
     stream = logging.StreamHandler()
     stream.setLevel(log_level)
     stream.setFormatter(formatter)
-    logging.root.setLevel(log_level)
     log = logging.getLogger(name)
     log.setLevel(log_level)
     log.addHandler(stream)
@@ -53,9 +52,21 @@ def get_logger(name=__name__,
 np.set_printoptions(3, linewidth=1000, suppress=True)
 torch.set_printoptions(linewidth=1000, profile='short')
 logger = get_logger()
+logger.DEBUG = logging.DEBUG
+logger.INFO = logging.INFO
+logger.WARNING = logging.WARNING
+logger.ERROR = logging.ERROR
+logger.CRITICAL = logging.CRITICAL
+
+
+def set_logger_level(log_level):
+    logger.setLevel(log_level)
+    for h in logger.handlers:
+        h.setLevel(log_level)
+
 
 if __name__ == '__main__':
-    logger.setLevel(logging.INFO)
+    set_logger_level(logger.DEBUG)
     logger.debug(torch.Tensor([1.0000001, 2, 3]))
     logger.info(123123)
     logger.warning(123123)

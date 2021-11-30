@@ -1,5 +1,5 @@
 import numpy as np
-
+from scipy.spatial.transform import Rotation as scipyRotation
 
 class NDArrayBased(np.ndarray):
     def __new__(cls, matrix, skip_check=False):
@@ -33,6 +33,7 @@ class Rotation(NDArrayBased):
 
     @classmethod
     def from_rpy(cls, rpy):  # zyx
+        # scipyRotation.from_euler()
         sr, sp, sy = np.sin(rpy)
         cr, cp, cy = np.cos(rpy)
         _matrix = ((cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
@@ -134,7 +135,7 @@ class Quaternion(NDArrayBased):
 
     @classmethod
     def from_rotation(cls, r):
-        raise NotImplementedError
+        return scipyRotation.from_matrix(r).as_quat()
 
     def __str__(self):
         return self.__repr__()
@@ -215,6 +216,7 @@ if __name__ == '__main__':
     ea = pybullet.getEulerFromQuaternion(q)
     print(ea)
     rq = Rpy.from_quaternion(q)
+    R.from_matrix()
     print(rq)
 # r = Rotation.from_rpy((np.pi / 6, 0, 0))  # * (0, 0, -1)
 # print(np.squeeze(np.array([[1, 2, 3]]).transpose()).shape)

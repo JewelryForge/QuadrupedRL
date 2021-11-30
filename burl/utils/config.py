@@ -27,6 +27,8 @@ class RenderParam(object):
     def __init__(self):
         self.rendering_enabled = False
         self.sleeping_enabled = False
+        self.moving_camera = True
+        self.extra_visualization = True
         self.egl_rendering = False
 
 
@@ -64,6 +66,7 @@ class TrainParam(AlgParam):
 
 class TerrainParam(object):
     def __init__(self):
+        self.plain = False
         self.trn_size = 30
         self.trn_downsample = 5
         self.trn_roughness = 0.1

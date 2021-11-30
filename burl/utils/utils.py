@@ -10,8 +10,8 @@ def normalize(x):
     return x - ((x + M_PI) // M_2_PI) * M_2_PI
 
 
-def unit(x: np.ndarray) -> np.ndarray:
-    return x / np.linalg.norm(x)
+def unit(x) -> np.ndarray:
+    return np.asarray(x) / np.linalg.norm(x)
 
 
 def tuple_compact_string(_tuple):
