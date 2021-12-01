@@ -22,46 +22,6 @@ def reward_reshape(lower, range_, symmetric=False):
     return _reward_reshape_symmetric if symmetric else _reward_reshape
 
 
-# class LinearVelocityTruncatedReward(Reward):
-#     def __init__(self, upper=0.6, decay=2.0):
-#         self._upper = upper
-#         self._decay = decay
-#
-#     def __call__(self, cmd, linear):
-#         projected_velocity = np.dot(cmd[:2], linear[:2])
-#         if projected_velocity > self._upper:
-#             return 1.0
-#         if cmd == (0.0, 0.0):
-#             return 0.0
-#         return np.exp(-self._decay * (projected_velocity - self._upper) ** 2)
-#
-#
-# class AngularVelocityTruncatedReward(Reward):
-#     def __init__(self, upper=0.6, decay=1.5):
-#         self._upper = upper
-#         self._decay = decay
-#
-#     def __call__(self, cmd, angular):
-#         if cmd[2] != 0.0:
-#             projected_angular = angular[2] * cmd[2]
-#             if projected_angular >= self._upper:
-#                 return 1.0
-#             return np.exp(-self._decay * (projected_angular - self._upper) ** 2)
-#         else:
-#             return np.exp(-self._decay * angular[2] ** 2)
-#
-#
-# class BaseStabilityReward(Reward):
-#     def __init__(self, decay_linear=1.5, decay_angular=1.5):
-#         self._decay_linear = decay_linear
-#         self._decay_angular = decay_angular  # TODO: Try Truncate
-#
-#     def __call__(self, cmd, linear, angular):
-#         v_o = np.asarray(linear[:2]) - np.asarray(cmd[:2]) * np.dot(linear[:2], cmd[:2])
-#         w_xy = angular[:2]
-#         return np.exp(-self._decay_linear * np.dot(v_o, v_o)) + np.exp(-self._decay_angular * np.dot(w_xy, w_xy))
-
-
 class LinearVelocityReward(Reward):
     def __init__(self, lower=-0.1, upper=0.6):
         self.reshape = reward_reshape(lower, upper - lower)
@@ -89,7 +49,7 @@ class RedundantLinearPenalty(Reward):
 
     def __call__(self, cmd, linear):
         v_o = np.asarray(linear[:2]) - np.asarray(cmd[:2]) * np.dot(linear[:2], cmd[:2])
-        return -self.reshape(np.linalg.norm(v_o))
+        return 1 - self.reshape(np.linalg.norm(v_o))
 
 
 class RedundantAngularPenalty(Reward):
@@ -98,7 +58,7 @@ class RedundantAngularPenalty(Reward):
 
     def __call__(self, angular):
         w_xy = np.linalg.norm(angular[:2])
-        return -self.reshape(w_xy)
+        return 1 - self.reshape(w_xy)
 
 
 class BodyPosturePenalty(Reward):
@@ -108,7 +68,7 @@ class BodyPosturePenalty(Reward):
 
     def __call__(self, orientation):
         r, p, _ = Rpy.from_quaternion(orientation)
-        return -(self.roll_reshape(r) + self.pitch_reshape(p)) * 0.5
+        return 1 - (self.roll_reshape(r) + self.pitch_reshape(p)) / 2
 
 
 class BaseStabilityReward(Reward):
@@ -137,7 +97,23 @@ class TargetMutationPenalty(Reward):
         self.reshape = reward_reshape(0.0, upper)
 
     def __call__(self, smoothness):
-        return -self.reshape(smoothness)
+        return 1 - self.reshape(smoothness)
+
+
+class FootSlipPenalty(Reward):
+    def __init__(self, upper=0.2):
+        self.reshape = reward_reshape(0.0, upper)
+
+    def __call__(self, slip):
+        return 1 - self.reshape(slip)
+
+
+class SmallStridePenalty(Reward):
+    def __init__(self, upper=0.1):
+        self.reshape = reward_reshape(0.0, upper)
+
+    def __call__(self, strides):
+        return 1 - sum(1 - self.reshape(s) for s in strides if s != 0.0) / len(strides)
 
 
 class FootClearanceReward(Reward):
@@ -152,7 +128,7 @@ class BodyCollisionPenalty(Reward):
         contact_states = list(contact_states)
         for i in range(1, 5):
             contact_states[i * 3] = False
-        return -sum(contact_states)
+        return 1 - sum(contact_states)
 
 
 class TorquePenalty(Reward):
@@ -161,12 +137,12 @@ class TorquePenalty(Reward):
 
     def __call__(self, torques):
         torque_sum = sum(abs(t) for t in torques)
-        return -self.reshape(torque_sum)
+        return 1 - self.reshape(torque_sum)
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    r = LinearVelocityReward()
+    r = SmallStridePenalty()
     print(r.__class__.__name__)
-    pass
+    print(r([0.0, 0.0, 0.0, 0.001]))

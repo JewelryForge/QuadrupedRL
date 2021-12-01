@@ -1,7 +1,7 @@
 import torch
 
 from burl.rl.state import ExtendedObservation, Action
-
+from burl.utils.utils import timestamp
 
 class PhysicsParam(object):
     def __init__(self):
@@ -60,8 +60,9 @@ class TrainParam(AlgParam):
         self.p_obs_dim = ExtendedObservation.dim
         self.action_dim = Action.dim
         self.device = torch.device('cuda')
-        self.log_dir = 'log'
+        self.log_dir = f'log/{timestamp()}'
         self.run_name = None
+        self.task_class = None
 
 
 class TerrainParam(object):

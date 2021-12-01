@@ -10,6 +10,8 @@ class RewardManager(object):
         for r, w in rewards_weights:
             self._rewards.append(r)
             self._weights.append(w)
+        self._rewards, self._weights = np.array(self._rewards), np.array(self._weights)
+        self._weights /= self._weights.sum()
         self.storage = storage
         if storage:
             self.reward_buffer = deque(maxlen=2000)
@@ -43,22 +45,24 @@ class RewardManager(object):
 
 
 class BasicTask(object):
+    rewards = (
+        (LinearVelocityReward(), 0.2),
+        (AngularVelocityReward(), 0.05),
+        (BodyHeightReward(), 0.03),
+        (RedundantLinearPenalty(), 0.02),
+        (RedundantAngularPenalty(), 0.02),
+        (BodyPosturePenalty(), 0.03),
+        (FootSlipPenalty(), 0.02),
+        (SmallStridePenalty(), 0.02),
+        (TargetMutationPenalty(), 0.01),
+        (BodyCollisionPenalty(), 0.02),
+        (TorquePenalty(), 0.01)
+    )
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
         self._env = env
         self._robot = env.robot
-        rewards = (
-            (LinearVelocityReward(), 0.1),
-            (AngularVelocityReward(), 0.05),
-            (RedundantLinearPenalty(), 0.02),
-            (RedundantAngularPenalty(), 0.03),
-            (BodyPosturePenalty(), 0.03),
-            (TargetMutationPenalty(), 0.03),
-            (BodyHeightReward(), 0.02),
-            (BodyCollisionPenalty(), 0.02),
-            (TorquePenalty(), 0.03)
-        )
-        self._reward_names = [r.__class__.__name__ for r, _ in rewards]
-        self._reward_manager = RewardManager(*rewards)
+        self._reward_names = [r.__class__.__name__ for r, _ in self.rewards]
+        self._reward_manager = RewardManager(*self.rewards)
         self._cmd = cmd
 
     @property
@@ -77,20 +81,25 @@ class BasicTask(object):
         linear = self._robot.getBaseLinearVelocityInBaseFrame()
         angular = self._robot.getBaseAngularVelocityInBaseFrame()
         contact_states = self._robot.getContactStates()
-
         mutation = self._env.getActionMutation()
         x, y, z = self._robot.getBasePosition(False)
         body_height = z - self._env.getTerrainHeight(x, y)
+        slip = sum(self._robot.getFootSlipVelocity())
+        strides = self._robot.getStrides()
+        # if (strides != 0.0).any():
+        #     print(strides)
         torques = self._robot.getLastAppliedTorques()
         orientation = self._robot.orientation
         args = (
             (self._cmd, linear),  # Linear Rew
             (self._cmd, angular),  # Angular Rew
+            (body_height,),  # Height Rew
             (self._cmd, linear),  # Linear Pen
             (angular,),  # Angular Pen
             (orientation,),  # Posture Pen
+            (slip,),  # Slip Pen
+            (strides,),  # Small Stride Pen
             (mutation,),  # Target Mut Pen
-            (body_height,),  # Height Rew
             (contact_states,),  # Collision Pen
             (torques,)  # Torque Pen
         )

@@ -62,6 +62,8 @@ class Quadruped(object):
         self._base_twist_in_base_frame: Twist = None
         self._last_torque: np.ndarray = np.zeros(12)
         self._disturbance: np.ndarray = np.zeros(3)
+        self._last_stance_positions = [None] * 4
+        self._strides = np.array((0., 0., 0., 0.))
         self._step_counter = 0
 
     def _loadRobot(self):
@@ -72,7 +74,7 @@ class Quadruped(object):
         if g_cfg.on_rack:
             self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                        jointType=self._env.JOINT_FIXED,
-                                       jointAxis=(0, 0, 0), parentFramePosition=(0, 0, 0),
+                                       jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
                                        childFramePosition=self.INIT_RACK_POSITION,
                                        childFrameOrientation=self.INIT_ORIENTATION)
         return robot
@@ -167,11 +169,13 @@ class Quadruped(object):
         joint_states_raw = self._env.getJointStates(self._quadruped, range(self._num_joints))
         observation.joint_states = JointStates(*zip(*joint_states_raw))
         observation.foot_forces = self._getFootContactForces()
+        observation.foot_positions = self._getFootPositionsInWorldFrame()
         observation.contact_states = ContactStates(self._getContactStates())
         self._observation_history.append(observation)
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
         self._motor.update_observation()
+        self._updateStancePositions()
         return observation, observation_noisy
 
     def ik(self, leg, pos, frame='base'):
@@ -209,11 +213,15 @@ class Quadruped(object):
     def _rotateFromWorldToBase(self, vector_world):
         return self._rotateFromWorld(vector_world, self._base_pose.orientation)
 
+    def _getFootPositionsInWorldFrame(self):
+        # NOTICE: THIS USES getLinkState which acquires mass center states
+        return np.concatenate([self._env.getLinkState(self._quadruped, self._foot_ids[l])[0] for l in range(4)])
+
     def _getContactStates(self):
         def _getContactState(link_id):
             return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
 
-        contact_states = [_getContactState(i for i in range(self._num_joints))]
+        contact_states = [_getContactState(range(self._num_joints))]
         return contact_states
 
     def _getFootContactForces(self):
@@ -226,6 +234,16 @@ class Quadruped(object):
             contact_dict[link_idx] = contact_dict.get(link_idx, (0., 0., 0.)) + \
                                      sum(np.array(d) * f for d, f in zip(directions, forces))
         return np.concatenate([contact_dict.get(f, TP_ZERO3) for f in self._foot_ids])
+
+    def _updateStancePositions(self):
+        for i, (c, c_prev) in enumerate(zip(self.getFootContactStates(), self.getFootContactStates(-2))):
+            if c and not c_prev:
+                foot_position = self.getFootPositionInWorldFrame(i)
+                if self._last_stance_positions[i] is not None:
+                    self._strides[i] = np.linalg.norm(foot_position - self._last_stance_positions[i])
+                self._last_stance_positions[i] = foot_position
+            else:
+                self._strides[i] = 0.0
 
     def _estimateObservation(self):
         # TODO: ADD NOISE
@@ -283,6 +301,9 @@ class Quadruped(object):
     def getContactStates(self):
         return self._observation_history[-1].contact_states
 
+    def getFootContactStates(self, idx=-1):
+        return self.getObservationHistoryFromIndex(idx).contact_states[self._foot_ids,]
+
     def getFootContactForces(self):
         return self._observation_history[-1].foot_forces
 
@@ -290,8 +311,28 @@ class Quadruped(object):
         joint_pos = self.getJointPositions(noisy=False)
         return self.fk(leg, joint_pos[leg * 3: leg * 3 + 3])
 
-    def getFootPositionInWorldFrame(self, leg):
-        return self._env.getLinkState(self._quadruped, self._foot_ids[leg])[0]
+    def getFootPositionInWorldFrame(self, leg, idx=-1):
+        return self.getObservationHistoryFromIndex(idx).foot_positions[leg * 3: leg * 3 + 3]
+
+    def getFootXYsInWorldFrame(self):
+        return [self._observation_history[-1].foot_positions[leg * 3: leg * 3 + 2] for leg in range(4)]
+
+    def getFootSlipVelocity(self):
+        current_contact = self.getFootContactStates()
+        previous_contact = self.getFootContactStates(-2)
+        calculate_slip = np.logical_and(current_contact, previous_contact)
+        slip_velocity = []
+        for i, flag in enumerate(calculate_slip):
+            if not flag:
+                slip_velocity.append(0.0)
+            else:
+                current_leg_position = self.getFootPositionInWorldFrame(i)
+                previous_leg_position = self.getFootPositionInWorldFrame(i, -2)
+                slip_velocity.append(np.linalg.norm(current_leg_position - previous_leg_position) * self._frequency)
+        return np.array(slip_velocity)
+
+    def getStrides(self):
+        return self._strides
 
     # def getFootContactForces(self):
     #     joint_pos = self.getJointPositions(noisy=False)
@@ -450,6 +491,9 @@ class A1(Quadruped):
             base_contact = base_contact or _getContactState(leg * 5 + 1) or _getContactState(leg * 5 + 2)
             contact_states.extend([_getContactState(leg * 5 + i) for i in range(3, 6)])
         return contact_states
+
+    def getFootContactStates(self, idx=-1):
+        return self.getObservationHistoryFromIndex(idx).contact_states[(3, 6, 9, 12),]
 
 
 if __name__ == '__main__':

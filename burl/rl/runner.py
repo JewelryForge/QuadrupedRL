@@ -36,7 +36,7 @@ class OnPolicyRunner:
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_dev)
         total_iter = self.current_iter + g_cfg.num_iterations
         reward_details = {}
-        for it in range(self.current_iter, total_iter):
+        for it in range(self.current_iter + 1, total_iter + 1):
             start = time.time()
             with torch.inference_mode():
                 for i in range(g_cfg.storage_len):
@@ -72,10 +72,10 @@ class OnPolicyRunner:
             self.log(locals())
             reward_details.clear()
             if it % g_cfg.save_interval == 0:
-                self.save(os.path.join(wandb.run.dir, f'model_{it}.pt'))
+                self.save(os.path.join(g_cfg.log_dir, f'model_{it}.pt'))
 
         self.current_iter += g_cfg.num_iterations
-        self.save(os.path.join(wandb.run.dir, 'models', f'model_{self.current_iter}.pt'))
+        self.save(os.path.join(g_cfg.log_dir, f'model_{self.current_iter}.pt'))
 
     def log(self, locs, width=30):
         logger.info(f"{'#' * width}")

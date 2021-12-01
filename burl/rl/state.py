@@ -234,6 +234,7 @@ class ObservationRaw(object):
         self.base_state: BaseState = kwargs.get('base_state', None)
         self.joint_states: JointStates = kwargs.get('joint_states', None)
         self.foot_forces: np.ndarray = kwargs.get('foot_forces', None)
+        self.foot_positions: np.ndarray = kwargs.get('foot_positions', None)
         self.contact_states: ContactStates = kwargs.get('contact_states', None)
 
     def __str__(self):

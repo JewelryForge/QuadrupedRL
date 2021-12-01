@@ -7,7 +7,7 @@ import os
 sys.path.append('.')
 
 from burl.sim import A1, TGEnv, EnvContainer
-from burl.utils import make_cls, g_cfg, g_dev, logger, set_logger_level
+from burl.utils import make_cls, g_cfg, g_dev, logger, set_logger_level, str2time
 from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 
 
@@ -15,7 +15,6 @@ class Player:
     def __init__(self, model_dir):
         g_cfg.rendering_enabled = True
         g_cfg.sleeping_enabled = True
-        g_cfg.trn_roughness = 0.03
         make_robot = make_cls(A1)
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
@@ -46,10 +45,30 @@ def main(model_dir):
     player.play()
 
 
+def find_log(time=None, epoch=None):
+    folders = sorted(os.listdir('log'), key=str2time, reverse=True)
+    if not time:
+        folder = folders[0]
+    else:
+        for f in folders:
+            if ''.join(f.split('_')[1].split('-')).startswith(time):
+                folder = f
+                break
+        else:
+            raise RuntimeError(f'Record with time {time} not found')
+    folder = os.path.join('log', folder)
+    final_epoch = max(int(m.removeprefix('model_').removesuffix('.pt'))
+                      for m in os.listdir(folder) if m.startswith('model'))
+    if epoch:
+        if epoch > final_epoch:
+            raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
+    else:
+        epoch = final_epoch
+    return os.path.join(folder, f'model_{epoch}.pt')
+
+
 if __name__ == '__main__':
+    g_cfg.plain = False
+    g_cfg.trn_roughness = 0.03
     set_logger_level(logger.DEBUG)
-    log_dir = 'wandb/latest-run/files'
-    recent_log = 350
-    # recent_log = max(int(m.removeprefix('model_').removesuffix('.pt'))
-    #                  for m in os.listdir(log_dir) if m.startswith('model'))
-    main(os.path.join(log_dir, f'model_{recent_log}.pt'))
+    main(find_log(time='1105', epoch=9950))

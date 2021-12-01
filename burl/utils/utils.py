@@ -76,6 +76,10 @@ def timestamp():
     return datetime.now().strftime('%b%d_%H-%M-%S')
 
 
+def str2time(time_str):
+    return datetime.strptime(time_str, '%b%d_%H-%M-%S')
+
+
 def random_sample(indices, batch_size):
     indices = np.asarray(np.random.permutation(indices))
     batches = indices[:len(indices) // batch_size * batch_size].reshape(-1, batch_size)
@@ -84,3 +88,12 @@ def random_sample(indices, batch_size):
     r = len(indices) % batch_size
     if r:
         yield indices[-r:]
+
+
+if __name__ == '__main__':
+    t = timestamp()
+    print(t)
+    t1 = str2time(t)
+    t = timestamp()
+    t2 = str2time(t)
+    print(t1 > t2)

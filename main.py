@@ -2,6 +2,7 @@ import sys
 
 sys.path.append('.')
 from burl.rl.runner import OnPolicyRunner
+from burl.rl.task import BasicTask
 from burl.utils import g_cfg
 import wandb
 
@@ -19,6 +20,8 @@ def update_cfg_from_args():
 
 def main():
     update_cfg_from_args()
+    g_cfg.task_class = BasicTask
+    g_cfg.rewards_weights = [(r.__class__.__name__, w) for r, w in BasicTask.rewards]
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name)
     runner = OnPolicyRunner()
     runner.learn()

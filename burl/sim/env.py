@@ -162,6 +162,7 @@ class QuadrupedEnv(object):
         # NOTICE: ADDING LATENCY ARBITRARILY FROM A DISTRIBUTION IS NOT REASONABLE
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
         # start = time.time()
+        rewards = []
         self._action_buffer.append(action)
         for _ in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
@@ -169,17 +170,17 @@ class QuadrupedEnv(object):
                 torques = self._robot.applyCommand(action)
             self._sim_step_counter += 1
             self._env.stepSimulation()
+            rewards.append(self._task.calculateReward())
             if update_execution:
                 self._robot.updateObservation()
         if self._gui:
             self._updateRendering()
         time_out = self._sim_step_counter >= g_cfg.max_sim_iterations
-        reward = self._task.calculateReward()
         info = {'time_out': time_out, 'torques': torques, 'reward_details': self._task.getRewardDetails()}
         # logger.debug(f'Step time: {time.time() - start}')
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
-                reward,
+                np.mean(rewards),
                 (not self._robot.is_safe()) or self._task.done() or time_out,
                 info)
 
@@ -263,18 +264,19 @@ if __name__ == '__main__':
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.rendering_enabled = True
+    g_cfg.plain = True
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    # env = QuadrupedEnv()
-    env = TGEnv()
+    env = QuadrupedEnv()
+    # env = TGEnv()
     robot = env.robot
     env.initObservation()
     for _ in range(100000):
-        act = Action()
-        env.step(act)
-        # cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
-        # cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
-        # cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
-        # cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
-        # env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))
+        # act = Action()
+        # env.step(act)
+        cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
+        cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
+        cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
+        cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
+        env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))
