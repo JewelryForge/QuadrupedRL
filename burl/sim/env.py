@@ -9,7 +9,7 @@ from pybullet_utils import bullet_client
 
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
-from burl.sim.terrain import PlainTerrain, RandomUniformTerrain
+from burl.sim.terrain import PlainTerrainManager, TerrainCurriculum, FixedRoughTerrainManager
 from burl.rl.state import ExtendedObservation, Action
 from burl.rl.tg import LocomotionStateMachine
 from burl.rl.task import BasicTask
@@ -24,14 +24,18 @@ class QuadrupedEnv(object):
         self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
         if g_cfg.plain:
-            self._terrain = PlainTerrain(self._env)
+            self._terrain_manager = PlainTerrainManager(self._env)
+        elif g_cfg.use_trn_curriculum:
+            self._terrain_manager = TerrainCurriculum(self._env)
         else:
-            self._terrain = RandomUniformTerrain(self._env, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
-                                                 resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=2)
+            self._terrain_manager = FixedRoughTerrainManager(self._env, seed=2)
+
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
-        self._robot: Quadruped = make_robot(sim_env=self._env)
+        self._robot: Quadruped = make_robot(
+            sim_env=self._env,
+            init_height_addition=self._terrain_manager.getMaxHeightInRange((-1, 1), (-1, 1))[2])
         self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
@@ -43,6 +47,7 @@ class QuadrupedEnv(object):
         if self._gui:
             self._initRendering()
         self._sim_step_counter = 0
+        self._episode_reward = 0.0
         self._action_buffer = deque(maxlen=10)
 
     @property
@@ -51,7 +56,7 @@ class QuadrupedEnv(object):
 
     @property
     def terrain(self):
-        return self._terrain
+        return self._terrain_manager.terrain
 
     def initObservation(self):
         self.updateObservation()
@@ -62,8 +67,8 @@ class QuadrupedEnv(object):
 
     def _loadEgl(self):
         if egl := pkgutil.get_loader('eglRenderer'):
-            print(egl.get_filename())
-            self._env.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+            logger.info(f'LoadPlugin: {egl.get_filename()}_eglRendererPlugin')
+            self._env.loadPlugin(egl.get_filename(), '_eglRendererPlugin')
         else:
             self._env.loadPlugin("eglRendererPlugin")
 
@@ -163,6 +168,7 @@ class QuadrupedEnv(object):
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
         # start = time.time()
         rewards = []
+        reward_details = {}
         self._action_buffer.append(action)
         for _ in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
@@ -171,26 +177,37 @@ class QuadrupedEnv(object):
             self._sim_step_counter += 1
             self._env.stepSimulation()
             rewards.append(self._task.calculateReward())
+            for n, r in self._task.getRewardDetails().items():
+                reward_details[n] = reward_details.get(n, 0) + r
             if update_execution:
                 self._robot.updateObservation()
         if self._gui:
             self._updateRendering()
+        for n in reward_details:
+            reward_details[n] /= self._num_action_repeats
         time_out = self._sim_step_counter >= g_cfg.max_sim_iterations
-        info = {'time_out': time_out, 'torques': torques, 'reward_details': self._task.getRewardDetails()}
+        info = {'time_out': time_out, 'torques': torques, 'reward_details': reward_details}
+        if hasattr(self._terrain_manager, 'difficulty'):
+            info['difficulty'] = self._terrain_manager.difficulty
+        self._episode_reward += (mean_reward := np.mean(rewards))
         # logger.debug(f'Step time: {time.time() - start}')
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
-                np.mean(rewards),
+                mean_reward,
                 (not self._robot.is_safe()) or self._task.done() or time_out,
                 info)
 
-    def reset(self, **kwargs):
-        completely_reset = kwargs.get('completely_reset', False)
+    def reset(self):
+        completely_reset = self._terrain_manager.register(self._sim_step_counter, self._episode_reward)
         self._sim_step_counter = 0
+        self._episode_reward = 0.0
         self._task.reset()
         if completely_reset:
-            raise NotImplementedError
-        return self._robot.reset()
+            self._env.resetSimulation()
+            self._setPhysicsParameters()
+            self._terrain_manager.reset()
+        return self._robot.reset(self._terrain_manager.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
+                                 reload=completely_reset)
 
     def close(self):
         self._env.disconnect()
@@ -214,10 +231,10 @@ class QuadrupedEnv(object):
         return [p[2] for p in self.getAbundantTerrainInfo(x, y, orientation)]
 
     def getTerrainHeight(self, x, y):
-        return self._terrain.getHeight(x, y)
+        return self._terrain_manager.getHeight(x, y)
 
     def getTerrainNormal(self, x, y):
-        return self._terrain.getNormal(x, y)
+        return self._terrain_manager.getNormal(x, y)
 
     def getTerrainFrictionCoeff(self, x, y):
         return 0.0
@@ -232,7 +249,7 @@ class TGEnv(QuadrupedEnv):
         eo: ExtendedObservation = super().makeStandardObservation(privileged)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
-        logger.debug(eo.__dict__)
+        # logger.debug(eo.__dict__)
         return (eo.to_array() - eo.offset) * eo.scale
 
     def step(self, action: Action):
@@ -254,7 +271,7 @@ class TGEnv(QuadrupedEnv):
         # TODO: COMPLETE NOISY OBSERVATION CONVERSIONS
         return super().step(np.concatenate(commands))
 
-    def reset(self, **kwargs):
+    def reset(self):
         self._stm.reset()
         return super().reset()
 
@@ -264,19 +281,23 @@ if __name__ == '__main__':
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.rendering_enabled = True
-    g_cfg.plain = True
+    g_cfg.plain = False
+    g_cfg.use_trn_curriculum = False
+    g_cfg.trn_roughness = 1.0
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    env = QuadrupedEnv()
-    # env = TGEnv()
-    robot = env.robot
+    # env = QuadrupedEnv()
+    env = TGEnv()
+    # robot = env.robot
     env.initObservation()
-    for _ in range(100000):
-        # act = Action()
-        # env.step(act)
-        cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
-        cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
-        cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
-        cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
-        env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))
+    for i in range(1, 100000):
+        act = Action()
+        env.step(act)
+        if i % 300 == 0:
+            env.reset()
+        # cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
+        # cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
+        # cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
+        # cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
+        # env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))

@@ -9,7 +9,7 @@ import wandb
 from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 from burl.alg.ppo import PPO
 from burl.rl.task import BasicTask, RandomCmdTask
-from burl.sim import TGEnv, A1, EnvContainerMultiProcess2
+from burl.sim import TGEnv, A1, EnvContainerMultiProcess2, EnvContainer
 from burl.utils import make_cls, g_cfg, g_dev, logger
 
 
@@ -19,7 +19,10 @@ class OnPolicyRunner:
         make_task = make_cls(BasicTask)
         # make_task = make_cls(RandomCmdTask)
         make_env = make_cls(TGEnv, make_task=make_task, make_robot=make_robot)
-        self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
+        if g_cfg.use_multiprocessing:
+            self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
+        else:
+            self.env = EnvContainer(make_env, g_cfg.num_envs)
         actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_dev)
         self.alg = PPO(actor_critic)
 
@@ -58,6 +61,8 @@ class OnPolicyRunner:
                     cur_episode_length[new_ids] = 0
                     for k, v in infos['reward_details'].items():
                         reward_details[k] = reward_details.get(k, 0) + torch.sum(v, dtype=torch.float)
+                if 'difficulty' in infos:
+                    difficulty = torch.mean(infos['difficulty'])
 
                 stop = time.time()
                 collection_time = stop - start
@@ -77,7 +82,7 @@ class OnPolicyRunner:
         self.current_iter += g_cfg.num_iterations
         self.save(os.path.join(g_cfg.log_dir, f'model_{self.current_iter}.pt'))
 
-    def log(self, locs, width=30):
+    def log(self, locs, width=25):
         logger.info(f"{'#' * width}")
         logger.info(f"Iteration {locs['it']}/{locs['total_iter']}")
         logger.info(f"Collection Time: {locs['collection_time']:.3f}")
@@ -94,19 +99,22 @@ class OnPolicyRunner:
         logs.update({f'Reward/{k}': v / (g_cfg.storage_len * g_cfg.num_envs)
                      for k, v in locs['reward_details'].items()})
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
+        if 'difficulty' in locs:
+            logs.update({'Train/difficulty': locs['difficulty']}),
+            logger.info(f"{'Difficulty:'} {locs['difficulty']:.3f}")
         if len(reward_buffer) > 0:
             reward_mean, eps_len_mean = np.mean(reward_buffer), np.mean(eps_len_buffer)
             logs.update({'Train/mean_reward': reward_mean,
                          'Train/mean_episode_length': eps_len_mean}),
             logger.info(f"{'Mean Reward:'} {reward_mean:.3f}")
-            logger.info(f"{'Mean EpsLen:'} {eps_len_mean:.3f}")
+            logger.info(f"{'Mean EpsLen:'} {eps_len_mean:.1f}")
         logger.info(f"Total Frames: {locs['it'] * g_cfg.num_envs * g_cfg.storage_len}")
 
         wandb.log(logs)
 
     def save(self, path, infos=None):
         if not os.path.exists(d := os.path.dirname(path)):
-            os.mkdir(d)
+            os.makedirs(d)
         torch.save({
             'model_state_dict': self.alg.actor_critic.state_dict(),
             'optimizer_state_dict': self.alg.optimizer.state_dict(),

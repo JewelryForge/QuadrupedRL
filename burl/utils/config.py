@@ -3,6 +3,7 @@ import torch
 from burl.rl.state import ExtendedObservation, Action
 from burl.utils.utils import timestamp
 
+
 class PhysicsParam(object):
     def __init__(self):
         self.self_collision_enabled = False
@@ -63,24 +64,38 @@ class TrainParam(AlgParam):
         self.log_dir = f'log/{timestamp()}'
         self.run_name = None
         self.task_class = None
+        self.use_multiprocessing = True
+        self.use_wandb = True
 
 
 class TerrainParam(object):
     def __init__(self):
         self.plain = False
         self.trn_size = 30
-        self.trn_downsample = 5
+        self.trn_downsample = 15
         self.trn_roughness = 0.1
         self.trn_resolution = 0.05
         self.trn_offset = (0., 0., 0.)
 
 
-class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam):
+class TerrainCurriculumParam(object):
+    def __init__(self):
+        self.use_trn_curriculum = False
+        self.episodes_per_reset = 10
+        self.episode_to_start = 300
+        self.difficulty_step = 0.01
+        self.difficulty_upper = 0.3
+        self.reward_lb_to_start = 50.0
+        self.reward_step_for_progress = 0.5
+
+
+class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurriculumParam):
     def __init__(self):
         SimParam.__init__(self)
         RenderParam.__init__(self)
         TrainParam.__init__(self)
         TerrainParam.__init__(self)
+        TerrainCurriculumParam.__init__(self)
 
     def __setattr__(self, key, value):
         object.__setattr__(self, key, value)

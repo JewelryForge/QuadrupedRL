@@ -33,8 +33,9 @@ class Quadruped(object):
     STANCE_HEIGHT: float
     STANCE_POSTURE: np.ndarray
     TORQUE_LIMITS: np.ndarray
+    ROBOT_SIZE: np.ndarray
 
-    def __init__(self, sim_env=pybullet, make_motor=MotorSim):
+    def __init__(self, sim_env=pybullet, make_motor=MotorSim, init_height_addition=0.0):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
         assert g_cfg.latency >= 0
@@ -43,7 +44,7 @@ class Quadruped(object):
         self._resetStates()
 
         self._latency_steps = int(self._latency * g_cfg.execution_frequency)
-        self._quadruped = self._loadRobot()
+        self._quadruped = self._loadRobot(init_height_addition)
         self._analyseModelJoints()
         self._resetPosture()
         self.setPhysicsParams()
@@ -66,11 +67,14 @@ class Quadruped(object):
         self._strides = np.array((0., 0., 0., 0.))
         self._step_counter = 0
 
-    def _loadRobot(self):
-        pos = self.INIT_RACK_POSITION if g_cfg.on_rack else self.INIT_POSITION
-        orn = self.INIT_ORIENTATION
+    def _loadRobot(self, init_height_addition=0.0):
+        if g_cfg.on_rack:
+            pos = self.INIT_RACK_POSITION
+        else:
+            pos = self.INIT_POSITION.copy()
+            pos[2] += init_height_addition
         flags = self._env.URDF_USE_SELF_COLLISION if g_cfg.self_collision_enabled else 0
-        robot = self._env.loadURDF(self.URDF_FILE, pos, orn, flags=flags)
+        robot = self._env.loadURDF(self.URDF_FILE, pos, self.INIT_ORIENTATION, flags=flags)
         if g_cfg.on_rack:
             self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                        jointType=self._env.JOINT_FIXED,
@@ -137,23 +141,29 @@ class Quadruped(object):
         self._last_torque = torques
         return torques
 
-    def reset(self, at_current_state=False):
+    def reset(self, height_addition=0.0, reload=False, at_current_state=False):
         self._resetStates()
         self._observation_history.clear()
         self._observation_noisy_history.clear()
         self._command_history.clear()
-        if g_cfg.on_rack:
-            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
-            self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
-        elif at_current_state:
-            x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2]
-            _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
-            orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
-            self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z), orn_q)
-            self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+        if reload:
+            self._quadruped = self._loadRobot(height_addition)
+            self.setPhysicsParams()
         else:
-            self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_POSITION, TP_Q0)
-            self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+            if g_cfg.on_rack:
+                self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
+                self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+            elif at_current_state:
+                x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2] + height_addition
+                _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
+                orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
+                self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z), orn_q)
+                self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+            else:
+                init_position = self.INIT_POSITION.copy()
+                init_position[2] += height_addition
+                self._env.resetBasePositionAndOrientation(self._quadruped, init_position, TP_Q0)
+                self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
         self._resetPosture()
         self._motor.reset()
         return self.updateObservation()
@@ -399,9 +409,9 @@ class Quadruped(object):
 
 
 class A1(Quadruped):
-    INIT_POSITION = [0, 0, .43]
-    INIT_RACK_POSITION = [0, 0, 1]
-    INIT_ORIENTATION = [0, 0, 0, 1]
+    INIT_POSITION = np.array((0, 0, .33))
+    INIT_RACK_POSITION = np.array((0, 0, 1))
+    INIT_ORIENTATION = np.array((0, 0, 0, 1))
     NUM_MOTORS = 12
     LEG_NAMES = ['FR', 'FL', 'RR', 'RL']
     JOINT_TYPES = ['hip', 'upper', 'lower', 'toe']
@@ -414,12 +424,12 @@ class A1(Quadruped):
     STANCE_HEIGHT = 0.3
     STANCE_POSTURE = np.array((0, 0.723, -1.445) * 4)
     TORQUE_LIMITS = np.array(((-33.5,) * 12, (33.5,) * 12))
+    ROBOT_SIZE = np.array(((-0.3, 0.3), (-0.1, 0.1)))
 
     def ik_absolute(self, leg: int | str, pos, frame='base'):
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
         shoulder_length, thigh_length, shank_length = self.LINK_LENGTHS
-        # print(leg)
         if self.LEG_NAMES[leg].endswith('R'):
             shoulder_length *= -1
 
@@ -498,25 +508,26 @@ class A1(Quadruped):
 
 if __name__ == '__main__':
     from burl.sim.terrain import RandomUniformTerrain
-
-    np.set_printoptions(precision=2, suppress=True, linewidth=1000)
-    p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
-
-    p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    terrain = RandomUniformTerrain(p, size=30, downsample=5, scale=(0.05, 0.05, 1))
-    make_motor = make_cls(MotorSim)
     g_cfg.on_rack = False
+    p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
+    p.setAdditionalSearchPath(pybullet_data.getDataPath())
+    terrain = RandomUniformTerrain(p, size=30, downsample=5, resolution=0.05)
+    make_motor = make_cls(MotorSim)
     q = A1(sim_env=p, make_motor=make_motor)
+    p.resetSimulation()
+    terrain.reset()
+    # robot = p.loadURDF(A1.URDF_FILE, A1.INIT_POSITION, A1.INIT_ORIENTATION)
+    q.reset(reload=True)
     q.printJointInfos()
     p.setGravity(0, 0, -9.8)
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)
     for _ in range(100000):
         p.stepSimulation()
-        q.updateObservation()
-        time.sleep(1. / 24)
-        cmd0 = q.ik(0, (0, 0, -0.3), 'shoulder')
-        cmd1 = q.ik(1, (0, 0, -0.3), 'shoulder')
-        cmd2 = q.ik(2, (0, 0, -0.3), 'shoulder')
-        cmd3 = q.ik(3, (0, 0, -0.3), 'shoulder')
-        tq = q.applyCommand(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
-        print(q.getHorizontalFrameInBaseFrame())
+        # q.updateObservation()
+        time.sleep(1. / 240)
+        # cmd0 = q.ik(0, (0, 0, -0.3), 'shoulder')
+        # cmd1 = q.ik(1, (0, 0, -0.3), 'shoulder')
+        # cmd2 = q.ik(2, (0, 0, -0.3), 'shoulder')
+        # cmd3 = q.ik(3, (0, 0, -0.3), 'shoulder')
+        # tq = q.applyCommand(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
+        # print(q.getHorizontalFrameInBaseFrame())

@@ -11,7 +11,7 @@ class RewardManager(object):
             self._rewards.append(r)
             self._weights.append(w)
         self._rewards, self._weights = np.array(self._rewards), np.array(self._weights)
-        self._weights /= self._weights.sum()
+        self._weights = self._weights * 0.1 / self._weights.sum()
         self.storage = storage
         if storage:
             self.reward_buffer = deque(maxlen=2000)
@@ -58,6 +58,7 @@ class BasicTask(object):
         (BodyCollisionPenalty(), 0.02),
         (TorquePenalty(), 0.01)
     )
+
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
         self._env = env
         self._robot = env.robot
