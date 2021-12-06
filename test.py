@@ -7,7 +7,7 @@ import os
 sys.path.append('.')
 
 from burl.sim import A1, TGEnv, EnvContainer
-from burl.utils import make_cls, g_cfg, g_dev, logger, set_logger_level, str2time
+from burl.utils import make_cls, g_cfg, logger, set_logger_level, str2time, to_dev
 from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 
 
@@ -28,13 +28,13 @@ class Player:
         privileged_obs, obs = self.env.init_observations()
 
         critic_obs = privileged_obs if privileged_obs is not None else obs
-        obs, critic_obs = obs.to(g_dev), critic_obs.to(g_dev)
+        obs, critic_obs = to_dev(obs, critic_obs)
 
         for _ in range(2000):
             actions = self.actor_critic.act(obs)
-            obs, privileged_obs, rewards, done, info = self.env.step(actions)
+            obs, privileged_obs, *_ = self.env.step(actions)
             critic_obs = privileged_obs if privileged_obs is not None else obs
-            obs, critic_obs, rewards, done = obs.to(g_dev), critic_obs.to(g_dev), rewards.to(g_dev), done.to(g_dev)
+            obs, critic_obs = to_dev(obs, critic_obs)
             # print(self.env._envs[0].getActionSmoothness())
         # obs_list = ExtendedObservation.l
         # print(np.mean(obs_list, axis=0), np.std(obs_list, axis=0))
@@ -71,4 +71,4 @@ if __name__ == '__main__':
     g_cfg.plain = True
     # g_cfg.trn_roughness = 0.03
     set_logger_level(logger.DEBUG)
-    main(find_log(time='1629', epoch=6800))
+    main(find_log(time='1309', epoch=None))

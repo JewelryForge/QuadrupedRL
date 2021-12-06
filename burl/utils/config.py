@@ -1,7 +1,7 @@
 import torch
 
 from burl.rl.state import ExtendedObservation, Action
-from burl.utils.utils import timestamp
+from burl.utils import timestamp
 
 
 class PhysicsParam(object):
@@ -69,6 +69,8 @@ class TrainParam(AlgParam):
         self.use_mp = True
         self.use_wandb = True
         self.rewards_weights = None
+        self.ip_address = '10.12.120.120'
+        self.port = '19996'
 
 
 class TerrainParam(object):
@@ -100,20 +102,21 @@ class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurricul
         TerrainCurriculumParam.__init__(self)
         self._init = True
 
+    @property
+    def dev(self):
+        return self.device
+
     def __setattr__(self, key, value):
         if not hasattr(self, '_init'):
             return object.__setattr__(self, key, value)
+        if key == 'device':
+            value = torch.device(value)
         if (default_value := getattr(self, key)) is not None:
             if not isinstance(default_value, str) and isinstance(value, str):
                 value = eval(value)
-        assert isinstance(value, type(default_value))
-        object.__setattr__(self, key, value)
-        if key == 'device':
-            try:
-                global g_dev
-                g_dev = g_cfg.device
-            except NameError:
-                pass
+            if not isinstance(value, type(default_value)):
+                raise RuntimeError(f'Value type {value} of key {key} is not {type(default_value)}')
+        return object.__setattr__(self, key, value)
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "_instance"):
@@ -122,4 +125,10 @@ class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurricul
 
 
 g_cfg = TaskParam()
-g_dev = g_cfg.device
+
+
+def to_dev(tensor: torch.Tensor, *tensors):
+    if not tensors:
+        return tensor.to(g_cfg.dev)
+    else:
+        return tuple([t.to(g_cfg.dev) for t in [tensor, *tensors]])

@@ -1,8 +1,7 @@
 import torch
 
 from burl.alg.ac import ActorCritic
-from burl.utils import g_dev, g_cfg
-
+from burl.utils import g_cfg
 
 class RolloutStorage(object):
     class Transition(object):
@@ -28,6 +27,7 @@ class RolloutStorage(object):
         self.actions_shape = actions_shape
 
         # Core
+        g_dev = g_cfg.dev
         self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=g_dev)
         if privileged_obs_shape[0] is not None:
             self.privileged_observations = torch.zeros(num_transitions_per_env, num_envs,
@@ -98,7 +98,7 @@ class RolloutStorage(object):
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
         batch_size = self.num_envs * self.num_transitions_per_env
         mini_batch_size = batch_size // num_mini_batches
-        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=g_dev)
+        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=g_cfg.dev)
 
         observations = self.observations.flatten(0, 1)
         if self.privileged_observations is not None:
@@ -138,7 +138,7 @@ class PPO(object):
 
     def __init__(self, actor_critic):
         self.actor_critic = actor_critic
-        self.actor_critic.to(g_dev)
+        self.actor_critic.to(g_cfg.dev)
         self.optimizer = torch.optim.Adam(self.actor_critic.parameters(), lr=g_cfg.learning_rate)
         self.transition = RolloutStorage.Transition()
         self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (g_cfg.p_obs_dim,), (g_cfg.p_obs_dim,),
@@ -168,7 +168,7 @@ class PPO(object):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
         self.transition.rewards += g_cfg.gamma * torch.squeeze(
-            self.transition.values * time_outs.unsqueeze(1).to(g_dev), 1)
+            self.transition.values * time_outs.unsqueeze(1).to(g_cfg.dev), 1)
 
         # Record the transition
         self.storage.add_transitions(self.transition)

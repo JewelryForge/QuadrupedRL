@@ -132,8 +132,8 @@ class BodyCollisionPenalty(Reward):
 
 
 class TorquePenalty(Reward):
-    def __init__(self, upper=100):
-        self.reshape = reward_reshape(0, upper)
+    def __init__(self, lower=40, upper=100):  # TODO:TEST
+        self.reshape = reward_reshape(lower, upper)
 
     def __call__(self, torques):
         torque_sum = sum(abs(t) for t in torques)
@@ -141,8 +141,6 @@ class TorquePenalty(Reward):
 
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-
     r = SmallStridePenalty()
     print(r.__class__.__name__)
     print(r([0.0, 0.0, 0.0, 0.001]))

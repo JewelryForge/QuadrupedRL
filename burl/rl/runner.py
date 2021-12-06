@@ -10,7 +10,7 @@ from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 from burl.alg.ppo import PPO
 from burl.rl.task import BasicTask, RandomCmdTask
 from burl.sim import TGEnv, A1, EnvContainerMultiProcess2, EnvContainer
-from burl.utils import make_cls, g_cfg, g_dev, logger
+from burl.utils import make_cls, g_cfg, logger, to_dev
 
 
 class OnPolicyRunner:
@@ -23,7 +23,7 @@ class OnPolicyRunner:
             self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
         else:
             self.env = EnvContainer(make_env, g_cfg.num_envs)
-        actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_dev)
+        actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
         self.alg = PPO(actor_critic)
 
         self.current_iter = 0
@@ -31,12 +31,12 @@ class OnPolicyRunner:
     def learn(self):
         privileged_obs, obs = self.env.init_observations()
         critic_obs = privileged_obs if privileged_obs is not None else obs
-        obs, critic_obs = obs.to(g_dev), critic_obs.to(g_dev)
+        obs, critic_obs = to_dev(obs, critic_obs)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         reward_buffer, eps_len_buffer = deque(maxlen=10), deque(maxlen=10)
-        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_dev)
-        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_dev)
+        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
+        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
         total_iter = self.current_iter + g_cfg.num_iterations
         reward_details = {}
         for it in range(self.current_iter + 1, total_iter + 1):
@@ -46,8 +46,7 @@ class OnPolicyRunner:
                     actions = self.alg.act(obs, critic_obs)
                     obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
                     critic_obs = privileged_obs if privileged_obs is not None else obs
-                    obs, critic_obs, rewards, dones = obs.to(g_dev), critic_obs.to(g_dev), rewards.to(
-                        g_dev), dones.to(g_dev)
+                    obs, critic_obs, rewards, dones = to_dev(obs, critic_obs, rewards, dones)
 
                     self.alg.process_env_step(rewards, dones, infos['time_out'])
                     self.env.reset(dones)

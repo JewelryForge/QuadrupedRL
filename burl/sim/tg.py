@@ -1,4 +1,5 @@
 import numpy as np
+
 from burl.utils import normalize
 
 

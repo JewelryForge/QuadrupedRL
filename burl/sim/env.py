@@ -9,13 +9,11 @@ from pybullet_utils import bullet_client
 
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
-from burl.sim.terrain import PlainTerrainManager, TerrainCurriculum, FixedRoughTerrainManager
+from burl.sim.tg import LocomotionStateMachine
 from burl.rl.state import ExtendedObservation, Action
-from burl.rl.tg import LocomotionStateMachine
 from burl.rl.task import BasicTask
 from burl.utils import make_cls, g_cfg, logger, set_logger_level
 from burl.utils.transforms import Rpy
-import pkgutil
 
 
 class QuadrupedEnv(object):
@@ -28,18 +26,12 @@ class QuadrupedEnv(object):
         self._gui = g_cfg.rendering
         self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
-        if g_cfg.plain:
-            self._terrain = PlainTerrainManager(self._env)
-        elif g_cfg.use_trn_curriculum:
-            self._terrain = TerrainCurriculum(self._env)
-        else:
-            self._terrain = FixedRoughTerrainManager(self._env, seed=2)
-
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
-        self._robot: Quadruped = make_robot(self._env, self._terrain.getMaxHeightInRange(*make_robot.ROBOT_SIZE)[2])
         self._task = make_task(self)
+        self._terrain = self._task.makeTerrain()
+        self._robot: Quadruped = make_robot(self._env, self._terrain.getMaxHeightInRange(*make_robot.ROBOT_SIZE)[2])
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
         self._setPhysicsParameters()
@@ -52,6 +44,10 @@ class QuadrupedEnv(object):
         self._sim_step_counter = 0
         self._episode_reward = 0.0
         self._action_buffer = deque(maxlen=10)
+
+    @property
+    def client(self):
+        return self._env
 
     @property
     def robot(self):
@@ -69,6 +65,7 @@ class QuadrupedEnv(object):
         return self._robot.updateObservation()
 
     def _loadEgl(self):
+        import pkgutil
         if egl := pkgutil.get_loader('eglRenderer'):
             logger.info(f'LoadPlugin: {egl.get_filename()}_eglRendererPlugin')
             self._env.loadPlugin(egl.get_filename(), '_eglRendererPlugin')
@@ -189,7 +186,7 @@ class QuadrupedEnv(object):
             self._updateRendering()
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats
-        is_failed = self._task.is_failed()
+        is_failed = self._task.isFailed()
         time_out = not is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
         self._episode_reward += (mean_reward := np.mean(rewards))
         info = {'time_out': time_out, 'torques': torques, 'reward_details': reward_details,
@@ -205,8 +202,7 @@ class QuadrupedEnv(object):
                 info)
 
     def reset(self):
-        completely_reset = self._terrain.register(self._sim_step_counter,
-                                                  np.linalg.norm(self._robot.position[:2]))
+        completely_reset = self._task.register(self._sim_step_counter)
         self._sim_step_counter = 0
         self._episode_reward = 0.0
         self._task.reset()
