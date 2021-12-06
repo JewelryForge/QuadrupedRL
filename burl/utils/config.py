@@ -13,6 +13,8 @@ class PhysicsParam(object):
         self.foot_lateral_friction = 1.0
         self.foot_spinning_friction = 0.2
         self.foot_restitution = 0.3
+        self.joint_angle_range = 1.0
+        self.safe_height_range = (0.2, 0.6)
 
 
 class SimParam(PhysicsParam):
@@ -26,7 +28,7 @@ class SimParam(PhysicsParam):
 
 class RenderParam(object):
     def __init__(self):
-        self.rendering_enabled = False
+        self.rendering = False
         self.sleeping_enabled = False
         self.moving_camera = True
         self.extra_visualization = True
@@ -64,8 +66,9 @@ class TrainParam(AlgParam):
         self.log_dir = f'log/{timestamp()}'
         self.run_name = None
         self.task_class = None
-        self.use_multiprocessing = True
+        self.use_mp = True
         self.use_wandb = True
+        self.rewards_weights = None
 
 
 class TerrainParam(object):
@@ -81,12 +84,11 @@ class TerrainParam(object):
 class TerrainCurriculumParam(object):
     def __init__(self):
         self.use_trn_curriculum = False
-        self.episodes_per_reset = 10
-        self.episode_to_start = 300
+        self.combo_threshold = 5
+        self.miss_threshold = 3
         self.difficulty_step = 0.01
-        self.difficulty_upper = 0.3
-        self.reward_lb_to_start = 50.0
-        self.reward_step_for_progress = 0.5
+        self.max_difficulty = 0.3
+        self.distance_threshold = (2.5, 5.0)
 
 
 class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurriculumParam):
@@ -96,8 +98,15 @@ class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurricul
         TrainParam.__init__(self)
         TerrainParam.__init__(self)
         TerrainCurriculumParam.__init__(self)
+        self._init = True
 
     def __setattr__(self, key, value):
+        if not hasattr(self, '_init'):
+            return object.__setattr__(self, key, value)
+        if (default_value := getattr(self, key)) is not None:
+            if not isinstance(default_value, str) and isinstance(value, str):
+                value = eval(value)
+        assert isinstance(value, type(default_value))
         object.__setattr__(self, key, value)
         if key == 'device':
             try:
@@ -108,8 +117,8 @@ class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurricul
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "_instance"):
-            cls._instance = super().__new__(cls)
-        return cls._instance
+            setattr(cls, '_instance', super().__new__(cls))
+        return getattr(cls, '_instance')
 
 
 g_cfg = TaskParam()

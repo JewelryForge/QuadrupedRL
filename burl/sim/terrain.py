@@ -12,7 +12,7 @@ from burl.utils import unit, g_cfg, logger
 class Terrain(object):
     def __init__(self, bullet_client):
         self.bullet_client = bullet_client
-        self.terrain_id: int
+        self.terrain_id: int = -1
         pass
 
     @property
@@ -216,9 +216,7 @@ class PlainTerrainManager(BasicTerrainManager):
         self.terrain = PlainTerrain(bullet_client)
 
     def reset(self):
-        print('Here')
-        self.terrain_id = self.bullet_client.loadURDF("plane.urdf")
-        self.bullet_client.changeDynamics(self.terrain_id, -1, lateralFriction=5.0)
+        self.terrain = PlainTerrain(self.terrain.bullet_client)
 
 
 class FixedRoughTerrainManager(BasicTerrainManager):
@@ -233,26 +231,45 @@ class TerrainCurriculum(BasicTerrainManager):
         self.bullet_client = bullet_client
         self.terrain = makeStandardRoughTerrain(self.bullet_client, 0.0)
         self.counter = 0
-        self.finish_counter = 0
         self.difficulty = 0.0
         self.difficulty_level = 0
+        self.combo = 0
+        self.miss = 0
 
-    def register(self, episode_len, reward):
-        # logger.info(f'Register {episode_len} {reward}')
-        self.counter += 1
-        if episode_len == g_cfg.max_sim_iterations:
-            self.finish_counter += 1
-        if self.counter < g_cfg.episode_to_start:
-            return False
-        if self.finish_counter % g_cfg.episodes_per_reset == 0 and self.difficulty < g_cfg.difficulty_upper and \
-                reward > self.difficulty_level * g_cfg.reward_step_for_progress + g_cfg.reward_lb_to_start:
-            # logger.warning(f'Terrain Update, Difficulty {self.difficulty_level}')
+    def decreaseLevel(self):
+        if self.difficulty_level > 0:
+            self.difficulty -= g_cfg.difficulty_step
+            self.difficulty_level -= 1
+            logger.debug(f'decrease level, current {self.difficulty_level}')
+
+    def increaseLevel(self):
+        if self.difficulty < g_cfg.max_difficulty:
             self.difficulty += g_cfg.difficulty_step
             self.difficulty_level += 1
-            return True
-        elif self.counter % g_cfg.episodes_per_reset == 0 and self.difficulty != 0.0:
-            return True
-        return False
+            logger.debug(f'increase level, current {self.difficulty_level}')
+
+    def register(self, episode_len, distance):  # FIXME: THIS DISTANCE IS ON CMD DIRECTION
+        self.counter += 1
+        if episode_len == g_cfg.max_sim_iterations:
+            self.miss = 0
+            self.combo += 1
+        else:
+            self.combo = 0
+            self.miss += 1
+        logger.debug(f'Miss{self.miss} Combo{self.combo} distance{distance:.2f}')
+        if self.combo < g_cfg.combo_threshold and self.miss < g_cfg.miss_threshold:
+            return False
+        if self.miss >= g_cfg.miss_threshold:
+            self.decreaseLevel()
+        # FIXME: CHANGE IT WHEN USE RANDOM CMD
+        # FIXME: MERGE THIS CLASS TO TASK
+        elif self.combo >= g_cfg.combo_threshold:
+            lower, upper = g_cfg.distance_threshold
+            if distance > upper:
+                self.increaseLevel()
+            elif distance < lower:
+                self.decreaseLevel()
+        return True
 
     def reset(self):
         self.terrain = makeStandardRoughTerrain(self.bullet_client, self.difficulty)

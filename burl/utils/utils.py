@@ -18,12 +18,24 @@ def tuple_compact_string(_tuple):
     return '(' + ' '.join(f'{f:.1f}' for f in _tuple) + ')'
 
 
-def make_cls(cls, **properties):
-    def _make_class(*args, **kwargs):
-        properties.update(**kwargs)
-        return cls(*args, **properties)
+# def make_cls(cls, **properties):
+#     def _make_class(*args, **kwargs):
+#         properties.update(**kwargs)
+#         return cls(*args, **properties)
+#
+#     return _make_class
 
-    return _make_class
+class make_cls(object):
+    def __init__(self, cls, **properties):
+        self.cls, self.properties = cls, properties
+
+    def __call__(self, *args, **kwargs):
+        properties = self.properties.copy()
+        properties.update(**kwargs)
+        return self.cls(*args, **properties)
+
+    def __getattr__(self, item):
+        return getattr(self.cls, item)
 
 
 class JointInfo(object):

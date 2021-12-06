@@ -1,7 +1,9 @@
 from collections import deque
+
 import numpy as np
 
 from burl.rl.reward import *
+from burl.utils import g_cfg
 
 
 class RewardManager(object):
@@ -52,11 +54,11 @@ class BasicTask(object):
         (RedundantLinearPenalty(), 0.02),
         (RedundantAngularPenalty(), 0.02),
         (BodyPosturePenalty(), 0.03),
-        (FootSlipPenalty(), 0.02),
-        (SmallStridePenalty(), 0.02),
-        (TargetMutationPenalty(), 0.01),
+        (FootSlipPenalty(), 0.03),
+        (SmallStridePenalty(), 0.03),
+        (TargetMutationPenalty(), 0.02),
         (BodyCollisionPenalty(), 0.02),
-        (TorquePenalty(), 0.01)
+        (TorquePenalty(), 0.02)
     )
 
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
@@ -121,12 +123,19 @@ class BasicTask(object):
     def reset(self):
         pass
 
-    MAX_MOVEMENT_ANGLE = 1.0
-
-    def done(self):
-        joint_diff = self._robot.getJointPositions(noisy=False) - self._robot.STANCE_POSTURE
-        if any(joint_diff > self.MAX_MOVEMENT_ANGLE) or \
-                any(joint_diff < -self.MAX_MOVEMENT_ANGLE):
+    def is_failed(self):  # TODO: CHANGE TIME_OUT TO NORMALLY FINISH
+        rob, env = self._robot, self._env
+        (x, y, z), (r, p, _) = rob.position, Rpy.from_quaternion(rob.orientation)
+        est_terrain_height = np.mean([env.getTerrainHeight(x, y)
+                                      for x, y in [*rob.getFootXYsInWorldFrame(), (x, y)]])
+        z -= est_terrain_height
+        h_lb, h_ub = g_cfg.safe_height_range
+        if ((z < h_lb or z > h_ub) or
+                (r < -np.pi / 3 or r > np.pi / 3) or
+                rob.getBaseContactState()):
+            return True
+        joint_diff = rob.getJointPositions() - rob.STANCE_POSTURE
+        if any(joint_diff > g_cfg.joint_angle_range) or any(joint_diff < -g_cfg.joint_angle_range):
             return True
         return False
 

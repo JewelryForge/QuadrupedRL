@@ -19,7 +19,7 @@ class OnPolicyRunner:
         make_task = make_cls(BasicTask)
         # make_task = make_cls(RandomCmdTask)
         make_env = make_cls(TGEnv, make_task=make_task, make_robot=make_robot)
-        if g_cfg.use_multiprocessing:
+        if g_cfg.use_mp:
             self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
         else:
             self.env = EnvContainer(make_env, g_cfg.num_envs)
@@ -91,7 +91,7 @@ class OnPolicyRunner:
         fps = int(g_cfg.storage_len * self.env.num_envs / (locs['collection_time'] + locs['learning_time']))
         logs = {'Loss/value_function': locs['mean_value_loss'],
                 'Loss/surrogate': locs['mean_surrogate_loss'],
-                'Loss/learning_rate': g_cfg.learning_rate,
+                # 'Loss/learning_rate': g_cfg.learning_rate,
                 'Policy/mean_noise_std': self.alg.actor_critic.std.mean().item(),
                 'Perform/total_fps': fps,
                 'Perform/collection time': locs['collection_time'],

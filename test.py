@@ -13,9 +13,9 @@ from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 
 class Player:
     def __init__(self, model_dir):
-        g_cfg.rendering_enabled = True
+        g_cfg.rendering = True
         g_cfg.sleeping_enabled = True
-        make_robot = make_cls(A1)
+        make_robot = A1
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
         self.env = EnvContainer(make_env, 1)
@@ -68,7 +68,7 @@ def find_log(time=None, epoch=None):
 
 
 if __name__ == '__main__':
-    g_cfg.plain = False
-    g_cfg.trn_roughness = 0.03
+    g_cfg.plain = True
+    # g_cfg.trn_roughness = 0.03
     set_logger_level(logger.DEBUG)
-    main(find_log(time='1105', epoch=9950))
+    main(find_log(time='1629', epoch=6800))

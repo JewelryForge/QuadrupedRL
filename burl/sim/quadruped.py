@@ -19,6 +19,20 @@ TP_Q0 = (0., 0., 0., 1.)
 
 
 class Quadruped(object):
+    """
+    A class for observing and controlling a quadruped in pybullet.
+
+    For specific robot, the following attribute should be specified according to the urdf file.
+    This class is not responsible for pybullet.stepSimulation, so stepSimulation yourself.
+    Before a simulation cycle, run updateObservation() to set initial states.
+    A general process is: applyCommand -> stepSimulation -> updateObservation.
+    Some attribute like position represents some current real states; run methods like getJointHistory for history.
+    Method updateObservation automatically saves real states and a noisy version with latency.
+    Expect some commonly used attribute like position and orientation,
+    it's suggested to use method with prefix 'get' to get observations.
+    A 'get' method will give a real observation, unless there's a 'noisy' option and 'noisy=True' is specified.
+    """
+
     INIT_POSITION: np.ndarray
     INIT_RACK_POSITION: np.ndarray
     INIT_ORIENTATION: np.ndarray
@@ -35,7 +49,7 @@ class Quadruped(object):
     TORQUE_LIMITS: np.ndarray
     ROBOT_SIZE: np.ndarray
 
-    def __init__(self, sim_env=pybullet, make_motor=MotorSim, init_height_addition=0.0):
+    def __init__(self, sim_env=pybullet, init_height_addition=0.0, make_motor=MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
         assert g_cfg.latency >= 0
@@ -125,10 +139,8 @@ class Quadruped(object):
         for leg in range(4):
             self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
 
-    def is_safe(self):
-        x, y, z = self.position
-        r, p, _ = Rpy.from_quaternion(self.orientation)
-        return abs(r) < np.pi / 6 and abs(p) < np.pi / 6 and 0.2 < z < 0.6
+    def is_safe(self) -> bool:  # FIXME: MOVE THIS TO TASK
+        raise DeprecationWarning
 
     def applyCommand(self, motor_commands):
         # motor_commands = np.clip(motor_commands, self.STANCE_POSTURE - 0.3,
@@ -141,7 +153,14 @@ class Quadruped(object):
         self._last_torque = torques
         return torques
 
-    def reset(self, height_addition=0.0, reload=False, at_current_state=False):
+    def reset(self, height_addition=0.0, reload=False, in_situ=False):
+        """
+        clear state histories and restore the robot to the initial state in simulation.
+        :param height_addition: The additional height of the robot at spawning, usually according to the terrain height.
+        :param reload: Reload the urdf of the robot to simulation world if true.
+        :param in_situ: Reset in situ if true.
+        :return: Initial observation after reset.
+        """
         self._resetStates()
         self._observation_history.clear()
         self._observation_noisy_history.clear()
@@ -153,7 +172,7 @@ class Quadruped(object):
             if g_cfg.on_rack:
                 self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
                 self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
-            elif at_current_state:
+            elif in_situ:
                 x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2] + height_addition
                 _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
                 orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
@@ -189,6 +208,13 @@ class Quadruped(object):
         return observation, observation_noisy
 
     def ik(self, leg, pos, frame='base'):
+        """
+        Calculate the inverse kinematic of certain leg by calling pybullet.calculateInverseKinematics.
+        :param leg: The number of leg, ranging from [0, 4).
+        :param pos: Desired end-effect position in specified frame.
+        :param frame: The frame where position expressed in. Default 'base'; 'hip' and 'shoulder' supported.
+        :return: Joint angles of corresponding leg.
+        """
         pos = np.asarray(pos)
         if frame == 'base':
             pass
@@ -311,6 +337,9 @@ class Quadruped(object):
     def getContactStates(self):
         return self._observation_history[-1].contact_states
 
+    def getBaseContactState(self):
+        return self._observation_history[-1].contact_states[0]
+
     def getFootContactStates(self, idx=-1):
         return self.getObservationHistoryFromIndex(idx).contact_states[self._foot_ids,]
 
@@ -427,6 +456,9 @@ class A1(Quadruped):
     ROBOT_SIZE = np.array(((-0.3, 0.3), (-0.1, 0.1)))
 
     def ik_absolute(self, leg: int | str, pos, frame='base'):
+        """
+        Calculate the accurate inverse dynamics by the geometry. May fail if a solution doesn't exist.
+        """
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
         shoulder_length, thigh_length, shank_length = self.LINK_LENGTHS
@@ -508,16 +540,17 @@ class A1(Quadruped):
 
 if __name__ == '__main__':
     from burl.sim.terrain import RandomUniformTerrain
+
     g_cfg.on_rack = False
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = RandomUniformTerrain(p, size=30, downsample=5, resolution=0.05)
     make_motor = make_cls(MotorSim)
     q = A1(sim_env=p, make_motor=make_motor)
-    p.resetSimulation()
-    terrain.reset()
+    # p.resetSimulation()
+    # terrain.reset()
     # robot = p.loadURDF(A1.URDF_FILE, A1.INIT_POSITION, A1.INIT_ORIENTATION)
-    q.reset(reload=True)
+    # q.reset(reload=True)
     q.printJointInfos()
     p.setGravity(0, 0, -9.8)
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)

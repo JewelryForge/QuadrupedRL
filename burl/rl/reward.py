@@ -101,7 +101,7 @@ class TargetMutationPenalty(Reward):
 
 
 class FootSlipPenalty(Reward):
-    def __init__(self, upper=0.2):
+    def __init__(self, upper=0.1):
         self.reshape = reward_reshape(0.0, upper)
 
     def __call__(self, slip):
@@ -113,7 +113,7 @@ class SmallStridePenalty(Reward):
         self.reshape = reward_reshape(0.0, upper)
 
     def __call__(self, strides):
-        return 1 - sum(1 - self.reshape(s) for s in strides if s != 0.0) / len(strides)
+        return 1 - sum(1 - self.reshape(s) for s in strides if s != 0.0)
 
 
 class FootClearanceReward(Reward):

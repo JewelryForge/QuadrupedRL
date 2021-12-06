@@ -19,23 +19,26 @@ import pkgutil
 
 
 class QuadrupedEnv(object):
+    """
+    Manage a simulation environment of a Quadruped robot, including physics and rendering parameters.
+    Reads g_cfg.plain and g_cfg.use_trn_curriculum to generate terrains.
+    """
+
     def __init__(self, make_robot=A1, make_task=BasicTask):
-        self._gui = g_cfg.rendering_enabled
+        self._gui = g_cfg.rendering
         self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
         if g_cfg.plain:
-            self._terrain_manager = PlainTerrainManager(self._env)
+            self._terrain = PlainTerrainManager(self._env)
         elif g_cfg.use_trn_curriculum:
-            self._terrain_manager = TerrainCurriculum(self._env)
+            self._terrain = TerrainCurriculum(self._env)
         else:
-            self._terrain_manager = FixedRoughTerrainManager(self._env, seed=2)
+            self._terrain = FixedRoughTerrainManager(self._env, seed=2)
 
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
-        self._robot: Quadruped = make_robot(
-            sim_env=self._env,
-            init_height_addition=self._terrain_manager.getMaxHeightInRange((-1, 1), (-1, 1))[2])
+        self._robot: Quadruped = make_robot(self._env, self._terrain.getMaxHeightInRange(*make_robot.ROBOT_SIZE)[2])
         self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
@@ -56,7 +59,7 @@ class QuadrupedEnv(object):
 
     @property
     def terrain(self):
-        return self._terrain_manager.terrain
+        return self._terrain
 
     def initObservation(self):
         self.updateObservation()
@@ -132,8 +135,8 @@ class QuadrupedEnv(object):
                     self._contact_obj_ids.append(obj)
 
             r = self._robot
-            foot_xy = [r.getFootPositionInWorldFrame(i)[:2] for i in range(4)]
-            positions = chain(*[self.getAbundantTerrainInfo(x, y, r.orientation) for x, y in foot_xy])
+            positions = chain(*[self.getAbundantTerrainInfo(x, y, r.orientation)
+                                for x, y in r.getFootXYsInWorldFrame()])
             for idc, pos in zip(self._terrain_indicators, positions):
                 self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
@@ -154,7 +157,8 @@ class QuadrupedEnv(object):
                                            r.getJointVelHistoryFromMoment(-0.02, if_noisy)))
         eo.joint_pos_target = r.getCmdHistoryFromIndex(-1)
         eo.joint_prev_pos_target = r.getCmdHistoryFromIndex(-2)
-        foot_xy = [r.getFootPositionInWorldFrame(i)[:2] for i in range(4)]
+        # foot_xy = [r.getFootPositionInWorldFrame(i)[:2] for i in range(4)]
+        foot_xy = r.getFootXYsInWorldFrame()
         eo.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.orientation) for x, y in foot_xy])
         eo.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
         eo.contact_states = r.getContactStates()[1:]
@@ -185,28 +189,32 @@ class QuadrupedEnv(object):
             self._updateRendering()
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats
-        time_out = self._sim_step_counter >= g_cfg.max_sim_iterations
-        info = {'time_out': time_out, 'torques': torques, 'reward_details': reward_details}
-        if hasattr(self._terrain_manager, 'difficulty'):
-            info['difficulty'] = self._terrain_manager.difficulty
+        is_failed = self._task.is_failed()
+        time_out = not is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
         self._episode_reward += (mean_reward := np.mean(rewards))
+        info = {'time_out': time_out, 'torques': torques, 'reward_details': reward_details,
+                'accumulated_episode_reward': self._episode_reward}
+        if hasattr(self._terrain, 'difficulty'):
+            info['difficulty'] = self._terrain.difficulty
+        # logger.debug(is_failed or time_out)
         # logger.debug(f'Step time: {time.time() - start}')
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
                 mean_reward,
-                (not self._robot.is_safe()) or self._task.done() or time_out,
+                is_failed or time_out,
                 info)
 
     def reset(self):
-        completely_reset = self._terrain_manager.register(self._sim_step_counter, self._episode_reward)
+        completely_reset = self._terrain.register(self._sim_step_counter,
+                                                  np.linalg.norm(self._robot.position[:2]))
         self._sim_step_counter = 0
         self._episode_reward = 0.0
         self._task.reset()
         if completely_reset:
             self._env.resetSimulation()
             self._setPhysicsParameters()
-            self._terrain_manager.reset()
-        return self._robot.reset(self._terrain_manager.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
+            self._terrain.reset()
+        return self._robot.reset(self._terrain.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
                                  reload=completely_reset)
 
     def close(self):
@@ -231,10 +239,10 @@ class QuadrupedEnv(object):
         return [p[2] for p in self.getAbundantTerrainInfo(x, y, orientation)]
 
     def getTerrainHeight(self, x, y):
-        return self._terrain_manager.getHeight(x, y)
+        return self._terrain.getHeight(x, y)
 
     def getTerrainNormal(self, x, y):
-        return self._terrain_manager.getNormal(x, y)
+        return self._terrain.getNormal(x, y)
 
     def getTerrainFrictionCoeff(self, x, y):
         return 0.0
@@ -280,24 +288,30 @@ if __name__ == '__main__':
     g_cfg.moving_camera = False
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
-    g_cfg.rendering_enabled = True
+    g_cfg.rendering = True
     g_cfg.plain = False
     g_cfg.use_trn_curriculum = False
-    g_cfg.trn_roughness = 1.0
+    g_cfg.trn_roughness = 0.3
+
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    # env = QuadrupedEnv()
-    env = TGEnv()
-    # robot = env.robot
-    env.initObservation()
-    for i in range(1, 100000):
-        act = Action()
-        env.step(act)
-        if i % 300 == 0:
-            env.reset()
-        # cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
-        # cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
-        # cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
-        # cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
-        # env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))
+    tg = True
+    if tg:
+        env = TGEnv()
+        env.initObservation()
+        for i in range(1, 100000):
+            act = Action()
+            env.step(act)
+            if i % 500 == 0:
+                env.reset()
+    else:
+        env = QuadrupedEnv()
+        env.initObservation()
+        robot = env.robot
+        for i in range(1, 100000):
+            cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
+            cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
+            cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
+            cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
+            env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))

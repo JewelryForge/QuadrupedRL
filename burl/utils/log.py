@@ -1,7 +1,12 @@
 import logging
+from logging import FileHandler, StreamHandler
+from logging.handlers import SocketHandler
+import os
 
 import numpy as np
 import torch
+
+from burl.utils import g_cfg
 
 BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
 RESET_SEQ = "\033[0m"
@@ -39,13 +44,22 @@ def get_logger(name=__name__,
                log_level=logging.INFO,
                fmt='[%(asctime)s] %(message)s',
                datefmt='%b%d %H:%M:%S'):
-    formatter = ColoredFormatter(fmt, datefmt)
-    stream = logging.StreamHandler()
-    stream.setLevel(log_level)
-    stream.setFormatter(formatter)
     log = logging.getLogger(name)
-    log.setLevel(log_level)
-    log.addHandler(stream)
+    log.setLevel(logging.DEBUG)
+    path = os.path.join(g_cfg.log_dir, 'log.txt')
+    if not os.path.exists(dir_ := os.path.dirname(path)):
+        os.makedirs(dir_)
+    fh = FileHandler(path)
+    fh.setLevel(logging.DEBUG)
+    log.addHandler(fh)
+    soh = SocketHandler('127.0.0.1', 19996)
+    soh.setFormatter(logging.Formatter())
+    log.addHandler(soh)
+    formatter = ColoredFormatter(fmt, datefmt)
+    sh = StreamHandler()
+    sh.setLevel(log_level)
+    sh.setFormatter(formatter)
+    log.addHandler(sh)
     return log
 
 
@@ -60,13 +74,11 @@ logger.CRITICAL = logging.CRITICAL
 
 
 def set_logger_level(log_level):
-    logger.setLevel(log_level)
-    for h in logger.handlers:
-        h.setLevel(log_level)
+    logger.handlers[-1].setLevel(log_level)
 
 
 if __name__ == '__main__':
-    set_logger_level(logger.DEBUG)
+    set_logger_level(logger.INFO)
     logger.debug(torch.Tensor([1.0000001, 2, 3]))
     logger.info(123123)
     logger.warning(123123)
