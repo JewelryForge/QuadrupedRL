@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as scipyRotation
 
+
 class NDArrayBased(np.ndarray):
     def __new__(cls, matrix, skip_check=False):
         matrix = np.asarray(matrix)

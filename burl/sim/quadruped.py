@@ -199,6 +199,7 @@ class Quadruped(object):
         observation.joint_states = JointStates(*zip(*joint_states_raw))
         observation.foot_forces = self._getFootContactForces()
         observation.foot_positions = self._getFootPositionsInWorldFrame()
+        # observation.contact_states = ContactStates(self._getContactStates())
         observation.contact_states = ContactStates(self._getContactStates())
         self._observation_history.append(observation)
         observation_noisy = self._estimateObservation()
@@ -260,6 +261,9 @@ class Quadruped(object):
         contact_states = [_getContactState(range(self._num_joints))]
         return contact_states
 
+    def _getFootContactInfo(self):
+        return
+
     def _getFootContactForces(self):
         contact_points = self._env.getContactPoints(bodyA=self._quadruped)
         contact_dict = {}
@@ -267,8 +271,8 @@ class Quadruped(object):
             link_idx = p[3]
             directions = p[7], p[11], p[13]
             forces = p[9], p[10], p[12]
-            contact_dict[link_idx] = contact_dict.get(link_idx, (0., 0., 0.)) + \
-                                     sum(np.array(d) * f for d, f in zip(directions, forces))
+            contact_dict[link_idx] = (contact_dict.get(link_idx, (0., 0., 0.)) +
+                                      sum(np.array(d) * f for d, f in zip(directions, forces)))
         return np.concatenate([contact_dict.get(f, TP_ZERO3) for f in self._foot_ids])
 
     def _updateStancePositions(self):
@@ -360,15 +364,14 @@ class Quadruped(object):
         current_contact = self.getFootContactStates()
         previous_contact = self.getFootContactStates(-2)
         calculate_slip = np.logical_and(current_contact, previous_contact)
-        slip_velocity = []
+        slip_velocity = np.zeros(4, dtype=float)
         for i, flag in enumerate(calculate_slip):
-            if not flag:
-                slip_velocity.append(0.0)
-            else:
+            if flag:
                 current_leg_position = self.getFootPositionInWorldFrame(i)
                 previous_leg_position = self.getFootPositionInWorldFrame(i, -2)
-                slip_velocity.append(np.linalg.norm(current_leg_position - previous_leg_position) * self._frequency)
-        return np.array(slip_velocity)
+                print(i, np.linalg.norm(current_leg_position - previous_leg_position))
+                slip_velocity[i] = np.linalg.norm(current_leg_position - previous_leg_position) * self._frequency
+        return slip_velocity
 
     def getStrides(self):
         return self._strides
@@ -445,7 +448,7 @@ class A1(Quadruped):
     LEG_NAMES = ['FR', 'FL', 'RR', 'RL']
     JOINT_TYPES = ['hip', 'upper', 'lower', 'toe']
     JOINT_SUFFIX = ['joint', 'joint', 'joint', 'fixed']
-    URDF_FILE = '/home/jewel/Workspaces/teacher-student/urdf/a1/a1.urdf'
+    URDF_FILE = 'a1/a1.urdf'
     LINK_LENGTHS = np.array((0.08505, 0.2, 0.2))
     COM_OFFSET = -np.array((0.012731, 0.002186, 0.000515))
     HIP_OFFSETS = np.array(((0.183, -0.047, 0.), (0.183, 0.047, 0.),

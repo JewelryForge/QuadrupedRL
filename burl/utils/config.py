@@ -20,6 +20,7 @@ class PhysicsParam(object):
 class SimParam(PhysicsParam):
     def __init__(self):
         super().__init__()
+        self.local_urdf = '/home/jewel/Workspaces/teacher-student/urdf'
         self.action_frequency = 50.0
         self.sim_frequency = 400.
         self.execution_frequency = 400.

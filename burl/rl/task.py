@@ -90,6 +90,7 @@ class BasicTask(object):
         x, y, z = self.robot.getBasePosition(False)
         body_height = z - self._env.getTerrainHeight(x, y)
         slip = sum(self.robot.getFootSlipVelocity())
+        # print(self.robot.getFootSlipVelocity())
         strides = self.robot.getStrides()
         torques = self.robot.getLastAppliedTorques()
         orientation = self.robot.orientation

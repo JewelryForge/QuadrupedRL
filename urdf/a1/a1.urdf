@@ -51,7 +51,7 @@
       <geometry>
         <mesh filename="meshes/trunk.obj" scale="1 1 1"/>
       </geometry>
-      <material name="orange"/>
+      <material name="silver"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>

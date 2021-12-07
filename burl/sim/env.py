@@ -26,6 +26,7 @@ class QuadrupedEnv(object):
         self._gui = g_cfg.rendering
         self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
+        self._env.setAdditionalSearchPath(g_cfg.local_urdf)
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()

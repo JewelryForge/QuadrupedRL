@@ -46,12 +46,12 @@ def get_logger(name=__name__,
                datefmt='%b%d %H:%M:%S'):
     log = logging.getLogger(name)
     log.setLevel(logging.DEBUG)
-    path = os.path.join(g_cfg.log_dir, 'log.txt')
-    if not os.path.exists(dir_ := os.path.dirname(path)):
-        os.makedirs(dir_)
-    fh = FileHandler(path)
-    fh.setLevel(logging.DEBUG)
-    log.addHandler(fh)
+    # path = os.path.join(g_cfg.log_dir, 'log.txt')
+    # if not os.path.exists(dir_ := os.path.dirname(path)):
+    #     os.makedirs(dir_)
+    # fh = FileHandler(path)
+    # fh.setLevel(logging.DEBUG)
+    # log.addHandler(fh)
     # soh = SocketHandler('127.0.0.1', 19996)
     soh = SocketHandler('10.12.120.120', 19996)
     soh.setFormatter(logging.Formatter())

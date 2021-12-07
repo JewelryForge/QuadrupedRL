@@ -19,6 +19,7 @@ def update_cfg_from_args():
         value = getattr(g_cfg, name)
         logger.warning(f'{name}: {type(value).__name__} -> {value}')
 
+
 def main():
     update_cfg_from_args()
     g_cfg.task_class = BasicTask

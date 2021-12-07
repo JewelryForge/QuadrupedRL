@@ -230,12 +230,13 @@ class ContactStates(np.ndarray):
 
 class ObservationRaw(object):
     def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('base_state', 'joint_states', 'foot_forces', 'contact_states'), args))
+        kwargs.update(zip(('base_state', 'joint_states', 'foot_forces', 'contact_states', 'contact_info'), args))
         self.base_state: BaseState = kwargs.get('base_state', None)
         self.joint_states: JointStates = kwargs.get('joint_states', None)
         self.foot_forces: np.ndarray = kwargs.get('foot_forces', None)
         self.foot_positions: np.ndarray = kwargs.get('foot_positions', None)
         self.contact_states: ContactStates = kwargs.get('contact_states', None)
+        # self.contact_info: tuple = kwargs.get('contact_info', None)
 
     def __str__(self):
         return str(self.base_state) + '\n' + str(self.contact_states)
