@@ -28,15 +28,16 @@ class Player:
 
         critic_obs = privileged_obs if privileged_obs is not None else obs
         obs, critic_obs = to_dev(obs, critic_obs)
+        import time
 
         for _ in range(2000):
             actions = self.actor_critic.act(obs)
-            obs, privileged_obs, *_ = self.env.step(actions)
+            # print(self.env.step(actions))
+            obs, privileged_obs, _, dones, _ = self.env.step(actions)
             critic_obs = privileged_obs if privileged_obs is not None else obs
             obs, critic_obs = to_dev(obs, critic_obs)
-            # print(self.env._envs[0].getActionSmoothness())
-        # obs_list = ExtendedObservation.l
-        # print(np.mean(obs_list, axis=0), np.std(obs_list, axis=0))
+            self.env.reset(dones)
+            # time.sleep(0.05)
 
 
 def main(model_dir):
@@ -51,7 +52,7 @@ def find_log(time=None, epoch=None):
         folder = folders[0]
     else:
         for f in folders:
-            if ''.join(f.split('_')[1].split('-')).startswith(time):
+            if ''.join(f.split('_')[1].split('-')).startswith(str(time)):
                 folder = f
                 break
         else:
@@ -91,22 +92,22 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student/lo
     model_name = f'model_{epoch}.pt'
     remote_log = os.path.join(log_dir, folder, model_name)
     local_log_dir = os.path.join('log', 'remote-' + folder)
-    os.makedirs(local_log_dir, exist_ok=True)
-    flag = os.system(f'scp -P {port} {host}:{remote_log} {local_log_dir}')
-    if flag:
-        raise RuntimeError('scp failed')
+    if not os.path.exists(os.path.join(local_log_dir, model_name)):
+        os.makedirs(local_log_dir, exist_ok=True)
+        if os.system(f'scp -P {port} {host}:{remote_log} {local_log_dir}'):
+            raise RuntimeError('scp failed')
     return os.path.join(local_log_dir, model_name)
 
 
 if __name__ == '__main__':
-    # g_cfg.plain = True
-    g_cfg.trn_roughness = 0.0
+    g_cfg.trn_type = 'rough'
+    g_cfg.trn_roughness = 0.05
     set_logger_level(logger.DEBUG)
-    remote = True
-    time = None
+    remote = False
+    time = '2312'
     epoch = None
     if remote:
-        model = find_log_remote(time=time, epoch=epoch)
+        model = find_log_remote(time='0914', epoch=9400)
     else:
         model = find_log(time=time, epoch=epoch)
     main(model)

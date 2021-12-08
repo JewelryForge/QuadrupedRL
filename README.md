@@ -89,7 +89,11 @@ _Dec01_
 - 感觉凹凸地形训练的时候有一个阈值，如果一步迈出去有一点点奖励增加，机器人就会开始向前迈；否则只会原地踏步
 
 
+_Dec08_
+- 采取了新的滑动计算（减去滚动），开始小跳；增大AngularWeight作用不大，打算换为欧拉角变化率
 
+linear 1.431e-06 rpy_rate 1.931e-05 body_height 1.235e-04 body_rpy 3.345e-04 contact_states 1.192e-06 mutation 1.621e-05 slip 2.801e-04 strides 1.168e-05 torques 4.768e-07 calculate 6.104e-05 extra 1.025e-05
+1 1.049e-05 2 1.574e-05 3 4.768e-06 4 1.907e-06
 
 _Stage2_
 

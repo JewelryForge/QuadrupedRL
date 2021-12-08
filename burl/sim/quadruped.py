@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import os.path
 from collections import deque
 from typing import Deque
 
@@ -9,10 +9,10 @@ import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
 
-from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState
+from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
-from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg
-from burl.utils.transforms import Rpy, Rotation, Odometry
+from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg, vec_cross
+from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity
 
 TP_ZERO3 = (0., 0., 0.)
 TP_Q0 = (0., 0., 0., 1.)
@@ -49,7 +49,8 @@ class Quadruped(object):
     TORQUE_LIMITS: np.ndarray
     ROBOT_SIZE: np.ndarray
 
-    def __init__(self, sim_env=pybullet, init_height_addition=0.0, make_motor=MotorSim):
+    def __init__(self, sim_env=pybullet, init_height_addition=0.0,
+                 make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
         assert g_cfg.latency >= 0
@@ -75,10 +76,12 @@ class Quadruped(object):
         self._base_pose: Pose = None
         self._base_twist: Twist = None
         self._base_twist_in_base_frame: Twist = None
+        self._rpy: Rpy = None
         self._last_torque: np.ndarray = np.zeros(12)
         self._disturbance: np.ndarray = np.zeros(3)
         self._last_stance_positions = [None] * 4
-        self._strides = np.array((0., 0., 0., 0.))
+        self._strides = [(0., 0.)] * 4
+        self._observation: ObservationRaw = None
         self._step_counter = 0
 
     def _loadRobot(self, init_height_addition=0.0):
@@ -88,7 +91,8 @@ class Quadruped(object):
             pos = self.INIT_POSITION.copy()
             pos[2] += init_height_addition
         flags = self._env.URDF_USE_SELF_COLLISION if g_cfg.self_collision_enabled else 0
-        robot = self._env.loadURDF(self.URDF_FILE, pos, self.INIT_ORIENTATION, flags=flags)
+        path = os.path.join(g_cfg.local_urdf, self.URDF_FILE)
+        robot = self._env.loadURDF(path, pos, self.INIT_ORIENTATION, flags=flags)
         if g_cfg.on_rack:
             self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                        jointType=self._env.JOINT_FIXED,
@@ -193,20 +197,19 @@ class Quadruped(object):
         self._base_twist = Twist(*self._env.getBaseVelocity(self._quadruped))
         self._base_twist_in_base_frame = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
                                                self._rotateFromWorldToBase(self._base_twist.angular))
-        observation = ObservationRaw()
-        observation.base_state = BaseState(self._base_pose, self._base_twist_in_base_frame)
+        self._rpy = Rpy.from_quaternion(self._base_pose.orientation)
+        self._observation = ObservationRaw()
+        self._observation.base_state = BaseState(self._base_pose, self._base_twist_in_base_frame)
         joint_states_raw = self._env.getJointStates(self._quadruped, range(self._num_joints))
-        observation.joint_states = JointStates(*zip(*joint_states_raw))
-        observation.foot_forces = self._getFootContactForces()
-        observation.foot_positions = self._getFootPositionsInWorldFrame()
-        # observation.contact_states = ContactStates(self._getContactStates())
-        observation.contact_states = ContactStates(self._getContactStates())
-        self._observation_history.append(observation)
+        self._observation.joint_states = JointStates(*zip(*joint_states_raw))
+        self._observation.foot_states = self._getFootStates()
+        self._observation.contact_states = ContactStates(self._getContactStates())
+        self._observation_history.append(self._observation)
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
         self._motor.update_observation()
         self._updateStancePositions()
-        return observation, observation_noisy
+        return self._observation, observation_noisy
 
     def ik(self, leg, pos, frame='base'):
         """
@@ -250,9 +253,8 @@ class Quadruped(object):
     def _rotateFromWorldToBase(self, vector_world):
         return self._rotateFromWorld(vector_world, self._base_pose.orientation)
 
-    def _getFootPositionsInWorldFrame(self):
-        # NOTICE: THIS USES getLinkState which acquires mass center states
-        return np.concatenate([self._env.getLinkState(self._quadruped, self._foot_ids[l])[0] for l in range(4)])
+    # def _getFootPositionsInWorldFrame(self):
+    #     return np.concatenate([self._env.getLinkState(self._quadruped, self._foot_ids[l])[0] for l in range(4)])
 
     def _getContactStates(self):
         def _getContactState(link_id):
@@ -261,10 +263,14 @@ class Quadruped(object):
         contact_states = [_getContactState(range(self._num_joints))]
         return contact_states
 
-    def _getFootContactInfo(self):
-        return
-
-    def _getFootContactForces(self):
+    def _getFootStates(self):
+        """
+        Get foot positions, orientations and forces by getLinkStates and getContactPoints.
+        :return: FootStates
+        """
+        link_states = self._env.getLinkStates(self._quadruped, self._foot_ids)
+        foot_positions = [ls[0] for ls in link_states]
+        foot_orientations = [ls[1] for ls in link_states]
         contact_points = self._env.getContactPoints(bodyA=self._quadruped)
         contact_dict = {}
         for p in contact_points:
@@ -273,17 +279,18 @@ class Quadruped(object):
             forces = p[9], p[10], p[12]
             contact_dict[link_idx] = (contact_dict.get(link_idx, (0., 0., 0.)) +
                                       sum(np.array(d) * f for d, f in zip(directions, forces)))
-        return np.concatenate([contact_dict.get(f, TP_ZERO3) for f in self._foot_ids])
+        foot_forces = [contact_dict.get(f, TP_ZERO3) for f in self._foot_ids]
+        return FootStates(foot_positions, foot_orientations, foot_forces)
 
     def _updateStancePositions(self):
-        for i, (c, c_prev) in enumerate(zip(self.getFootContactStates(), self.getFootContactStates(-2))):
+        for i, (c, c_prev) in enumerate(zip(self.getFootContactStates(), self.getPrevFootContactStates())):
             if c and not c_prev:
                 foot_position = self.getFootPositionInWorldFrame(i)
                 if self._last_stance_positions[i] is not None:
-                    self._strides[i] = np.linalg.norm(foot_position - self._last_stance_positions[i])
+                    self._strides[i] = (foot_position - self._last_stance_positions[i])[:2]
                 self._last_stance_positions[i] = foot_position
             else:
-                self._strides[i] = 0.0
+                self._strides[i] = (0.0, 0.0)
 
     def _estimateObservation(self):
         # TODO: ADD NOISE
@@ -302,8 +309,12 @@ class Quadruped(object):
     def orientation(self):
         return self._base_pose.orientation
 
+    @property
+    def rpy(self):
+        return self._rpy
+
     def getObservation(self, noisy=False):
-        return self._observation_noisy_history[-1] if noisy else self._observation_history[-1]
+        return self._observation_noisy_history[-1] if noisy else self._observation
 
     def getBasePosition(self, noisy=False):
         return self.getObservation(noisy).base_state.pose.position
@@ -319,14 +330,18 @@ class Quadruped(object):
 
     def getHorizontalFrameInBaseFrame(self, noisy=False):
         rot = Rotation.from_quaternion(self.getBaseOrientation(noisy))
-        _, _, y = self.getBaseRpy(noisy)
+        y = self._rpy.y
         sy, cy = np.sin(y), np.cos(y)
-        x = (cy, sy, 0)
-        y = (-sy, cy, 0)
-        z = (0, 0, 1)
-        return rot.transpose() @ np.array((x, y, z)).transpose()
+        X = (cy, sy, 0)
+        Y = (-sy, cy, 0)
+        Z = (0, 0, 1)
+        return rot.transpose() @ np.array((X, Y, Z)).transpose()
 
     def getBaseLinearVelocity(self):
+        """
+        Get the real robot linear velocity in world frame.
+        :return: linear velocity in np.ndarray with shape (3,)
+        """
         return self._base_twist.linear
 
     def getBaseAngularVelocity(self):
@@ -338,52 +353,74 @@ class Quadruped(object):
     def getBaseAngularVelocityInBaseFrame(self, noisy=False):
         return self.getObservation(noisy).base_state.twist.angular
 
+    def getBaseRpyRate(self):
+        return get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist.angular)
+
+    def getBaseRpyRateInBaseFrame(self):
+        return get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist_in_base_frame.angular)
+
     def getContactStates(self):
-        return self._observation_history[-1].contact_states
+        return self._observation.contact_states
 
     def getBaseContactState(self):
-        return self._observation_history[-1].contact_states[0]
+        return self._observation.contact_states[0]
 
-    def getFootContactStates(self, idx=-1):
-        return self.getObservationHistoryFromIndex(idx).contact_states[self._foot_ids,]
+    def getFootContactStates(self):
+        return self._observation.contact_states[self._foot_ids,]
+
+    def getPrevFootContactStates(self):
+        return self.getObservationHistoryFromIndex(-2).contact_states[self._foot_ids,]
 
     def getFootContactForces(self):
-        return self._observation_history[-1].foot_forces
+        return self._observation.foot_states.forces.reshape(-1)
 
     def getFootPositionInBaseFrame(self, leg):
         joint_pos = self.getJointPositions(noisy=False)
         return self.fk(leg, joint_pos[leg * 3: leg * 3 + 3])
 
-    def getFootPositionInWorldFrame(self, leg, idx=-1):
-        return self.getObservationHistoryFromIndex(idx).foot_positions[leg * 3: leg * 3 + 3]
+    def getFootPositionInWorldFrame(self, leg):
+        return self._observation.foot_states.positions[leg, :]
+
+    def getPrevFootPositionInWorldFrame(self, leg):
+        return self.getObservationHistoryFromIndex(-2).foot_states.positions[leg, :]
 
     def getFootXYsInWorldFrame(self):
-        return [self._observation_history[-1].foot_positions[leg * 3: leg * 3 + 2] for leg in range(4)]
+        return [self._observation.foot_states.positions[leg, :2] for leg in range(4)]
 
     def getFootSlipVelocity(self):
         current_contact = self.getFootContactStates()
-        previous_contact = self.getFootContactStates(-2)
+        previous_contact = self.getPrevFootContactStates()
         calculate_slip = np.logical_and(current_contact, previous_contact)
         slip_velocity = np.zeros(4, dtype=float)
         for i, flag in enumerate(calculate_slip):
             if flag:
-                current_leg_position = self.getFootPositionInWorldFrame(i)
-                previous_leg_position = self.getFootPositionInWorldFrame(i, -2)
-                print(i, np.linalg.norm(current_leg_position - previous_leg_position))
-                slip_velocity[i] = np.linalg.norm(current_leg_position - previous_leg_position) * self._frequency
+                current_leg_pos = self.getFootPositionInWorldFrame(i)
+                previous_leg_pos = self.getPrevFootPositionInWorldFrame(i)
+                current_leg_orn = self._observation.foot_states.orientations[i]
+                previous_leg_orn = self.getObservationHistoryFromIndex(-2).foot_states.orientations[i]
+                z, angle = pybullet.getAxisAngleFromQuaternion(
+                    pybullet.getDifferenceQuaternion(previous_leg_orn, current_leg_orn))
+                x = current_leg_pos - previous_leg_pos
+                if np.linalg.norm(x) > 1e-5:
+                    y = vec_cross(z, unit(x))
+                    rotating_velocity = vec_cross(0.02 * y, z)
+                    net_velocity = (current_leg_pos - previous_leg_pos) * self._frequency
+                    slip_velocity[i] = np.linalg.norm((net_velocity - rotating_velocity)[:2])
+                # np.set_printoptions(5)
+                # print(current_leg_pos)
+                # print((net_velocity - rotating_velocity)[:2])
+                # print(net_velocity[:2])
+                # print(i, np.linalg.norm(current_leg_position - previous_leg_position))
+                # slip_velocity[i] = np.linalg.norm(current_leg_pos - previous_leg_pos) * self._frequency
+                # print((current_leg_pos - previous_leg_pos) * self._frequency)
+                # print()
         return slip_velocity
 
     def getStrides(self):
         return self._strides
 
-    # def getFootContactForces(self):
-    #     joint_pos = self.getJointPositions(noisy=False)
-    #     foot_odoms = [self.fk(i, joint_pos[i * 3: i * 3 + 3]) for i in range(4)]
-    #     reaction_forces = self._observation_history[-1].joint_states.reaction_force[self._foot_ids, :3]
-    #     return np.array([o.rotation @ f for o, f in zip(foot_odoms, reaction_forces)]).reshape(-1)
-
     def getJointStates(self) -> JointStates:
-        return self._observation_history[-1].joint_states
+        return self._observation.joint_states
 
     def getJointPositions(self, noisy=False):
         return self.getObservation(noisy).joint_states.position[self._motor_ids,]
@@ -537,11 +574,15 @@ class A1(Quadruped):
             contact_states.extend([_getContactState(leg * 5 + i) for i in range(3, 6)])
         return contact_states
 
-    def getFootContactStates(self, idx=-1):
-        return self.getObservationHistoryFromIndex(idx).contact_states[(3, 6, 9, 12),]
+    def getFootContactStates(self):
+        return self._observation.contact_states[(3, 6, 9, 12),]
+
+    def getPrevFootContactStates(self):
+        return self.getObservationHistoryFromIndex(-2).contact_states[(3, 6, 9, 12),]
 
 
 if __name__ == '__main__':
+    import time
     from burl.sim.terrain import RandomUniformTerrain
 
     g_cfg.on_rack = False

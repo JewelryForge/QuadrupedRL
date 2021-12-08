@@ -7,26 +7,25 @@ import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
 
+from burl.rl.state import ExtendedObservation, Action
+from burl.rl.task import BasicTask
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
 from burl.sim.tg import LocomotionStateMachine
-from burl.rl.state import ExtendedObservation, Action
-from burl.rl.task import BasicTask
-from burl.utils import make_cls, g_cfg, logger, set_logger_level
-from burl.utils.transforms import Rpy
+from burl.utils import make_cls, g_cfg, logger, set_logger_level, unit, vec_cross
+from burl.utils.transforms import Rpy, Rotation
 
 
 class QuadrupedEnv(object):
     """
     Manage a simulation environment of a Quadruped robot, including physics and rendering parameters.
-    Reads g_cfg.plain and g_cfg.use_trn_curriculum to generate terrains.
+    Reads g_cfg.trn_type to generate terrains.
     """
 
     def __init__(self, make_robot=A1, make_task=BasicTask):
         self._gui = g_cfg.rendering
         self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
-        self._env.setAdditionalSearchPath(g_cfg.local_urdf)
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
@@ -42,9 +41,16 @@ class QuadrupedEnv(object):
         logger.debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
         if self._gui:
             self._initRendering()
+        self._resetStates()
+        self._action_buffer = deque(maxlen=10)
+
+    def _resetStates(self):
         self._sim_step_counter = 0
         self._episode_reward = 0.0
-        self._action_buffer = deque(maxlen=10)
+        self._est_X = None
+        self._est_Y = None
+        self._est_Z = None
+        self._est_height = 0.0
 
     @property
     def client(self):
@@ -102,7 +108,6 @@ class QuadrupedEnv(object):
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, True)
 
     def _setPhysicsParameters(self):
-        # self._env.resetSimulation()
         # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
         self._env.setTimeStep(1 / g_cfg.sim_frequency)
         self._env.setGravity(0, 0, -9.8)
@@ -132,9 +137,8 @@ class QuadrupedEnv(object):
                                                     basePosition=pos)
                     self._contact_obj_ids.append(obj)
 
-            r = self._robot
-            positions = chain(*[self.getAbundantTerrainInfo(x, y, r.orientation)
-                                for x, y in r.getFootXYsInWorldFrame()])
+            positions = chain(*[self.getAbundantTerrainInfo(x, y, self._robot.rpy.y)
+                                for x, y in self._robot.getFootXYsInWorldFrame()])
             for idc, pos in zip(self._terrain_indicators, positions):
                 self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
@@ -155,9 +159,8 @@ class QuadrupedEnv(object):
                                            r.getJointVelHistoryFromMoment(-0.02, if_noisy)))
         eo.joint_pos_target = r.getCmdHistoryFromIndex(-1)
         eo.joint_prev_pos_target = r.getCmdHistoryFromIndex(-2)
-        # foot_xy = [r.getFootPositionInWorldFrame(i)[:2] for i in range(4)]
         foot_xy = r.getFootXYsInWorldFrame()
-        eo.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.orientation) for x, y in foot_xy])
+        eo.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.rpy.y) for x, y in foot_xy])
         eo.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
         eo.contact_states = r.getContactStates()[1:]
         eo.foot_contact_forces = r.getFootContactForces()
@@ -165,10 +168,21 @@ class QuadrupedEnv(object):
         eo.external_disturbance = r.getBaseDisturbance()
         return eo
 
+    def _estimateTerrain(self):
+        self._est_X, self._est_Y, self._est_Z = [], [], []
+        for x, y in self._robot.getFootXYsInWorldFrame():
+            self._est_X.append(x)
+            self._est_Y.append(y)
+            self._est_Z.append(self.getTerrainHeight(x, y))
+        x, y, _ = self._robot.position
+        self._est_X.append(x)
+        self._est_Y.append(y)
+        self._est_Z.append(self.getTerrainHeight(x, y))
+        self._est_height = np.mean(self._est_Z)
+
     def step(self, action):
         # NOTICE: ADDING LATENCY ARBITRARILY FROM A DISTRIBUTION IS NOT REASONABLE
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
-        # start = time.time()
         rewards = []
         reward_details = {}
         self._action_buffer.append(action)
@@ -178,6 +192,7 @@ class QuadrupedEnv(object):
                 torques = self._robot.applyCommand(action)
             self._sim_step_counter += 1
             self._env.stepSimulation()
+            self._estimateTerrain()
             rewards.append(self._task.calculateReward())
             for n, r in self._task.getRewardDetails().items():
                 reward_details[n] = reward_details.get(n, 0) + r
@@ -204,8 +219,7 @@ class QuadrupedEnv(object):
 
     def reset(self):
         completely_reset = self._task.register(self._sim_step_counter)
-        self._sim_step_counter = 0
-        self._episode_reward = 0.0
+        self._resetStates()
         self._task.reset()
         if completely_reset:
             self._env.resetSimulation()
@@ -223,20 +237,38 @@ class QuadrupedEnv(object):
         actions = [self._action_buffer[-i - 1] for i in range(3)]
         return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
 
-    def getAbundantTerrainInfo(self, x, y, orientation):
+    def getAbundantTerrainInfo(self, x, y, yaw):
         interval = 0.1
-        yaw = Rpy.from_quaternion(orientation).y
         dx, dy = interval * np.cos(yaw), interval * np.sin(yaw)
         points = ((dx - dy, dx + dy), (dx, dy), (dx + dy, -dx + dy),
                   (-dy, dx), (0, 0), (dy, -dx),
                   (-dx - dy, dx - dy), (-dx, -dy), (-dx + dy, -dx - dy))
         return [(xp := x + dx, yp := y + dy, self.getTerrainHeight(xp, yp)) for dx, dy in points]
 
-    def getTerrainScan(self, x, y, orientation):
-        return [p[2] for p in self.getAbundantTerrainInfo(x, y, orientation)]
+    def getTerrainScan(self, x, y, yaw):
+        return [p[2] for p in self.getAbundantTerrainInfo(x, y, yaw)]
 
     def getTerrainHeight(self, x, y):
         return self._terrain.getHeight(x, y)
+
+    def getSafetyHeightOfRobot(self):
+        return self._robot.position[2] - self._est_height
+
+    def getSafetyRpyOfRobot(self):
+        X, Y, Z = np.array(self._est_X), np.array(self._est_Y), np.array(self._est_Z)
+        # Use terrain points to fit a plane
+        A = np.zeros((3, 3))
+        A[0, :] = np.sum(X ** 2), X @ Y, np.sum(X)
+        A[1, :] = A[0, 1], np.sum(Y ** 2), np.sum(Y)
+        A[2, :] = A[0, 2], A[1, 2], len(X)
+        b = np.array((X @ Z, Y @ Z, np.sum(Z)))
+        a, b, _ = np.linalg.solve(A, b)
+        trn_Z = unit((-a, -b, 1))
+        rot_robot = Rotation.from_quaternion(self._robot.orientation)
+        trn_Y = vec_cross(trn_Z, rot_robot.X)
+        trn_X = vec_cross(trn_Y, trn_Z)
+        # (trn_X, trn_Y, trn_Z) is the transpose of rotation matrix, so there's no need to transpose again
+        return Rpy.from_rotation(np.array((trn_X, trn_Y, trn_Z)) @ rot_robot)
 
     def getTerrainNormal(self, x, y):
         return self._terrain.getNormal(x, y)
@@ -249,6 +281,7 @@ class TGEnv(QuadrupedEnv):
     def __init__(self, **kwargs):
         super(TGEnv, self).__init__(**kwargs)
         self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency)
+        # self._filter = self._stm.flags
 
     def makeStandardObservation(self, privileged=True):
         eo: ExtendedObservation = super().makeStandardObservation(privileged)
@@ -261,6 +294,7 @@ class TGEnv(QuadrupedEnv):
         # 0 ~ 3 additional frequencies
         # 4 ~ 11 foot position residual
         self._stm.update(action.leg_frequencies)
+        # self._filter += self._stm.flags
         priori = self._stm.get_priori_trajectory() - self.robot.STANCE_HEIGHT
         if False:
             h2b = self._robot.getHorizontalFrameInBaseFrame(False)  # FIXME: HERE SHOULD BE TRUE
@@ -280,20 +314,22 @@ class TGEnv(QuadrupedEnv):
         self._stm.reset()
         return super().reset()
 
+    def getFilteredRobotStrides(self):
+        pass
+
 
 if __name__ == '__main__':
     g_cfg.moving_camera = False
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.rendering = True
-    g_cfg.plain = False
-    g_cfg.use_trn_curriculum = False
-    g_cfg.trn_roughness = 0.3
+    g_cfg.trn_type = 'rough'
+    g_cfg.trn_roughness = 0.1
 
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = True
+    tg = False
     if tg:
         env = TGEnv()
         env.initObservation()

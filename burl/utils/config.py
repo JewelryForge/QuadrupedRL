@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 from burl.rl.state import ExtendedObservation, Action
@@ -70,14 +71,16 @@ class TrainParam(AlgParam):
         self.use_mp = True
         self.use_wandb = True
         self.rewards_weights = None
-        self.ip_address = '10.12.120.120'
+        self.ip_address = '127.0.0.1'  # FIXME: THIS DOES NOT MAKE SENSE
+        # self.ip_address = '10.12.120.120'
         self.port = '19996'
 
 
 class TerrainParam(object):
     def __init__(self):
-        self.plain = False
+        self.trn_type = 'plain'
         self.trn_size = 30
+        self.trn_slope = np.pi / 24
         self.trn_downsample = 15
         self.trn_roughness = 0.1
         self.trn_resolution = 0.05
@@ -86,7 +89,6 @@ class TerrainParam(object):
 
 class TerrainCurriculumParam(object):
     def __init__(self):
-        self.use_trn_curriculum = False
         self.combo_threshold = 5
         self.miss_threshold = 3
         self.difficulty_step = 0.01

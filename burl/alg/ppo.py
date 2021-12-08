@@ -3,6 +3,7 @@ import torch
 from burl.alg.ac import ActorCritic
 from burl.utils import g_cfg
 
+
 class RolloutStorage(object):
     class Transition(object):
         def __init__(self):
@@ -143,6 +144,7 @@ class PPO(object):
         self.transition = RolloutStorage.Transition()
         self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (g_cfg.p_obs_dim,), (g_cfg.p_obs_dim,),
                                       (g_cfg.action_dim,))
+        self.learning_rate = g_cfg.learning_rate
 
     def test_mode(self):
         self.actor_critic.test()
@@ -199,7 +201,7 @@ class PPO(object):
             entropy_batch = self.actor_critic.entropy
 
             # KL
-            if cfg.desired_kl != None and cfg.schedule == 'adaptive':
+            if cfg.desired_kl is not None and cfg.schedule == 'adaptive':
                 with torch.inference_mode():
                     kl = torch.sum(
                         torch.log(sigma_batch / old_sigma_batch + 1.e-5) + (
@@ -207,10 +209,10 @@ class PPO(object):
                                 2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
                     kl_mean = torch.mean(kl)
 
-                    if kl_mean > self.desired_kl * 2.0:
+                    if kl_mean > cfg.desired_kl * 2.0:
                         self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                    elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
-                        self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+                    elif 0.0 < kl_mean < cfg.desired_kl / 2.0:
+                        self.learning_rate = min(1e-3, self.learning_rate * 1.5)
 
                     for param_group in self.optimizer.param_groups:
                         param_group['lr'] = self.learning_rate

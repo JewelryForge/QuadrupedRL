@@ -9,7 +9,7 @@ class LocomotionStateMachine(object):
     INIT_ANGLES = (0.0, 1.0, 1.0, 0.0)
 
     def __init__(self, time_step, **kwargs):
-        # We set the base frequency f 0 to zero when the zero command is given for 0.5 s,
+        # We set the base frequency f0 to zero when the zero command is given for 0.5s,
         # which stops FTGs, and the robot stands still on the terrain.
         # f0 is set to 1.25 Hz when the direction command is given
         # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
@@ -22,6 +22,7 @@ class LocomotionStateMachine(object):
         self._frequency = np.ones(4) * self.base_frequency
         self._lower_frequency = kwargs.get('lower_frequency', 0.5)
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
+        self._flags = np.zeros(4, dtype=bool)
 
     @property
     def base_frequency(self):
@@ -35,6 +36,10 @@ class LocomotionStateMachine(object):
     def frequency(self):
         return self._frequency
 
+    @property
+    def flags(self):
+        return self._flags
+
     def reset(self):
         if self.FIXED_INIT:
             self._phases = normalize(np.array(self.INIT_ANGLES) * np.pi)
@@ -46,7 +51,9 @@ class LocomotionStateMachine(object):
         self._frequency = self.base_frequency + frequency_offsets
         self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
         self._phases += self._frequency * self._time_step * 2 * np.pi
-        self._phases = normalize(self._phases)  # [-pi, pi)
+        phases = normalize(self._phases)  # [-pi, pi)
+        self._flags = (phases == self._phases)
+        self._phases = phases
         return self._phases
 
     def get_priori_trajectory(self):

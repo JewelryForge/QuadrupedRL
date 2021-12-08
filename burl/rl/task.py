@@ -1,69 +1,11 @@
-from collections import deque
-
-import numpy as np
-
 from burl.rl.reward import *
 from burl.utils import g_cfg
 
 
-# class RewardManager(object):
-#     def __init__(self, *rewards_weights, storage=False):
-#         self._rewards, self._weights = [], []
-#         for r, w in rewards_weights:
-#             self._rewards.append(r)
-#             self._weights.append(w)
-#         self._rewards, self._weights = np.array(self._rewards), np.array(self._weights)
-#         self._weights = self._weights * 0.1 / self._weights.sum()
-#         self.storage = storage
-#         if storage:
-#             self.reward_buffer = deque(maxlen=2000)
-#             self.weighted_reward_buffer = deque(maxlen=2000)
-#         self._details = {}
-#
-#     @property
-#     def rewards(self):
-#         return self._rewards
-#
-#     @property
-#     def weights(self):
-#         return self._weights
-#
-#     @property
-#     def details(self):
-#         return self._details
-#
-#     def calculate_weighted_rewards(self, *args):
-#         assert len(args) == len(self._rewards)
-#         rewards = [r(*arg) for r, arg in zip(self._rewards, args)]
-#         self._details = dict(zip((r.__class__.__name__ for r in self._rewards), rewards))
-#         weighted_rewards = [r * w for r, w in zip(rewards, self._weights)]
-#         if self.storage:
-#             self.reward_buffer.append(rewards)
-#             self.weighted_reward_buffer.append(weighted_rewards)
-#         return sum(weighted_rewards)
-#
-#     def analyse(self, painting=True):
-#         pass
-
-
 class BasicTask(object):
-    rewards_weights = (
-        (LinearVelocityReward(), 0.2),
-        (AngularVelocityReward(), 0.05),
-        (BodyHeightReward(), 0.03),
-        (RedundantLinearPenalty(), 0.02),
-        (RedundantAngularPenalty(), 0.03),
-        (BodyPosturePenalty(), 0.03),
-        (FootSlipPenalty(), 0.02),
-        (SmallStridePenalty(), 0.02),
-        (TargetMutationPenalty(), 0.02),
-        (BodyCollisionPenalty(), 0.02),
-        (TorquePenalty(), 0.01)
-    )
-
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
         self._env = env
-        self._cmd = cmd
+        self._cmd = np.asarray(cmd)
         from burl.rl.curriculum import BasicTerrainManager
         self._terrain: BasicTerrainManager = None
         self._rewards, self._weights = [], []
@@ -82,25 +24,43 @@ class BasicTask(object):
     def robot(self):
         return self._env.robot
 
+    rewards_weights = (
+        (LinearVelocityReward(), 0.16),
+        (YawRateReward(), 0.1),
+        # (AngularVelocityReward(), 0.1),
+        (BodyHeightReward(), 0.03),
+        (RedundantLinearPenalty(), 0.02),
+        # (RedundantAngularPenalty(), 0.03),
+        (RollPitchRatePenalty(), 0.03),
+        (BodyPosturePenalty(), 0.03),
+        (FootSlipPenalty(), 0.02),
+        (SmallStridePenalty(), 0.02),
+        (TargetMutationPenalty(), 0.02),
+        (BodyCollisionPenalty(), 0.02),
+        (TorquePenalty(), 0.01)
+    )
+
     def calculateReward(self):
         linear = self.robot.getBaseLinearVelocityInBaseFrame()
-        angular = self.robot.getBaseAngularVelocityInBaseFrame()
+        # angular = self.robot.getBaseAngularVelocityInBaseFrame()
+        r_rate, p_rate, y_rate = self.robot.getBaseRpyRate()
+        body_height = self._env.getSafetyHeightOfRobot()
+        safety_r, safety_p, _ = self._env.getSafetyRpyOfRobot()
+        # print(body_rpy, self.robot.rpy)
         contact_states = self.robot.getContactStates()
         mutation = self._env.getActionMutation()
-        x, y, z = self.robot.getBasePosition(False)
-        body_height = z - self._env.getTerrainHeight(x, y)
-        slip = sum(self.robot.getFootSlipVelocity())
-        # print(self.robot.getFootSlipVelocity())
-        strides = self.robot.getStrides()
+        slip = np.sum(self.robot.getFootSlipVelocity())
+        strides = np.array([np.dot(s, self._cmd[:2]) for s in self.robot.getStrides()])
         torques = self.robot.getLastAppliedTorques()
-        orientation = self.robot.orientation
         args = (
             (self._cmd, linear),  # Linear Rew
-            (self._cmd, angular),  # Angular Rew
+            # (self._cmd, angular),  # Angular Rew
+            (self._cmd[2], y_rate),  # yaw rate Rew
             (body_height,),  # Height Rew
             (self._cmd, linear),  # Linear Pen
-            (angular,),  # Angular Pen
-            (orientation,),  # Posture Pen
+            # (angular,),  # Angular Pen
+            (r_rate, p_rate),  # rp rate Pen
+            (safety_r, safety_p),  # Posture Pen
             (slip,),  # Slip Pen
             (strides,),  # Small Stride Pen
             (mutation,),  # Target Mut Pen
@@ -112,18 +72,29 @@ class BasicTask(object):
         rewards = [r(*arg) for r, arg in zip(self._rewards, args)]
         self._details = dict(zip((r.__class__.__name__ for r in self._rewards), rewards))
         weighted_sum = sum([r * w for r, w in zip(rewards, self._weights)])
-        # return sum(weighted_rewards)
-
-        # reward = self._reward_manager.calculate_weighted_rewards(*args)
-        # print(np.array(linear), np.array(angular))
-        # print(Rpy.from_quaternion(orientation))
-        # print(np.array(rewards))
-        # print(np.array(weighted_rewards))
-        # print()
-        # logging.debug('VEL:', str(np.array(linear)), str(np.array(angular)))
-        # logging.debug('REW:', str(np.array(rewards)))
-        # logging.debug('WEIGHTED:', str(np.array(weighted_rewards)))
+        self.sendOrPrint(locals())
         return weighted_sum
+
+    def sendOrPrint(self, variables: dict):
+        def get(key):
+            return variables[key]
+        # print(get('y_rate'), YawRateReward()(0, get('y_rate')))
+        # if any(strides := get('strides')):
+        #     print(strides, SmallStridePenalty()(strides))
+        # print(get('r_rate'), get('p_rate'), get('y_rate'))
+        # print('slip', get('slip'))
+        # print()
+        # from burl.utils.transforms import Rpy
+        # from burl.utils import udp_pub
+        # print(self.robot.getFootSlipVelocity())
+        # if any(strides != 0.0)
+        #     print(strides, sum(self.reshape(s) for s in strides if s != 0.0))
+        # locals().update(variables)
+        # data = {'AngVel': dict(zip('xyz', self.robot.getBaseAngularVelocity())),
+        #         'dEuler': dict(zip(('dr', 'dp', 'dy'), self.robot.getBaseRpyRate()))}
+        # udp_pub.send(data)
+        # print(strides, self.robot.getStrides())
+        pass
 
     def getRewardDetails(self):
         return self._details
@@ -132,13 +103,19 @@ class BasicTask(object):
         pass
 
     def makeTerrain(self):
-        from burl.rl.curriculum import PlainTerrainManager, TerrainCurriculum, FixedRoughTerrainManager
-        if g_cfg.plain:
+        from burl.rl.curriculum import (PlainTerrainManager, TerrainCurriculum,
+                                        FixedRoughTerrainManager, SlopeTerrainManager)
+        if g_cfg.trn_type == 'plain':
             self._terrain = PlainTerrainManager(self._env.client)
-        elif g_cfg.use_trn_curriculum:
+        elif g_cfg.trn_type == 'curriculum':
+            g_cfg.trn_offset = tuple(g_cfg.trn_size / 6 * self._cmd)
             self._terrain = TerrainCurriculum(self._env.client)
-        else:
+        elif g_cfg.trn_type == 'rough':
             self._terrain = FixedRoughTerrainManager(self._env.client, seed=2)
+        elif g_cfg.trn_type == 'slope':
+            self._terrain = SlopeTerrainManager(self._env.client)
+        else:
+            raise RuntimeError(f'Unknown terrain type {g_cfg.trn_type}')
         return self._terrain
 
     def register(self, episode_len):
@@ -147,12 +124,10 @@ class BasicTask(object):
 
     def isFailed(self):  # TODO: CHANGE TIME_OUT TO NORMALLY FINISH
         rob, env = self.robot, self._env
-        (x, y, z), (r, p, _) = rob.position, Rpy.from_quaternion(rob.orientation)
-        est_terrain_height = np.mean([env.getTerrainHeight(x, y)
-                                      for x, y in [*rob.getFootXYsInWorldFrame(), (x, y)]])
-        z -= est_terrain_height
+        r, _, _ = rob.rpy
+        safety_h = env.getSafetyHeightOfRobot()
         h_lb, h_ub = g_cfg.safe_height_range
-        if ((z < h_lb or z > h_ub) or
+        if ((safety_h < h_lb or safety_h > h_ub) or
                 (r < -np.pi / 3 or r > np.pi / 3) or
                 rob.getBaseContactState()):
             return True

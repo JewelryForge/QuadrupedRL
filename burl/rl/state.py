@@ -139,10 +139,8 @@ class ExtendedObservation(Observation, PrivilegedInformation):
         PrivilegedInformation.__init__(self)
 
     def to_array(self):
-        return np.concatenate((
-            Observation.to_array(self),
-            PrivilegedInformation.to_array(self)
-        ))
+        return np.concatenate((Observation.to_array(self),
+                               PrivilegedInformation.to_array(self)))
 
 
 class Action:
@@ -228,13 +226,23 @@ class ContactStates(np.ndarray):
         return np.asarray(matrix, dtype=float)
 
 
+class FootStates(ArrayAttr):
+    def __init__(self, *args, **kwargs):
+        kwargs.update(zip(('positions', 'orientations', 'forces'), args))
+        self.positions = kwargs.get('positions', None)
+        self.orientations = kwargs.get('orientations', None)
+        self.forces = kwargs.get('forces', None)
+
+
 class ObservationRaw(object):
     def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('base_state', 'joint_states', 'foot_forces', 'contact_states', 'contact_info'), args))
+        kwargs.update(zip(('base_state', 'joint_states', 'foot_states',
+                           'foot_forces', 'contact_states', 'contact_info'), args))
         self.base_state: BaseState = kwargs.get('base_state', None)
         self.joint_states: JointStates = kwargs.get('joint_states', None)
-        self.foot_forces: np.ndarray = kwargs.get('foot_forces', None)
-        self.foot_positions: np.ndarray = kwargs.get('foot_positions', None)
+        self.foot_states: FootStates = kwargs.get('foot_states', None)
+        # self.foot_forces: np.ndarray = kwargs.get('foot_forces', None)
+        # self.foot_positions: np.ndarray = kwargs.get('foot_positions', None)
         self.contact_states: ContactStates = kwargs.get('contact_states', None)
         # self.contact_info: tuple = kwargs.get('contact_info', None)
 

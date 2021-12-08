@@ -1,4 +1,4 @@
-from burl.sim import Terrain, RandomUniformTerrain, PlainTerrain
+from burl.sim import Terrain, RandomUniformTerrain, PlainTerrain, SlopeTerrain
 from burl.utils import g_cfg, logger
 
 
@@ -22,6 +22,15 @@ def makeStandardRoughTerrain(bullet_client, roughness=None, seed=None):
     return RandomUniformTerrain(
         bullet_client, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
         roughness=roughness, resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=seed)
+
+
+class SlopeTerrainManager(BasicTerrainManager):
+    def __init__(self, bullet_client):
+        super().__init__()
+        self.terrain = SlopeTerrain(bullet_client, size=g_cfg.trn_size, slope=g_cfg.trn_slope, resolution=0.1)
+
+    def reset(self):
+        self.terrain = SlopeTerrain(self.bullet_client, size=g_cfg.trn_size, slope=g_cfg.trn_slope, resolution=0.1)
 
 
 class PlainTerrainManager(BasicTerrainManager):
@@ -51,8 +60,7 @@ class TerrainCurriculum(BasicTerrainManager):
         self.counter = 0
         self.difficulty = 0.0
         self.difficulty_level = 0
-        self.combo = 0
-        self.miss = 0
+        self.combo, self.miss = 0, 0
 
     def decreaseLevel(self):
         if self.difficulty_level > 0:
@@ -75,18 +83,18 @@ class TerrainCurriculum(BasicTerrainManager):
             self.combo = 0
             self.miss += 1
         logger.debug(f'Miss{self.miss} Combo{self.combo} distance{distance:.2f}')
-        if self.combo < g_cfg.combo_threshold and self.miss < g_cfg.miss_threshold:
-            return False
         if self.miss and self.miss % g_cfg.miss_threshold == 0:
             self.decreaseLevel()
+            return True
         elif self.combo and self.combo % g_cfg.combo_threshold == 0:
             lower, upper = g_cfg.distance_threshold
             if distance > upper:
                 self.increaseLevel()
-            elif distance < lower:
-                self.decreaseLevel()
-            self.combo = 0
-        return True
+                return True
+            # elif distance < lower:
+            #     self.decreaseLevel()
+
+        return False
 
     def reset(self):
         self.terrain = makeStandardRoughTerrain(self.bullet_client, self.difficulty)

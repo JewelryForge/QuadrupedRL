@@ -6,7 +6,7 @@ import numpy as np
 import pybullet
 from scipy.interpolate import interp2d
 
-from burl.utils import unit
+from burl.utils import unit, vec_cross
 
 
 class Terrain(object):
@@ -134,25 +134,23 @@ class HeightFieldTerrain(Terrain):
             v1, v2, v3 = self.getNearestVertices(x, y)
         except IndexError:
             return np.array((0, 0, 1))
-        normal = unit(np.cross(v1 - v2, v1 - v3))
+        normal = unit(vec_cross(v1 - v2, v1 - v3))
         return normal if normal[2] > 0 else -normal
 
 
-# class SlopeTerrain(HeightFieldTerrain):
-#     def __init__(self,
-#                  bullet_client,
-#                  size=10,
-#                  resolution=0.02,
-#                  offset=(0, 0, 0),
-#                  ):
-#         data_size = int(size / resolution) + 1
-#         x = np.linspace(-size / 2, size / 2, data_size)
-#         height = (np.floor(x / 2) % 2) / 3
-#         height_field = np.repeat(height, x.shape[0]).reshape((x.shape[0], x.shape[0]))
-#         super().__init__(bullet_client, height_field, resolution, offset)
-
-# def getHeight(self, x, y):
-#     return self.terrain_func(x, y).squeeze() + self.offset[2]
+class SlopeTerrain(HeightFieldTerrain):
+    def __init__(self,
+                 bullet_client,
+                 slope=10 * np.pi / 180,
+                 size=30,
+                 resolution=0.1,
+                 offset=(0, 0, 0),
+                 ):
+        data_size = int(size / resolution) + 1
+        x = np.linspace(-size / 2, size / 2, data_size)
+        y = x.copy()
+        height_field = np.tile(x * np.tan(slope), (len(y), 1))
+        super().__init__(bullet_client, height_field, resolution, offset)
 
 
 class RandomUniformTerrain(HeightFieldTerrain):
@@ -177,8 +175,8 @@ class RandomUniformTerrain(HeightFieldTerrain):
         height_field = self.terrain_func(x_upsampled, y_upsampled)
         super().__init__(bullet_client, height_field, resolution, offset)
 
-    def getHeight(self, x, y):
-        return self.terrain_func(x, y).squeeze() + self.offset[2]
+    # def getHeight(self, x, y):
+    #     return self.terrain_func(x, y).squeeze() + self.offset[2]
 
     # def getNearestVertices(self, x, y):
     #     res = super().getNearestVertices(x, y)
@@ -190,10 +188,10 @@ class RandomUniformTerrain(HeightFieldTerrain):
 
 if __name__ == '__main__':
     pybullet.connect(pybullet.GUI)
-    t = RandomUniformTerrain(pybullet, size=20, roughness=0.2, downsample=15, resolution=0.1)
-    pybullet.resetSimulation()
+    # t = SlopeTerrain(pybullet, size=20, slope=np.pi / 12, resolution=0.1)
+    # t = RandomUniformTerrain(pybullet, size=20, roughness=0.2, downsample=15, resolution=0.1)
+    # pybullet.resetSimulation()
     t = RandomUniformTerrain(pybullet, size=30, roughness=1.0, downsample=15, resolution=0.05)
-    # t = SlopeTerrain(pybullet, size=30, resolution=0.05)
     pybullet.changeVisualShape(t.id, -1, rgbaColor=(1, 1, 1, 1))
     terrain_visual_shape = pybullet.createVisualShape(shapeType=pybullet.GEOM_SPHERE,
                                                       radius=0.01,
@@ -207,8 +205,8 @@ if __name__ == '__main__':
 
     from burl.utils.transforms import Quaternion
 
-    for x in np.linspace(-1, 1, 11):
-        for y in np.linspace(-1, 1, 11):
+    for x in np.random.uniform(-1, 1, 10):
+        for y in np.random.uniform(-1, 1, 10):
             h = t.getHeight(x, y)
             pybullet.createMultiBody(baseVisualShapeIndex=terrain_visual_shape,
                                      basePosition=(x, y, h))

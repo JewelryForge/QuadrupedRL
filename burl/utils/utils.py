@@ -14,6 +14,15 @@ def unit(x) -> np.ndarray:
     return np.asarray(x) / np.linalg.norm(x)
 
 
+def vec_cross(X1, X2):
+    """
+    A much faster alternative for np.cross.
+    """
+    x1, y1, z1 = X1
+    x2, y2, z2 = X2
+    return np.array((y1 * z2 - y2 * z1, z1 * x2 - z2 * x1, x1 * y2 - x2 * y1))
+
+
 def tuple_compact_string(_tuple):
     return '(' + ' '.join(f'{f:.1f}' for f in _tuple) + ')'
 

@@ -8,27 +8,39 @@ import wandb
 
 
 def update_cfg_from_args():
-    args = sys.argv[1:]
-    assert len(args) % 2 == 0
-    for i in range(len(args) // 2):
-        name, value = args[2 * i], args[2 * i + 1]
+    args = iter(sys.argv[1:])
+    while True:
+        try:
+            name = next(args)
+        except StopIteration:
+            break
         assert name.startswith('--')
         name = name.removeprefix('--').replace('-', '_')
-        assert hasattr(g_cfg, name)
+        if '=' in name:
+            name, value = name.split('=')
+        else:
+            try:
+                value = next(args)
+                assert not value.startswith('--')
+            except (StopIteration, AssertionError):
+                raise RuntimeError(f"Parameter named '{name}' has no corresponding value")
+        if not hasattr(g_cfg, name):
+            print(f"g_cfg has no attribute named '{name}'")
         setattr(g_cfg, name, value)
         value = getattr(g_cfg, name)
         logger.warning(f'{name}: {type(value).__name__} -> {value}')
 
 
 def main():
-    update_cfg_from_args()
     g_cfg.task_class = BasicTask
-    # g_cfg.num_envs = 1
-    # g_cfg.use_trn_curriculum = True
-    # g_cfg.rendering = True
-    # g_cfg.use_mp = False
-    # g_cfg.use_wandb = False
-    # g_cfg.sleeping_enabled = False
+    g_cfg.num_envs = 1
+    g_cfg.trn_type = 'curriculum'
+    g_cfg.rendering = True
+    g_cfg.use_mp = False
+    g_cfg.use_wandb = False
+    g_cfg.sleeping_enabled = False
+    g_cfg.schedule = 'adaptive'
+    update_cfg_from_args()
     g_cfg.rewards_weights = [(r.__class__.__name__, w) for r, w in BasicTask.rewards_weights]
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')

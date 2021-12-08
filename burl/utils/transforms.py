@@ -34,7 +34,6 @@ class Rotation(NDArrayBased):
 
     @classmethod
     def from_rpy(cls, rpy):  # zyx
-        # scipyRotation.from_euler()
         sr, sp, sy = np.sin(rpy)
         cr, cp, cy = np.cos(rpy)
         _matrix = ((cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
@@ -177,7 +176,7 @@ class Rpy(NDArrayBased):
 
     @classmethod
     def from_rotation(cls, r):
-        raise NotImplementedError
+        return scipyRotation.from_matrix(r).as_euler('ZYX', degrees=False)[::-1]
 
     def __str__(self):
         return self.__repr__()
@@ -198,37 +197,27 @@ class Rpy(NDArrayBased):
         return self[2].view(float)
 
 
-def rpy_velocity_from_angular(rpy, angular):
+def get_rpy_rate_from_angular_velocity(rpy, angular):
     r, p, y = rpy
-    sr, cr = np.sin(r), np.cos(r)
-    cp, tp = np.cos(p), np.tan(p)
-    trans = np.array(((1, sr * tp, cr * tp),
-                      (0, cr, -sr),
-                      (0, sr / cp, cr / cp)))
+    sp, cp = np.sin(p), np.cos(p)
+    cr, tr = np.cos(r), np.tan(r)
+    trans = np.array(((1, sp * tr, cp * tr),
+                      (0, cp, -sp),
+                      (0, sp / cr, cp / cr)))
     return np.dot(trans, angular)
 
 
 if __name__ == '__main__':
-    import pybullet
+    import time
 
-    r = np.random.rand(4)
-    q = r / np.linalg.norm(r)
-    print(q)
-    ea = pybullet.getEulerFromQuaternion(q)
-    print(ea)
-    rq = Rpy.from_quaternion(q)
-    R.from_matrix()
-    print(rq)
-# r = Rotation.from_rpy((np.pi / 6, 0, 0))  # * (0, 0, -1)
-# print(np.squeeze(np.array([[1, 2, 3]]).transpose()).shape)
-# print(r)
-# print(r.Y)
 
-# print(Rotation.is_valid([[1.00000000e+00, -3.25420248e-06, 3.38725419e-06],
-#                            [-3.01673707e-06, 1.07793154e-01, 9.94173343e-01],
-#                            [-3.60036417e-06, -9.94173343e-01, 1.07793154e-01]]))
-#
-# print(Rotation.from_rpy([0, 0, np.pi / 2]).matrix)
-#
-# r = Rotation.from_quaternion((-0.35, 1.23e-06, 4.18e-08, 0.39))
-# print(r)
+    def test_time(func, *args, **kwargs):
+        start_time = time.time()
+        func(*args, **kwargs)
+        end_time = time.time()
+        print(end_time - start_time)
+
+
+    r = np.array(Rotation.from_rpy((0.16, 0.28, 0.4)))
+    for _ in range(10):
+        test_time(Rpy.from_rotation, r)
