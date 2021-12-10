@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os.path
 from collections import deque
 from typing import Deque
@@ -67,6 +68,7 @@ class Quadruped(object):
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
+        self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency * 0.1))
 
     @property
     def id(self):
@@ -143,6 +145,8 @@ class Quadruped(object):
         for leg in range(4):
             self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
 
+        self._mass = sum([self._env.getDynamicsInfo(self._quadruped, i)[0] for i in range(self._num_joints)])
+
     def is_safe(self) -> bool:  # FIXME: MOVE THIS TO TASK
         raise DeprecationWarning
 
@@ -169,6 +173,7 @@ class Quadruped(object):
         self._observation_history.clear()
         self._observation_noisy_history.clear()
         self._command_history.clear()
+        self._cot_buffer.clear()
         if reload:
             self._quadruped = self._loadRobot(height_addition)
             self.setPhysicsParams()
@@ -418,6 +423,12 @@ class Quadruped(object):
 
     def getStrides(self):
         return self._strides
+
+    def getCostOfTransport(self):
+        mgv = self._mass * 9.8 * np.linalg.norm(self._base_twist.linear)
+        work = sum(filter(lambda i: i > 0, self._last_torque * self.getJointVelocities()))
+        self._cot_buffer.append(1.0 if mgv == 0.0 else work / mgv)
+        return np.mean(self._cot_buffer)
 
     def getJointStates(self) -> JointStates:
         return self._observation.joint_states

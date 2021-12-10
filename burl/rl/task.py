@@ -25,19 +25,20 @@ class BasicTask(object):
         return self._env.robot
 
     rewards_weights = (
-        (LinearVelocityReward(), 0.16),
-        (YawRateReward(), 0.1),
+        (LinearVelocityReward(), 0.1),
+        (YawRateReward(), 0.08),
         # (AngularVelocityReward(), 0.1),
-        (BodyHeightReward(), 0.03),
+        (BodyHeightReward(), 0.05),
         (RedundantLinearPenalty(), 0.02),
         # (RedundantAngularPenalty(), 0.03),
         (RollPitchRatePenalty(), 0.03),
         (BodyPosturePenalty(), 0.03),
         (FootSlipPenalty(), 0.02),
-        (SmallStridePenalty(), 0.02),
+        (SmallStridePenalty(), 0.08),
         (TargetMutationPenalty(), 0.02),
         (BodyCollisionPenalty(), 0.02),
-        (TorquePenalty(), 0.01)
+        # (TorquePenalty(), 0.01)
+        (CostOfTransportReward(), 0.02)
     )
 
     def calculateReward(self):
@@ -51,7 +52,8 @@ class BasicTask(object):
         mutation = self._env.getActionMutation()
         slip = np.sum(self.robot.getFootSlipVelocity())
         strides = np.array([np.dot(s, self._cmd[:2]) for s in self.robot.getStrides()])
-        torques = self.robot.getLastAppliedTorques()
+        # torques = self.robot.getLastAppliedTorques()
+        cot = self.robot.getCostOfTransport()
         args = (
             (self._cmd, linear),  # Linear Rew
             # (self._cmd, angular),  # Angular Rew
@@ -65,7 +67,8 @@ class BasicTask(object):
             (strides,),  # Small Stride Pen
             (mutation,),  # Target Mut Pen
             (contact_states,),  # Collision Pen
-            (torques,)  # Torque Pen
+            # (torques,)  # Torque Pen
+            (cot,)  # COT Rew
         )
 
         assert len(args) == len(self._rewards)
@@ -78,6 +81,7 @@ class BasicTask(object):
     def sendOrPrint(self, variables: dict):
         def get(key):
             return variables[key]
+        # print(self.robot.getCostOfTransport())
         # print(get('y_rate'), YawRateReward()(0, get('y_rate')))
         # if any(strides := get('strides')):
         #     print(strides, SmallStridePenalty()(strides))

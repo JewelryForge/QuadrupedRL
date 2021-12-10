@@ -20,9 +20,13 @@ def reward_reshape(lower, range_, symmetric=False):
     return _reward_reshape_symmetric if symmetric else _reward_reshape
 
 
-def tanh_reshape(lower, range_):
-    middle = lower + range_ / 2
-    w = np.arctanh(0.9) / range_ * 2
+def tanh_reshape(lower, upper):
+    """
+    Zoom tanh so that f(lower) = -0.9 and f(upper) = 0.9
+    :return: function f
+    """
+    middle = (lower + upper) / 2
+    w = np.arctanh(0.9) / (upper - middle)
 
     def _reshape(v):
         return np.tanh((v - middle) * w)
@@ -68,6 +72,7 @@ class RollPitchRatePenalty(Reward):
         self.dp_reshape = reward_reshape(0.0, dp_upper)
 
     def __call__(self, r_rate, p_rate):
+        # print(self.dr_reshape(r_rate), self.dr_reshape(p_rate))
         return -(self.dr_reshape(r_rate) + self.dp_reshape(p_rate)) / 2
 
 
@@ -137,8 +142,8 @@ class FootSlipPenalty(Reward):
 
 
 class SmallStridePenalty(Reward):
-    def __init__(self, upper=0.4):
-        self.reshape = tanh_reshape(0.0, upper)
+    def __init__(self, lower=-0.2, upper=0.4):
+        self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, strides):
         return sum(self.reshape(s) for s in strides if s != 0.0)
@@ -169,8 +174,21 @@ class TorquePenalty(Reward):
         return 1 - self.reshape(torque_sum)
 
 
+class CostOfTransportReward(Reward):
+    def  __init__(self, lower=0.5, upper=2.5):
+        self.reshape = tanh_reshape(lower, upper)
+
+    def __call__(self, cot):
+        return -self.reshape(cot)
+
+
 if __name__ == '__main__':
-    r = tanh_reshape(0.0, 0.4)
+    import matplotlib.pyplot as plt
+
+    r = tanh_reshape(-0.2, 0.4)
+    x = np.linspace(-0.3, 0.5, 100)
+    plt.plot(x, r(x))
+    plt.show()
     print(r(0.0))
     print(r(0.1))
     print(r(0.2))

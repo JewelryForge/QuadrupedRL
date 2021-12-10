@@ -15,7 +15,7 @@ def update_cfg_from_args():
         except StopIteration:
             break
         assert name.startswith('--')
-        name = name.removeprefix('--').replace('-', '_')
+        name = name.removeprefix('--')
         if '=' in name:
             name, value = name.split('=')
         else:
@@ -24,6 +24,7 @@ def update_cfg_from_args():
                 assert not value.startswith('--')
             except (StopIteration, AssertionError):
                 raise RuntimeError(f"Parameter named '{name}' has no corresponding value")
+        name = name.replace('-', '_')
         if not hasattr(g_cfg, name):
             print(f"g_cfg has no attribute named '{name}'")
         setattr(g_cfg, name, value)

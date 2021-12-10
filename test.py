@@ -30,7 +30,7 @@ class Player:
         obs, critic_obs = to_dev(obs, critic_obs)
         import time
 
-        for _ in range(2000):
+        for _ in range(20000):
             actions = self.actor_critic.act(obs)
             # print(self.env.step(actions))
             obs, privileged_obs, _, dones, _ = self.env.step(actions)
@@ -100,14 +100,14 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student/lo
 
 
 if __name__ == '__main__':
-    g_cfg.trn_type = 'rough'
+    g_cfg.trn_type = 'plain'
     g_cfg.trn_roughness = 0.05
     set_logger_level(logger.DEBUG)
     remote = False
-    time = '2312'
+    time = '2214'
     epoch = None
     if remote:
         model = find_log_remote(time='0914', epoch=9400)
     else:
-        model = find_log(time=time, epoch=epoch)
+        model = find_log(time='2214', epoch=5800)
     main(model)
