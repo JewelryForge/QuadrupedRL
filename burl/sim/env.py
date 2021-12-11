@@ -323,21 +323,21 @@ if __name__ == '__main__':
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.rendering = True
-    g_cfg.trn_type = 'rough'
+    g_cfg.trn_type = 'plain'
     g_cfg.trn_roughness = 0.1
 
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = False
+    tg = True
     if tg:
         env = TGEnv()
         env.initObservation()
         for i in range(1, 100000):
             act = Action()
             env.step(act)
-            if i % 500 == 0:
-                env.reset()
+            # if i % 500 == 0:
+            #     env.reset()
     else:
         env = QuadrupedEnv()
         env.initObservation()

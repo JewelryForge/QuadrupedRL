@@ -1,3 +1,4 @@
+import math
 from abc import ABC
 
 import numpy as np
@@ -34,9 +35,25 @@ def tanh_reshape(lower, upper):
     return _reshape
 
 
+def elu_reshape(coeff):
+    def _reshape(v):
+        return (v if v >= 0 else math.exp(v) - 1) * coeff
+
+    return _reshape
+
+
 class LinearVelocityReward(Reward):
     def __init__(self, lower=-0.1, upper=0.6):
         self.reshape = reward_reshape(lower, upper - lower)
+
+    def __call__(self, cmd, linear):
+        projected_velocity = np.dot(cmd[:2], linear[:2])
+        return self.reshape(projected_velocity)
+
+
+class EluLinearVelocityReward(Reward):
+    def __init__(self, coeff=2.0):
+        self.reshape = elu_reshape(coeff)
 
     def __call__(self, cmd, linear):
         projected_velocity = np.dot(cmd[:2], linear[:2])
@@ -175,7 +192,7 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def  __init__(self, lower=0.5, upper=2.5):
+    def __init__(self, lower=0.5, upper=2.5):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cot):

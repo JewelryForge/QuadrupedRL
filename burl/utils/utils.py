@@ -98,7 +98,10 @@ def timestamp():
 
 
 def str2time(time_str):
-    return datetime.strptime(time_str, '%b%d_%H-%M-%S')
+    try:
+        return datetime.strptime(time_str, '%b%d_%H-%M-%S')
+    except ValueError:
+        return datetime(2000, 1, 1)
 
 
 def random_sample(indices, batch_size):

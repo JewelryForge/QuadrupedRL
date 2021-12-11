@@ -13,7 +13,8 @@ class BasicTask(object):
             self._rewards.append(r)
             self._weights.append(w)
         self._weights = np.array(self._weights)
-        self._weights = self._weights * 0.1 / self._weights.sum()
+        # self._weights = self._weights * 0.1 / self._weights.sum()
+        self._weights = self._weights * 0.25
         self._details = {}
 
     @property
@@ -25,20 +26,21 @@ class BasicTask(object):
         return self._env.robot
 
     rewards_weights = (
+        # (EluLinearVelocityReward(), 0.1),
         (LinearVelocityReward(), 0.1),
         (YawRateReward(), 0.08),
         # (AngularVelocityReward(), 0.1),
         (BodyHeightReward(), 0.05),
-        (RedundantLinearPenalty(), 0.02),
+        (RedundantLinearPenalty(), 0.03),
         # (RedundantAngularPenalty(), 0.03),
         (RollPitchRatePenalty(), 0.03),
         (BodyPosturePenalty(), 0.03),
-        (FootSlipPenalty(), 0.02),
-        (SmallStridePenalty(), 0.08),
-        (TargetMutationPenalty(), 0.02),
+        # (FootSlipPenalty(), 0.02),
+        (SmallStridePenalty(), 0.2),
+        # (TargetMutationPenalty(), 0.02),
         (BodyCollisionPenalty(), 0.02),
         # (TorquePenalty(), 0.01)
-        (CostOfTransportReward(), 0.02)
+        (CostOfTransportReward(), 0.035)
     )
 
     def calculateReward(self):
@@ -49,8 +51,8 @@ class BasicTask(object):
         safety_r, safety_p, _ = self._env.getSafetyRpyOfRobot()
         # print(body_rpy, self.robot.rpy)
         contact_states = self.robot.getContactStates()
-        mutation = self._env.getActionMutation()
-        slip = np.sum(self.robot.getFootSlipVelocity())
+        # mutation = self._env.getActionMutation()
+        # slip = np.sum(self.robot.getFootSlipVelocity())
         strides = np.array([np.dot(s, self._cmd[:2]) for s in self.robot.getStrides()])
         # torques = self.robot.getLastAppliedTorques()
         cot = self.robot.getCostOfTransport()
@@ -63,9 +65,9 @@ class BasicTask(object):
             # (angular,),  # Angular Pen
             (r_rate, p_rate),  # rp rate Pen
             (safety_r, safety_p),  # Posture Pen
-            (slip,),  # Slip Pen
+            # (slip,),  # Slip Pen
             (strides,),  # Small Stride Pen
-            (mutation,),  # Target Mut Pen
+            # (mutation,),  # Target Mut Pen
             (contact_states,),  # Collision Pen
             # (torques,)  # Torque Pen
             (cot,)  # COT Rew
@@ -85,6 +87,8 @@ class BasicTask(object):
         # print(get('y_rate'), YawRateReward()(0, get('y_rate')))
         # if any(strides := get('strides')):
         #     print(strides, SmallStridePenalty()(strides))
+        # if strides[0]:
+        #     print()
         # print(get('r_rate'), get('p_rate'), get('y_rate'))
         # print('slip', get('slip'))
         # print()

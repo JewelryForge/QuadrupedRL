@@ -290,6 +290,10 @@ class Quadruped(object):
     def _updateStancePositions(self):
         for i, (c, c_prev) in enumerate(zip(self.getFootContactStates(), self.getPrevFootContactStates())):
             if c and not c_prev:
+                # if i == 0:
+                #     sts = [self.getObservationHistoryFromIndex(-i).contact_states[(3, 6, 9, 12),] for i in range(1, 10)]
+                #     print(np.array(sts))
+                #     print()
                 foot_position = self.getFootPositionInWorldFrame(i)
                 if self._last_stance_positions[i] is not None:
                     self._strides[i] = (foot_position - self._last_stance_positions[i])[:2]

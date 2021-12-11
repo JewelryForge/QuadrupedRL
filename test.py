@@ -102,12 +102,12 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student/lo
 if __name__ == '__main__':
     g_cfg.trn_type = 'plain'
     g_cfg.trn_roughness = 0.05
+    g_cfg.sleeping_enabled = True
     set_logger_level(logger.DEBUG)
     remote = False
-    time = '2214'
-    epoch = None
     if remote:
-        model = find_log_remote(time='0914', epoch=9400)
+        model = find_log_remote(time='1106', epoch=9400) #1800
     else:
-        model = find_log(time='2214', epoch=5800)
+        model = find_log(time=200615, epoch=None)
+    # model = 'log/model_9900.pt'
     main(model)
