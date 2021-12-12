@@ -73,18 +73,19 @@ class AngularVelocityReward(Reward):
 
 
 class YawRateReward(Reward):
-    def __init__(self, upper=0.6):
-        self.reshape = reward_reshape(0.0, upper)
+    def __init__(self, upper_pos=0.6, upper_neg=0.2):
+        self.reshape_pos = reward_reshape(0.0, upper_pos)
+        self.reshape_neg = reward_reshape(0.0, upper_neg)
 
     def __call__(self, yaw_cmd, yaw_rate):
         if yaw_cmd != 0.0:
-            return self.reshape(yaw_rate * yaw_cmd)
+            return self.reshape_pos(yaw_rate * yaw_cmd)
         else:
-            return -self.reshape(abs(yaw_rate))
+            return -self.reshape_neg(abs(yaw_rate))
 
 
 class RollPitchRatePenalty(Reward):
-    def __init__(self, dr_upper=3.0, dp_upper=1.5):
+    def __init__(self, dr_upper=1.0, dp_upper=0.5):
         self.dr_reshape = reward_reshape(0.0, dr_upper)
         self.dp_reshape = reward_reshape(0.0, dp_upper)
 
@@ -150,12 +151,12 @@ class TargetMutationPenalty(Reward):
 
 
 class FootSlipPenalty(Reward):
-    def __init__(self, lower=0.1, upper=0.3):
+    def __init__(self, lower=0.2, upper=1.0):
         # Due to the error of slip velocity estimation, tolerate error of 0.1
         self.reshape = reward_reshape(lower, upper)
 
-    def __call__(self, slip):
-        return 1 - self.reshape(slip)
+    def __call__(self, slips):
+        return -sum(self.reshape(s) for s in slips) / 4
 
 
 class SmallStridePenalty(Reward):

@@ -74,6 +74,7 @@ class TrainParam(AlgParam):
         self.ip_address = '127.0.0.1'  # FIXME: THIS DOES NOT MAKE SENSE
         # self.ip_address = '10.12.120.120'
         self.port = '19996'
+        self.validation = False
 
 
 class TerrainParam(object):

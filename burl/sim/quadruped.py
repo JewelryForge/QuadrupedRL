@@ -81,9 +81,11 @@ class Quadruped(object):
         self._rpy: Rpy = None
         self._last_torque: np.ndarray = np.zeros(12)
         self._disturbance: np.ndarray = np.zeros(3)
-        self._last_stance_positions = [None] * 4
+        self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
         self._strides = [(0., 0.)] * 4
+        self._slips = [(0., 0.)] * 4
         self._observation: ObservationRaw = None
+        self._time = 0.0
         self._step_counter = 0
 
     def _loadRobot(self, init_height_addition=0.0):
@@ -130,7 +132,7 @@ class Quadruped(object):
 
     def _resetPosture(self):
         for i in range(12):
-            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i])
+            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i], 0.0)
 
     def setPhysicsParams(self, **kwargs):
         # for m in self._motor_ids:
@@ -194,10 +196,10 @@ class Quadruped(object):
                 self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
         self._resetPosture()
         self._motor.reset()
-        return self.updateObservation()
 
     def updateObservation(self):
         self._step_counter += 1
+        self._time += 1 / self._frequency
         self._base_pose = Pose(*self._env.getBasePositionAndOrientation(self._quadruped))
         self._base_twist = Twist(*self._env.getBaseVelocity(self._quadruped))
         self._base_twist_in_base_frame = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
@@ -213,7 +215,7 @@ class Quadruped(object):
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
         self._motor.update_observation()
-        self._updateStancePositions()
+        self._updateStridesAndSlipStates()
         return self._observation, observation_noisy
 
     def ik(self, leg, pos, frame='base'):
@@ -258,9 +260,6 @@ class Quadruped(object):
     def _rotateFromWorldToBase(self, vector_world):
         return self._rotateFromWorld(vector_world, self._base_pose.orientation)
 
-    # def _getFootPositionsInWorldFrame(self):
-    #     return np.concatenate([self._env.getLinkState(self._quadruped, self._foot_ids[l])[0] for l in range(4)])
-
     def _getContactStates(self):
         def _getContactState(link_id):
             return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
@@ -287,19 +286,26 @@ class Quadruped(object):
         foot_forces = [contact_dict.get(f, TP_ZERO3) for f in self._foot_ids]
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
-    def _updateStancePositions(self):
-        for i, (c, c_prev) in enumerate(zip(self.getFootContactStates(), self.getPrevFootContactStates())):
-            if c and not c_prev:
+    def _updateStridesAndSlipStates(self):
+        for i, c in enumerate(self.getFootContactStates()):
+            if c:
                 # if i == 0:
-                #     sts = [self.getObservationHistoryFromIndex(-i).contact_states[(3, 6, 9, 12),] for i in range(1, 10)]
-                #     print(np.array(sts))
-                #     print()
+                #     sts = [self.getObservationHistoryFromIndex(-i).contact_states[3] for i in range(1, 10)]
+                #     f = [np.linalg.norm(self.getObservationHistoryFromIndex(-i).foot_states.forces[0]) for i in
+                #          range(1, 10)]
+                #     print(np.array([sts, f]), sep='\n')
                 foot_position = self.getFootPositionInWorldFrame(i)
-                if self._last_stance_positions[i] is not None:
-                    self._strides[i] = (foot_position - self._last_stance_positions[i])[:2]
-                self._last_stance_positions[i] = foot_position
-            else:
-                self._strides[i] = (0.0, 0.0)
+                if self._last_stance_states[i]:
+                    t, pos = self._last_stance_states[i]
+                    if self._time - t >= 0.05:
+                        self._strides[i] = (foot_position - pos)[:2]
+                        self._slips[i] = (0., 0.)
+                        # if i == 0:
+                        #     print(self._time, t, self._strides[i], end='\n\n')
+                    else:
+                        self._slips[i] = (foot_position - pos)[:2]
+                        self._strides[i] = (0., 0.)
+                self._last_stance_states[i] = (self._time, foot_position)
 
     def _estimateObservation(self):
         # TODO: ADD NOISE
@@ -396,34 +402,37 @@ class Quadruped(object):
     def getFootXYsInWorldFrame(self):
         return [self._observation.foot_states.positions[leg, :2] for leg in range(4)]
 
-    def getFootSlipVelocity(self):
-        current_contact = self.getFootContactStates()
-        previous_contact = self.getPrevFootContactStates()
-        calculate_slip = np.logical_and(current_contact, previous_contact)
-        slip_velocity = np.zeros(4, dtype=float)
-        for i, flag in enumerate(calculate_slip):
-            if flag:
-                current_leg_pos = self.getFootPositionInWorldFrame(i)
-                previous_leg_pos = self.getPrevFootPositionInWorldFrame(i)
-                current_leg_orn = self._observation.foot_states.orientations[i]
-                previous_leg_orn = self.getObservationHistoryFromIndex(-2).foot_states.orientations[i]
-                z, angle = pybullet.getAxisAngleFromQuaternion(
-                    pybullet.getDifferenceQuaternion(previous_leg_orn, current_leg_orn))
-                x = current_leg_pos - previous_leg_pos
-                if np.linalg.norm(x) > 1e-5:
-                    y = vec_cross(z, unit(x))
-                    rotating_velocity = vec_cross(0.02 * y, z)
-                    net_velocity = (current_leg_pos - previous_leg_pos) * self._frequency
-                    slip_velocity[i] = np.linalg.norm((net_velocity - rotating_velocity)[:2])
-                # np.set_printoptions(5)
-                # print(current_leg_pos)
-                # print((net_velocity - rotating_velocity)[:2])
-                # print(net_velocity[:2])
-                # print(i, np.linalg.norm(current_leg_position - previous_leg_position))
-                # slip_velocity[i] = np.linalg.norm(current_leg_pos - previous_leg_pos) * self._frequency
-                # print((current_leg_pos - previous_leg_pos) * self._frequency)
-                # print()
-        return slip_velocity
+    def getFootSlipVelocity(self):  # NOTICE: THIS ACTUALLY INCLUDES FOOT ROLLING VELOCITIES
+        return [np.linalg.norm(slip) * self._frequency for slip in self._slips]
+
+    # def getFootSlipVelocity(self):
+    #     current_contact = self.getFootContactStates()
+    #     previous_contact = self.getPrevFootContactStates()
+    #     calculate_slip = np.logical_and(current_contact, previous_contact)
+    #     slip_velocity = np.zeros(4, dtype=float)
+    #     for i, flag in enumerate(calculate_slip):
+    #         if flag:
+    #             current_leg_pos = self.getFootPositionInWorldFrame(i)
+    #             previous_leg_pos = self.getPrevFootPositionInWorldFrame(i)
+    #             current_leg_orn = self._observation.foot_states.orientations[i]
+    #             previous_leg_orn = self.getObservationHistoryFromIndex(-2).foot_states.orientations[i]
+    #             z, angle = pybullet.getAxisAngleFromQuaternion(
+    #                 pybullet.getDifferenceQuaternion(previous_leg_orn, current_leg_orn))
+    #             x = current_leg_pos - previous_leg_pos
+    #             if np.linalg.norm(x) > 1e-5:
+    #                 y = vec_cross(z, unit(x))
+    #                 rotating_velocity = vec_cross(0.02 * y, z)
+    #                 net_velocity = (current_leg_pos - previous_leg_pos) * self._frequency
+    #                 slip_velocity[i] = np.linalg.norm((net_velocity - rotating_velocity)[:2])
+    #             # np.set_printoptions(5)
+    #             # print(current_leg_pos)
+    #             # print((net_velocity - rotating_velocity)[:2])
+    #             # print(net_velocity[:2])
+    #             # print(i, np.linalg.norm(current_leg_position - previous_leg_position))
+    #             # slip_velocity[i] = np.linalg.norm(current_leg_pos - previous_leg_pos) * self._frequency
+    #             # print((current_leg_pos - previous_leg_pos) * self._frequency)
+    #             # print()
+    #     return slip_velocity
 
     def getStrides(self):
         return self._strides

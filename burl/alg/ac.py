@@ -73,7 +73,6 @@ class ActorCritic(nn.Module):
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 
-
     @staticmethod
     def init_weights(sequential, scales):  # not used at the moment
         [torch.nn.init.orthogonal_(module.weight, gain=scales[idx]) for idx, module in
@@ -110,7 +109,7 @@ class ActorCritic(nn.Module):
 
     def act_inference(self, observations):
         actions_mean = self.actor(observations)
-        return actions_mean
+        return actions_mean.detach()
 
     def evaluate(self, critic_observations, **kwargs):
         value = self.critic(critic_observations)

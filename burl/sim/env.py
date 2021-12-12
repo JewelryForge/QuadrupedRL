@@ -35,6 +35,7 @@ class QuadrupedEnv(object):
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
         self._setPhysicsParameters()
+        self._initSimulation()
         self._num_action_repeats = int(g_cfg.sim_frequency / g_cfg.action_frequency)
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
         logger.debug(f'Action Repeats for {self._num_action_repeats} time(s)')
@@ -67,6 +68,9 @@ class QuadrupedEnv(object):
     def initObservation(self):
         self.updateObservation()
         return self.makeStandardObservation(True), self.makeStandardObservation(False)
+
+    def _initSimulation(self):
+        pass
 
     def updateObservation(self):
         return self._robot.updateObservation()
@@ -225,8 +229,10 @@ class QuadrupedEnv(object):
             self._env.resetSimulation()
             self._setPhysicsParameters()
             self._terrain.reset()
-        return self._robot.reset(self._terrain.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
-                                 reload=completely_reset)
+        self._robot.reset(self._terrain.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
+                          reload=completely_reset)
+        self._initSimulation()
+        return self._robot.updateObservation()
 
     def close(self):
         self._env.disconnect()
@@ -314,6 +320,12 @@ class TGEnv(QuadrupedEnv):
         self._stm.reset()
         return super().reset()
 
+    def _initSimulation(self):  # for the stability of the beginning
+        for _ in range(800):
+            self._robot.updateObservation()
+            self._robot.applyCommand(self._robot.STANCE_POSTURE)
+            self._env.stepSimulation()
+
     def getFilteredRobotStrides(self):
         pass
 
@@ -336,15 +348,11 @@ if __name__ == '__main__':
         for i in range(1, 100000):
             act = Action()
             env.step(act)
+            time.sleep(0.05)
             # if i % 500 == 0:
             #     env.reset()
     else:
         env = QuadrupedEnv()
         env.initObservation()
-        robot = env.robot
         for i in range(1, 100000):
-            cmd0 = robot.ik(0, (0, 0, -0.3), 'shoulder')
-            cmd1 = robot.ik(1, (0, 0, -0.3), 'shoulder')
-            cmd2 = robot.ik(2, (0, 0, -0.3), 'shoulder')
-            cmd3 = robot.ik(3, (0, 0, -0.3), 'shoulder')
-            env.step((np.concatenate([cmd0, cmd1, cmd2, cmd3])))
+            env.step(env.robot.STANCE_POSTURE)

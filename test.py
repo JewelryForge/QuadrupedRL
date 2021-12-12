@@ -18,7 +18,6 @@ class Player:
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
         self.env = EnvContainer(make_env, 1)
-        g_cfg.init_noise_std = 0.
         self.actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
         self.actor_critic.load_state_dict(torch.load(model_dir)['model_state_dict'])
         logger.info(f'load model {model_dir}')
@@ -31,7 +30,7 @@ class Player:
         import time
 
         for _ in range(20000):
-            actions = self.actor_critic.act(obs)
+            actions = self.actor_critic.act_inference(obs)
             # print(self.env.step(actions))
             obs, privileged_obs, _, dones, _ = self.env.step(actions)
             critic_obs = privileged_obs if privileged_obs is not None else obs
@@ -106,8 +105,8 @@ if __name__ == '__main__':
     set_logger_level(logger.DEBUG)
     remote = False
     if remote:
-        model = find_log_remote(time='1106', epoch=9400) #1800
+        model = find_log_remote(time='1106', epoch=9400)
     else:
-        model = find_log(time=200615, epoch=None)
+        model = find_log(time=None, epoch=None)
     # model = 'log/model_9900.pt'
     main(model)

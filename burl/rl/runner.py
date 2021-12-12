@@ -1,6 +1,7 @@
 import os
 import time
 from collections import deque
+from multiprocessing import Process, Queue, Pipe
 
 import numpy as np
 import torch
@@ -23,10 +24,16 @@ class OnPolicyRunner:
             self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
         else:
             self.env = EnvContainer(make_env, g_cfg.num_envs)
+        if g_cfg.validation:
+            self.val_env = EnvContainer(make_env, 1)
+            self.val_process = Process(target=self.validation_process)
         actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
         self.alg = PPO(actor_critic)
 
         self.current_iter = 0
+
+    def validation_process(self):
+        pass
 
     def learn(self):
         privileged_obs, obs = self.env.init_observations()

@@ -24,6 +24,7 @@ class LocomotionStateMachine(object):
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
         self._flags = np.zeros(4, dtype=bool)
         self._tg = designed_tg()
+        # self._tg = end_trajectory_generator()
 
     @property
     def base_frequency(self):
@@ -67,27 +68,33 @@ def joint_trajectory_generator():
     pass
 
 
-def end_trajectory_generator(k, h=0.08):  # 0.2 in paper
-    if k < 0:
-        return -end_trajectory_generator(-k) * 0.2
-    k2 = k ** 2
-    k3 = k2 * k
-    if 0 < k <= 1:
-        return h * (-2 * k3 + 3 * k2)
-    if 1 < k < 2:
-        return h * (2 * k3 - 9 * k2 + 12 * k - 4)
-    return 0
+def power(x, exp):
+    _x = 1
+    for _ in range(exp + 1):
+        yield _x
+        _x *= x
+
+
+def end_trajectory_generator(h=0.08):  # 0.2 in paper
+    coeff1 = np.array((0., 0., 3., -2.)) * h
+    coeff2 = np.array((-4., 12., -9., 2.)) * h
+
+    def _tg(k):
+        if k < 0:
+            return -_tg(-k) * 0.2
+        k_pow = list(power(k, 3))
+        if 0 < k <= 1:
+            return coeff1 @ k_pow
+        if 1 < k < 2:
+            return coeff2 @ k_pow
+        return 0
+
+    return _tg
 
 
 def designed_tg(c=0.2, h=0.08):
-    def _power(x, exp):
-        _x = 1
-        for _ in range(exp + 1):
-            yield _x
-            _x *= x
-
     def _poly5th(x, coeff):
-        return np.asarray(coeff) @ list(_power(x, 5))
+        return np.asarray(coeff) @ list(power(x, 5))
 
     def _solve5th(d1, d2):
         x1, y1, v1, a1 = d1
@@ -98,8 +105,8 @@ def designed_tg(c=0.2, h=0.08):
                           (0, 1, 2, 3, 4, 5),
                           (0, 0, 2, 6, 12, 20),
                           (0, 0, 2, 6, 12, 20)))
-        x1_pow = list(_power(x1, 5))
-        x2_pow = list(_power(x2, 5))
+        x1_pow = list(power(x1, 5))
+        x2_pow = list(power(x2, 5))
         X = np.array((x1_pow,
                       x2_pow,
                       [0, *x1_pow[:-1]],
@@ -107,20 +114,20 @@ def designed_tg(c=0.2, h=0.08):
                       [0, 0, *x1_pow[:-2]],
                       [0, 0, *x2_pow[:-2]]))
         Y = np.array((y1, y2, v1, v2, a1, a2))
-        print(X, coeff * X, Y, sep='\n', end='\n\n')
         return np.linalg.solve(coeff * X, Y)
 
-    dots = np.array(((-2, 0, 0, 0),
+    dots = np.array(((-2, 0, 0, 0.0),
                      (-1, -c * h, 0, 0),
-                     (0, 0, 0, 0),
-                     (1, h, 0, 0),
-                     (2, 0, 0, 0)))
+                     (0, 0, 0.05, 0.15),
+                     (1, h, 0, -0.3),
+                     (2, 0, 0, 0.0)))
     coeffs = np.array([_solve5th(dot1, dot2) for dot1, dot2 in zip(dots, dots[1:])])
+    num_sections = len(coeffs)
 
     def _tg(k):
         if k < -2 or k > 2:
             return 0.0
-        return _poly5th(k, coeffs[min(3, int(k + 2))])
+        return _poly5th(k, coeffs[min(num_sections - 1, int(k + 2))])
 
     return _tg
 
@@ -130,8 +137,12 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     tg = designed_tg()
-    x = np.linspace(-4, 4, 1000)
+    tg2 = end_trajectory_generator()
+    x = np.linspace(-2, 2, 1000)
     # print(tg(0.1))
-    y = [tg(x) for x in x]
-    plt.plot(x, y)
+    # y1 = [tg(x) for x in x]
+    y2 = [tg2(x) for x in x]
+    # plt.plot(x, y1)
+    plt.plot(x, y2)
+    # plt.legend(['des', 'raw'])
     plt.show()
