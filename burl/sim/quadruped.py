@@ -53,7 +53,8 @@ class Quadruped(object):
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
-        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
+        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
+                                           kp=80, kd=(1.0, 2.0, 2.0) * 4)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 
@@ -609,7 +610,7 @@ if __name__ == '__main__':
     import time
     from burl.sim.terrain import RandomUniformTerrain
 
-    g_cfg.on_rack = False
+    g_cfg.on_rack = True
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = RandomUniformTerrain(p, size=30, downsample=5, resolution=0.05)

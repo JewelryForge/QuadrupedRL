@@ -26,7 +26,7 @@ class MotorSim(object):
         self._robot = robot
         self._kp: np.ndarray = np.asarray(kwargs.get('kp', 60))
         self._kd: np.ndarray = np.asarray(kwargs.get('kd', 0.5))
-        assert self._kd.shape == self._kp.shape
+        # assert self._kd.shape == self._kp.shape
         pos_limits: np.ndarray | Iterable | float | None = kwargs.get('pos_limits', None)
         torque_limits: np.ndarray | Iterable | float | None = kwargs.get('torque_limits', 33.5)
         self._frequency = kwargs.get('frequency', 240)

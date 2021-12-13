@@ -321,7 +321,8 @@ class TGEnv(QuadrupedEnv):
         return super().reset()
 
     def _initSimulation(self):  # for the stability of the beginning
-        for _ in range(800):
+        # pass
+        for _ in range(500):
             self._robot.updateObservation()
             self._robot.applyCommand(self._robot.STANCE_POSTURE)
             self._env.stepSimulation()
@@ -348,7 +349,7 @@ if __name__ == '__main__':
         for i in range(1, 100000):
             act = Action()
             env.step(act)
-            time.sleep(0.05)
+            # time.sleep(0.05)
             # if i % 500 == 0:
             #     env.reset()
     else:

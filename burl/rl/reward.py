@@ -135,7 +135,7 @@ class BodyPosturePenalty(Reward):
 
 
 class BodyHeightReward(Reward):
-    def __init__(self, lower=0.2, upper=0.4):
+    def __init__(self, lower=0.2, upper=0.35):
         self.reshape = reward_reshape(lower, upper - lower)
 
     def __call__(self, h):
@@ -152,11 +152,11 @@ class TargetMutationPenalty(Reward):
 
 class FootSlipPenalty(Reward):
     def __init__(self, lower=0.2, upper=1.0):
-        # Due to the error of slip velocity estimation, tolerate error of 0.1
+        # Due to the error of slip velocity estimation, tolerate error of 0.2
         self.reshape = reward_reshape(lower, upper)
 
     def __call__(self, slips):
-        return -sum(self.reshape(s) for s in slips) / 4
+        return -sum(self.reshape(s) for s in slips)
 
 
 class SmallStridePenalty(Reward):
@@ -193,18 +193,18 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def __init__(self, lower=0.5, upper=2.5):
+    def __init__(self, lower=0, upper=2.0):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cot):
-        return -self.reshape(cot)
+        return self.reshape(cot)
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    r = tanh_reshape(-0.2, 0.4)
-    x = np.linspace(-0.3, 0.5, 100)
+    r = tanh_reshape(0.5, 2.5)
+    x = np.linspace(-0.5, 3.5, 1000)
     plt.plot(x, r(x))
     plt.show()
     print(r(0.0))

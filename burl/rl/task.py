@@ -13,8 +13,8 @@ class BasicTask(object):
             self._rewards.append(r)
             self._weights.append(w)
         self._weights = np.array(self._weights)
-        self._weights = self._weights * 0.1 / self._weights.sum()
-        # self._weights = self._weights * 0.25
+        # self._weights = self._weights * 0.1 / self._weights.sum()
+        self._weights = self._weights * 0.25
         self._details = {}
 
     @property
@@ -31,16 +31,16 @@ class BasicTask(object):
         (YawRateReward(), 0.08),
         # (AngularVelocityReward(), 0.1),
         (BodyHeightReward(), 0.05),
-        (RedundantLinearPenalty(), 0.03),
+        (RedundantLinearPenalty(), 0.04),
         # (RedundantAngularPenalty(), 0.03),
-        (RollPitchRatePenalty(), 0.03),
+        (RollPitchRatePenalty(), 0.04),
         (BodyPosturePenalty(), 0.04),
-        (FootSlipPenalty(), 0.03),
+        (FootSlipPenalty(), 0.04),
         (SmallStridePenalty(), 0.08),
         # (TargetMutationPenalty(), 0.02),
         (BodyCollisionPenalty(), 0.02),
         # (TorquePenalty(), 0.01)
-        (CostOfTransportReward(), 0.035)
+        (CostOfTransportReward(), 0.04)
     )
 
     def calculateReward(self):
@@ -52,7 +52,7 @@ class BasicTask(object):
         # print(body_rpy, self.robot.rpy)
         contact_states = self.robot.getContactStates()
         # mutation = self._env.getActionMutation()
-        slip = self.robot.getFootSlipVelocity()
+        slips = self.robot.getFootSlipVelocity()
         strides = np.array([np.dot(s, self._cmd[:2]) for s in self.robot.getStrides()])
         # torques = self.robot.getLastAppliedTorques()
         cot = self.robot.getCostOfTransport()
@@ -65,7 +65,7 @@ class BasicTask(object):
             # (angular,),  # Angular Pen
             (r_rate, p_rate),  # rp rate Pen
             (safety_r, safety_p),  # Posture Pen
-            (slip,),  # Slip Pen
+            (slips,),  # Slip Pen
             (strides,),  # Small Stride Pen
             # (mutation,),  # Target Mut Pen
             (contact_states,),  # Collision Pen
@@ -92,6 +92,9 @@ class BasicTask(object):
         # print(get('y_rate'), YawRateReward()(0, get('y_rate')))
         # if any(strides := get('strides')):
         #     print(strides, SmallStridePenalty()(strides))
+        # print(get('cot'), CostOfTransportReward()(get('cot')))
+        # print(get('slips'))
+        # print()
         # if (strides := get('strides'))[0]:
         #     print(strides, SmallStridePenalty()(strides))
         #     print()
