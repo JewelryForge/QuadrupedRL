@@ -31,7 +31,6 @@ class Player:
 
         for _ in range(20000):
             actions = self.actor_critic.act_inference(obs)
-            # print(self.env.step(actions))
             obs, privileged_obs, _, dones, _ = self.env.step(actions)
             critic_obs = privileged_obs if privileged_obs is not None else obs
             obs, critic_obs = to_dev(obs, critic_obs)

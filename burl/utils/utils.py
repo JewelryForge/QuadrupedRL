@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 
 import numpy as np
@@ -27,13 +28,6 @@ def tuple_compact_string(_tuple):
     return '(' + ' '.join(f'{f:.1f}' for f in _tuple) + ')'
 
 
-# def make_cls(cls, **properties):
-#     def _make_class(*args, **kwargs):
-#         properties.update(**kwargs)
-#         return cls(*args, **properties)
-#
-#     return _make_class
-
 class make_cls(object):
     def __init__(self, cls, **properties):
         self.cls, self.properties = cls, properties
@@ -45,6 +39,29 @@ class make_cls(object):
 
     def __getattr__(self, item):
         return getattr(self.cls, item)
+
+
+class WithTimer:
+    def __init__(self):
+        pass
+
+    def start(self):
+        self._start_time = time.time()
+
+    def __enter__(self):
+        self._start_time = time.time()
+        return self
+
+    def end(self):
+        self._end_time = time.time()
+        return self.time_spent
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._end_time = time.time()
+
+    @property
+    def time_spent(self):
+        return self._end_time - self._start_time
 
 
 class JointInfo(object):

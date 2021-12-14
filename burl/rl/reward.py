@@ -73,7 +73,7 @@ class AngularVelocityReward(Reward):
 
 
 class YawRateReward(Reward):
-    def __init__(self, upper_pos=0.6, upper_neg=0.2):
+    def __init__(self, upper_pos=0.6, upper_neg=0.6):
         self.reshape_pos = reward_reshape(0.0, upper_pos)
         self.reshape_neg = reward_reshape(0.0, upper_neg)
 
@@ -193,11 +193,11 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def __init__(self, lower=0, upper=2.0):
+    def __init__(self, lower=-2.0, upper=2.0):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cot):
-        return self.reshape(cot)
+        return -self.reshape(cot) * 2 + 1
 
 
 if __name__ == '__main__':

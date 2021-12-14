@@ -11,7 +11,32 @@ from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 from burl.alg.ppo import PPO
 from burl.rl.task import BasicTask, RandomCmdTask
 from burl.sim import TGEnv, A1, EnvContainerMultiProcess2, EnvContainer
-from burl.utils import make_cls, g_cfg, logger, to_dev
+from burl.utils import make_cls, g_cfg, logger, to_dev, WithTimer
+
+
+class Accountant:
+    def __init__(self):
+        self._account = {}
+        self._times = {}
+
+    def register(self, items: dict):
+        for k, v in items.items():
+            v = np.asarray(v)
+            self._account[k] = self._account.get(k, 0) + np.sum(v)
+            self._times[k] = self._times.get(k, 0) + np.size(v)
+
+    def query(self, key):
+        return self._account[key] / self._times[key]
+
+    def report(self):
+        report = self._account.copy()
+        for k in report:
+            report[k] /= self._times[k]
+        return report
+
+    def clear(self):
+        self._account.clear()
+        self._times.clear()
 
 
 class OnPolicyRunner:
@@ -25,15 +50,15 @@ class OnPolicyRunner:
         else:
             self.env = EnvContainer(make_env, g_cfg.num_envs)
         if g_cfg.validation:
-            self.val_env = EnvContainer(make_env, 1)
-            self.val_process = Process(target=self.validation_process)
+            self.eval_env = EnvContainer(make_env, 1)
         actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
         self.alg = PPO(actor_critic)
 
         self.current_iter = 0
 
-    def validation_process(self):
-        pass
+    # def evaluate(self):
+    #     self.alg.actor_critic.eval()
+    #     self.alg.actor_critic.train()
 
     def learn(self):
         privileged_obs, obs = self.env.init_observations()
@@ -45,11 +70,12 @@ class OnPolicyRunner:
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
         total_iter = self.current_iter + g_cfg.num_iterations
-        reward_details = {}
+        accountant = Accountant()
+        timer = WithTimer()
         for it in range(self.current_iter + 1, total_iter + 1):
-            start = time.time()
             with torch.inference_mode():
-                for i in range(g_cfg.storage_len):
+                timer.start()
+                for _ in range(g_cfg.storage_len):
                     actions = self.alg.act(obs, critic_obs)
                     obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
                     critic_obs = privileged_obs if privileged_obs is not None else obs
@@ -60,37 +86,31 @@ class OnPolicyRunner:
 
                     cur_reward_sum += rewards
                     cur_episode_length += 1
-                    new_ids = (dones > 0).nonzero(as_tuple=False)
+                    new_ids = dones.nonzero(as_tuple=False)
                     reward_buffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
                     eps_len_buffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
                     cur_reward_sum[new_ids] = 0
                     cur_episode_length[new_ids] = 0
-                    for k, v in infos['reward_details'].items():
-                        reward_details[k] = reward_details.get(k, 0) + torch.sum(v, dtype=torch.float)
+                    accountant.register(infos['reward_details'])
                 if 'difficulty' in infos:
-                    difficulty = torch.mean(infos['difficulty'])
+                    difficulty = np.mean(infos['difficulty'])
+                collection_time = timer.end()
 
-                stop = time.time()
-                collection_time = stop - start
-
+                timer.start()
                 # Learning step
-                start = stop
                 self.alg.compute_returns(critic_obs)
-
             mean_value_loss, mean_surrogate_loss = self.alg.update()
-            stop = time.time()
-            learning_time = stop - start
-            self.log(locals())
-            reward_details.clear()
+            learning_time = timer.end()
+            self.log(it, locals())
             if it % g_cfg.save_interval == 0:
                 self.save(os.path.join(g_cfg.log_dir, f'model_{it}.pt'))
 
         self.current_iter += g_cfg.num_iterations
         self.save(os.path.join(g_cfg.log_dir, f'model_{self.current_iter}.pt'))
 
-    def log(self, locs, width=25):
+    def log(self, it, locs, width=25):
         logger.info(f"{'#' * width}")
-        logger.info(f"Iteration {locs['it']}/{locs['total_iter']}")
+        logger.info(f"Iteration {it}/{locs['total_iter']}")
         logger.info(f"Collection Time: {locs['collection_time']:.3f}")
         logger.info(f"Learning Time: {locs['learning_time']:.3f}")
 
@@ -102,8 +122,7 @@ class OnPolicyRunner:
                 'Perform/total_fps': fps,
                 'Perform/collection time': locs['collection_time'],
                 'Perform/learning_time': locs['learning_time']}
-        logs.update({f'Reward/{k}': v / (g_cfg.storage_len * g_cfg.num_envs)
-                     for k, v in locs['reward_details'].items()})
+        logs.update({f'Reward/{k}': v for k, v in locs['accountant'].report().items()})
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
         if 'difficulty' in locs:
             logs.update({'Train/difficulty': locs['difficulty']}),
@@ -114,9 +133,15 @@ class OnPolicyRunner:
                          'Train/mean_episode_length': eps_len_mean}),
             logger.info(f"{'Mean Reward:'} {reward_mean:.3f}")
             logger.info(f"{'Mean EpsLen:'} {eps_len_mean:.1f}")
-        logger.info(f"Total Frames: {locs['it'] * g_cfg.num_envs * g_cfg.storage_len}")
+        logger.info(f"Total Frames: {it * g_cfg.num_envs * g_cfg.storage_len}")
 
-        wandb.log(logs)
+        wandb.log(logs, step=it)
+
+    # def log_eval(self, it, locs, width=25):
+    #     logger.info(f"{'#' * width}")
+    #     logger.info(f"Evaluation {it}")
+    #     logs = {f'Eval/{k}': v for k, v in locs['accountant'].report().items()}
+    #     wandb.log(logs, step=it)
 
     def save(self, path, infos=None):
         if not os.path.exists(d := os.path.dirname(path)):

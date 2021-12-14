@@ -29,23 +29,19 @@ class BasicTask(object):
         # (EluLinearVelocityReward(), 0.1),
         (LinearVelocityReward(), 0.1),
         (YawRateReward(), 0.08),
-        # (AngularVelocityReward(), 0.1),
         (BodyHeightReward(), 0.05),
         (RedundantLinearPenalty(), 0.04),
-        # (RedundantAngularPenalty(), 0.03),
         (RollPitchRatePenalty(), 0.04),
         (BodyPosturePenalty(), 0.04),
         (FootSlipPenalty(), 0.04),
         (SmallStridePenalty(), 0.08),
         # (TargetMutationPenalty(), 0.02),
         (BodyCollisionPenalty(), 0.02),
-        # (TorquePenalty(), 0.01)
         (CostOfTransportReward(), 0.04)
     )
 
     def calculateReward(self):
         linear = self.robot.getBaseLinearVelocityInBaseFrame()
-        # angular = self.robot.getBaseAngularVelocityInBaseFrame()
         r_rate, p_rate, y_rate = self.robot.getBaseRpyRate()
         body_height = self._env.getSafetyHeightOfRobot()
         safety_r, safety_p, _ = self._env.getSafetyRpyOfRobot()
@@ -58,18 +54,15 @@ class BasicTask(object):
         cot = self.robot.getCostOfTransport()
         args = (
             (self._cmd, linear),  # Linear Rew
-            # (self._cmd, angular),  # Angular Rew
             (self._cmd[2], y_rate),  # yaw rate Rew
             (body_height,),  # Height Rew
             (self._cmd, linear),  # Linear Pen
-            # (angular,),  # Angular Pen
             (r_rate, p_rate),  # rp rate Pen
             (safety_r, safety_p),  # Posture Pen
             (slips,),  # Slip Pen
             (strides,),  # Small Stride Pen
             # (mutation,),  # Target Mut Pen
             (contact_states,),  # Collision Pen
-            # (torques,)  # Torque Pen
             (cot,)  # COT Rew
         )
 

@@ -28,15 +28,18 @@ class EnvContainer(object):
     @staticmethod
     def merge_results(results):
         pri_observations, observations, rewards, dones, infos = zip(*results)
-        infos_merged = {}
-        for k in infos[0]:
-            if isinstance(infos[0][k], dict):
-                info_item = [info[k] for info in infos]
-                infos_merged[k] = {k: torch.tensor(np.array([info[k] for info in info_item])) for k in info_item[0]}
-            else:
-                infos_merged[k] = torch.tensor(np.array([info[k] for info in infos]))
+
+        def _merge_dict_recursively(_infos: list[dict]):
+            _infos_merged = {}
+            for _k, _v in _infos[0].items():
+                if isinstance(_v, dict):
+                    _infos_merged[_k] = _merge_dict_recursively([_info[_k] for _info in _infos])
+                else:
+                    _infos_merged[_k] = torch.tensor(np.array([_info[_k] for _info in _infos]))
+            return _infos_merged
+
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), infos_merged)
+                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), _merge_dict_recursively(infos))
 
     def reset(self, dones):
         for env, done in zip(self._envs, dones):

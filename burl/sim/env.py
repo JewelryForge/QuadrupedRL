@@ -321,7 +321,6 @@ class TGEnv(QuadrupedEnv):
         return super().reset()
 
     def _initSimulation(self):  # for the stability of the beginning
-        # pass
         for _ in range(500):
             self._robot.updateObservation()
             self._robot.applyCommand(self._robot.STANCE_POSTURE)
@@ -342,7 +341,7 @@ if __name__ == '__main__':
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = True
+    tg = False
     if tg:
         env = TGEnv()
         env.initObservation()

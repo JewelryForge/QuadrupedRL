@@ -69,7 +69,7 @@ class Quadruped(object):
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
-        self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency * 0.1))
+        self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency / 1.25))
 
     @property
     def id(self):
