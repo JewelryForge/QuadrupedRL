@@ -106,6 +106,6 @@ if __name__ == '__main__':
     if remote:
         model = find_log_remote(time='1106', epoch=9400)
     else:
-        model = find_log(time=None, epoch=None)
+        model = find_log(time=1614, epoch=None)
     # model = 'log/model_9900.pt'
     main(model)

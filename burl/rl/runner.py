@@ -123,6 +123,7 @@ class OnPolicyRunner:
                 'Perform/collection time': locs['collection_time'],
                 'Perform/learning_time': locs['learning_time']}
         logs.update({f'Reward/{k}': v for k, v in locs['accountant'].report().items()})
+        locs['accountant'].clear()
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
         if 'difficulty' in locs:
             logs.update({'Train/difficulty': locs['difficulty']}),

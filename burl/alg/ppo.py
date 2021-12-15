@@ -141,6 +141,9 @@ class PPO(object):
         self.actor_critic = actor_critic
         self.actor_critic.to(g_cfg.dev)
         self.optimizer = torch.optim.Adam(self.actor_critic.parameters(), lr=g_cfg.learning_rate)
+        if g_cfg.schedule == 'linearLR':
+            self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
+                                                               total_iters=5000)
         self.transition = RolloutStorage.Transition()
         self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (g_cfg.p_obs_dim,), (g_cfg.p_obs_dim,),
                                       (g_cfg.action_dim,))
@@ -210,12 +213,12 @@ class PPO(object):
                     kl_mean = torch.mean(kl)
 
                     if kl_mean > cfg.desired_kl * 2.0:
-                        self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                        learning_rate = max(1e-5, self.learning_rate / 1.5)
                     elif 0.0 < kl_mean < cfg.desired_kl / 2.0:
-                        self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+                        learning_rate = min(1e-3, self.learning_rate * 1.5)
 
                     for param_group in self.optimizer.param_groups:
-                        param_group['lr'] = self.learning_rate
+                        param_group['lr'] = learning_rate
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
@@ -240,11 +243,14 @@ class PPO(object):
             self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.actor_critic.parameters(), cfg.max_grad_norm)
+            self.learning_rate = self.optimizer.param_groups[0]['lr']
             self.optimizer.step()
 
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
 
+        if cfg.schedule == 'linearLR':
+            self.scheduler.step()
         num_updates = cfg.num_learning_epochs * cfg.num_mini_batches
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates

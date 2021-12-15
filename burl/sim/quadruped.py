@@ -53,8 +53,9 @@ class Quadruped(object):
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
-        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-                                           kp=80, kd=(1.0, 2.0, 2.0) * 4)
+        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
+        # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
+        #                                    kp=80, kd=(1.0, 2.0, 2.0) * 4)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 

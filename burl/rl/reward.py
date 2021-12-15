@@ -193,22 +193,24 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def __init__(self, lower=-2.0, upper=2.0):
+    def __init__(self, lower=0.0, upper=2.0):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cot):
-        return -self.reshape(cot) * 2 + 1
+        return -self.reshape(cot)
 
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    r = tanh_reshape(0.5, 2.5)
-    x = np.linspace(-0.5, 3.5, 1000)
-    plt.plot(x, r(x))
+    r1 = reward_reshape(0.0, 2.0)
+    r = tanh_reshape(0.0, 2.0)
+    x = np.linspace(-0.5, 2.5, 1000)
+    plt.plot(x, [r1(x) for x in x])
+    plt.plot(x, [(r(x) + 1)/2 for x in x])
     plt.show()
-    print(r(0.0))
-    print(r(0.1))
-    print(r(0.2))
-    print(r(0.3))
-    print(r(0.4))
+    # print(r(0.0))
+    # print(r(0.1))
+    # print(r(0.2))
+    # print(r(0.3))
+    # print(r(0.4))
