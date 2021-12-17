@@ -283,6 +283,9 @@ class QuadrupedEnv(object):
         return 0.0
 
 
+from burl.utils import plotter
+
+
 class TGEnv(QuadrupedEnv):
     def __init__(self, **kwargs):
         super(TGEnv, self).__init__(**kwargs)
@@ -302,14 +305,24 @@ class TGEnv(QuadrupedEnv):
         self._stm.update(action.leg_frequencies)
         # self._filter += self._stm.flags
         priori = self._stm.get_priori_trajectory() - self.robot.STANCE_HEIGHT
-        if False:
-            h2b = self._robot.getHorizontalFrameInBaseFrame(False)  # FIXME: HERE SHOULD BE TRUE
-            priori_in_base_frame = [h2b @ (0, 0, z) for z in priori]
-            residuals = action.foot_pos_residuals + np.concatenate(priori_in_base_frame)
-        else:
-            residuals = action.foot_pos_residuals
-            for i in range(4):
-                residuals[i * 3 + 2] += priori[i]
+        # if False:
+        #     h2b = self._robot.getHorizontalFrameInBaseFrame(False)  # FIXME: HERE SHOULD BE TRUE
+        #     priori_in_base_frame = [h2b @ (0, 0, z) for z in priori]
+        #     residuals = action.foot_pos_residuals + np.concatenate(priori_in_base_frame)
+        # else:
+        residuals = action.foot_pos_residuals
+        for i in range(4):
+            residuals[i * 3 + 2] += priori[i]
+        # if True:
+        #     if any(self._stm.cycles == 5):
+        #         cmd, real = [], []
+        #         for i in range(4):
+        #             x, y, z = residuals[i * 3: i * 3 + 3]
+        #             cmd.append((x, z))
+        #             x, y, z = self._robot.getFootPositionInHipFrame(i)
+        #             real.append((x, z))
+        #
+        #         plotter(cmd, real)
 
         # NOTICE: HIP IS USED IN PAPER
         commands = [self._robot.ik(i, residuals[i * 3: i * 3 + 3], 'shoulder') for i in range(4)]
@@ -326,9 +339,6 @@ class TGEnv(QuadrupedEnv):
             self._robot.applyCommand(self._robot.STANCE_POSTURE)
             self._env.stepSimulation()
 
-    def getFilteredRobotStrides(self):
-        pass
-
 
 if __name__ == '__main__':
     g_cfg.moving_camera = False
@@ -341,7 +351,7 @@ if __name__ == '__main__':
     set_logger_level(logger.DEBUG)
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = False
+    tg = True
     if tg:
         env = TGEnv()
         env.initObservation()

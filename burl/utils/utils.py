@@ -7,7 +7,7 @@ M_PI = np.pi
 M_2_PI = 2 * M_PI
 
 
-def normalize(x):
+def normalize(x):  # [-pi, pi)
     return x - ((x + M_PI) // M_2_PI) * M_2_PI
 
 

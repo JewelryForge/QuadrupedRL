@@ -20,6 +20,7 @@ class EnvContainer(object):
 
     def step(self, actions: torch.Tensor):
         actions = [Action.from_array(action.cpu().numpy()) for action in actions]
+        # print(actions[0].__dict__)
         return self.merge_results([e.step(a) for e, a in zip(self._envs, actions)])
 
     def __del__(self):

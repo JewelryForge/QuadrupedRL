@@ -34,7 +34,7 @@ class Player:
             obs, privileged_obs, _, dones, _ = self.env.step(actions)
             critic_obs = privileged_obs if privileged_obs is not None else obs
             obs, critic_obs = to_dev(obs, critic_obs)
-            self.env.reset(dones)
+            # self.env.reset(dones)
             # time.sleep(0.05)
 
 
@@ -66,7 +66,7 @@ def find_log(time=None, epoch=None):
     return os.path.join(folder, f'model_{epoch}.pt')
 
 
-def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student/log', time=None, epoch=None):
+def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-art/log', time=None, epoch=None):
     remote_logs = os.popen(f'ssh {host} -p {port} ls {log_dir}').read().split('\n')
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
@@ -101,11 +101,12 @@ if __name__ == '__main__':
     g_cfg.trn_type = 'plain'
     g_cfg.trn_roughness = 0.05
     g_cfg.sleeping_enabled = True
+    g_cfg.on_rack = False
     set_logger_level(logger.DEBUG)
-    remote = False
+    remote = True
     if remote:
-        model = find_log_remote(time='1106', epoch=9400)
+        model = find_log_remote(time=None, epoch=3000)
     else:
-        model = find_log(time=1614, epoch=None)
+        model = find_log(time=1614, epoch=7800)
     # model = 'log/model_9900.pt'
     main(model)

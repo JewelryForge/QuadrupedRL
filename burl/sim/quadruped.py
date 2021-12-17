@@ -393,7 +393,10 @@ class Quadruped(object):
 
     def getFootPositionInBaseFrame(self, leg):
         joint_pos = self.getJointPositions(noisy=False)
-        return self.fk(leg, joint_pos[leg * 3: leg * 3 + 3])
+        return self.fk(leg, joint_pos[leg * 3: leg * 3 + 3]).translation
+
+    def getFootPositionInHipFrame(self, leg):
+        return self.getFootPositionInBaseFrame(leg) - self.HIP_OFFSETS[leg]
 
     def getFootPositionInWorldFrame(self, leg):
         return self._observation.foot_states.positions[leg, :]

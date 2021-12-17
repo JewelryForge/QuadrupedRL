@@ -82,30 +82,16 @@ class BasicTask(object):
         #     b.append(s)
         # print(np.array([np.mean(b) for b in self.buf]))
         # print(self.robot.getCostOfTransport())
-        # print(get('y_rate'), YawRateReward()(0, get('y_rate')))
-        # if any(strides := get('strides')):
-        #     print(strides, SmallStridePenalty()(strides))
+        if any(strides := get('strides')):
+            print(strides, SmallStridePenalty()(strides))
         # print(get('cot'), CostOfTransportReward()(get('cot')))
         # print(get('slips'))
         # print()
-        # if (strides := get('strides'))[0]:
-        #     print(strides, SmallStridePenalty()(strides))
-        #     print()
-        # if strides[0]:
-        #     print()
         # print(get('r_rate'), get('p_rate'), get('y_rate'))
-        # print('slip', get('slip'))
         # print()
-        # from burl.utils.transforms import Rpy
         # from burl.utils import udp_pub
-        # print(self.robot.getFootSlipVelocity())
-        # if any(strides != 0.0)
-        #     print(strides, sum(self.reshape(s) for s in strides if s != 0.0))
-        # locals().update(variables)
-        # data = {'AngVel': dict(zip('xyz', self.robot.getBaseAngularVelocity())),
-        #         'dEuler': dict(zip(('dr', 'dp', 'dy'), self.robot.getBaseRpyRate()))}
+        # data = {'hip_joints': tuple(self.robot.getJointPositions()[(0, 3, 6, 9),])}
         # udp_pub.send(data)
-        # print(strides, self.robot.getStrides())
         pass
 
     def getRewardDetails(self):

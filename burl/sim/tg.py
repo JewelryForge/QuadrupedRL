@@ -6,7 +6,7 @@ from burl.utils import normalize
 class LocomotionStateMachine(object):
     FIXED_INIT = True
     # INIT_ANGLES = (0, 1.5, 0.5, 1.0)
-    INIT_ANGLES = (0.0, 1.0, 1.0, 0.0)
+    INIT_ANGLES = normalize(np.array((0.0, 1.0, 1.0, 0.0)) * np.pi)
 
     def __init__(self, time_step, **kwargs):
         # We set the base frequency f0 to zero when the zero command is given for 0.5s,
@@ -16,7 +16,7 @@ class LocomotionStateMachine(object):
         # The state machine is included in the training environment.
         self._time_step = time_step
         if self.FIXED_INIT:
-            self._phases = normalize(np.array(self.INIT_ANGLES) * np.pi)
+            self._phases = self.INIT_ANGLES.copy()
         else:
             self._phases = normalize(np.random.random(4) * 2 * np.pi)
         self._frequency = np.ones(4) * self.base_frequency
@@ -24,6 +24,7 @@ class LocomotionStateMachine(object):
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
         self._flags = np.zeros(4, dtype=bool)
         self._tg = designed_tg()
+        self._cycles = np.zeros(4)
         # self._tg = end_trajectory_generator()
 
     @property
@@ -39,8 +40,8 @@ class LocomotionStateMachine(object):
         return self._frequency
 
     @property
-    def flags(self):
-        return self._flags
+    def cycles(self):
+        return self._cycles
 
     def reset(self):
         if self.FIXED_INIT:
@@ -52,11 +53,12 @@ class LocomotionStateMachine(object):
         frequency_offsets = np.asarray(frequency_offsets)
         self._frequency = self.base_frequency + frequency_offsets
         self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
+        _phases = self._phases.copy()
         self._phases += self._frequency * self._time_step * 2 * np.pi
-        phases = normalize(self._phases)  # [-pi, pi)
-        # print(self._frequency, self._phases)
-        self._flags = (phases == self._phases)
-        self._phases = phases
+        self._flags = np.logical_and(normalize(_phases - self.INIT_ANGLES) < 0,
+                                     normalize(self._phases - self.INIT_ANGLES) >= 0)
+        self._cycles[self._flags.nonzero(),] += 1
+        self._phases = normalize(self._phases)
         return self._phases
 
     def get_priori_trajectory(self):
