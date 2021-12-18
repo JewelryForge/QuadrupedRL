@@ -3,7 +3,7 @@ import sys
 sys.path.append('.')
 from burl.rl.runner import OnPolicyRunner
 from burl.rl.task import BasicTask
-from burl.utils import g_cfg, logger
+from burl.utils import g_cfg, log_warn, init_logger
 import wandb
 
 
@@ -29,10 +29,11 @@ def update_cfg_from_args():
             print(f"g_cfg has no attribute named '{name}'")
         setattr(g_cfg, name, value)
         value = getattr(g_cfg, name)
-        logger.warning(f'{name}: {type(value).__name__} -> {value}')
+        log_warn(f'{name}: {type(value).__name__} -> {value}')
 
 
 def main():
+    init_logger()
     g_cfg.task_class = BasicTask
     g_cfg.num_envs = 1
     g_cfg.trn_type = 'plain'
@@ -45,7 +46,7 @@ def main():
     g_cfg.rewards_weights = [(r.__class__.__name__, w) for r, w in BasicTask.rewards_weights]
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
-    logger.warning(f'Training on {g_cfg.device}')
+    log_warn(f'Training on {g_cfg.device}')
     runner = OnPolicyRunner()
     runner.learn()
 

@@ -11,7 +11,7 @@ from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 from burl.alg.ppo import PPO
 from burl.rl.task import BasicTask, RandomCmdTask
 from burl.sim import TGEnv, A1, EnvContainerMultiProcess2, EnvContainer
-from burl.utils import make_cls, g_cfg, logger, to_dev, WithTimer
+from burl.utils import make_cls, g_cfg, to_dev, WithTimer, log_info
 
 
 class Accountant:
@@ -109,10 +109,10 @@ class OnPolicyRunner:
         self.save(os.path.join(g_cfg.log_dir, f'model_{self.current_iter}.pt'))
 
     def log(self, it, locs, width=25):
-        logger.info(f"{'#' * width}")
-        logger.info(f"Iteration {it}/{locs['total_iter']}")
-        logger.info(f"Collection Time: {locs['collection_time']:.3f}")
-        logger.info(f"Learning Time: {locs['learning_time']:.3f}")
+        log_info(f"{'#' * width}")
+        log_info(f"Iteration {it}/{locs['total_iter']}")
+        log_info(f"Collection Time: {locs['collection_time']:.3f}")
+        log_info(f"Learning Time: {locs['learning_time']:.3f}")
 
         fps = int(g_cfg.storage_len * self.env.num_envs / (locs['collection_time'] + locs['learning_time']))
         logs = {'Loss/value_function': locs['mean_value_loss'],
@@ -127,20 +127,20 @@ class OnPolicyRunner:
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
         if 'difficulty' in locs:
             logs.update({'Train/difficulty': locs['difficulty']}),
-            logger.info(f"{'Difficulty:'} {locs['difficulty']:.3f}")
+            log_info(f"{'Difficulty:'} {locs['difficulty']:.3f}")
         if len(reward_buffer) > 0:
             reward_mean, eps_len_mean = np.mean(reward_buffer), np.mean(eps_len_buffer)
             logs.update({'Train/mean_reward': reward_mean,
                          'Train/mean_episode_length': eps_len_mean}),
-            logger.info(f"{'Mean Reward:'} {reward_mean:.3f}")
-            logger.info(f"{'Mean EpsLen:'} {eps_len_mean:.1f}")
-        logger.info(f"Total Frames: {it * g_cfg.num_envs * g_cfg.storage_len}")
+            log_info(f"{'Mean Reward:'} {reward_mean:.3f}")
+            log_info(f"{'Mean EpsLen:'} {eps_len_mean:.1f}")
+        log_info(f"Total Frames: {it * g_cfg.num_envs * g_cfg.storage_len}")
 
         wandb.log(logs, step=it)
 
     # def log_eval(self, it, locs, width=25):
-    #     logger.info(f"{'#' * width}")
-    #     logger.info(f"Evaluation {it}")
+    #     log_info(f"{'#' * width}")
+    #     log_info(f"Evaluation {it}")
     #     logs = {f'Eval/{k}': v for k, v in locs['accountant'].report().items()}
     #     wandb.log(logs, step=it)
 

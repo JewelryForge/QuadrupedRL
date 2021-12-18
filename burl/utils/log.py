@@ -1,16 +1,23 @@
+from __future__ import annotations
+
 import logging
-from logging import FileHandler, StreamHandler
-from logging.handlers import SocketHandler
 import os
+from logging.handlers import SocketHandler
 
 import numpy as np
 import torch
 
-from burl.utils import g_cfg
-
 BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
 RESET_SEQ = "\033[0m"
 COLOR_SEQ = "\033[1;%dm"
+
+
+def colored_str(content: str, color: str):
+    try:
+        color = eval(color.upper())
+    except NameError:
+        raise RuntimeError(f'No color named {color}')
+    return COLOR_SEQ % (30 + color) + content + RESET_SEQ
 
 
 class ColoredFormatter(logging.Formatter):
@@ -40,46 +47,69 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
-def get_logger(name=__name__,
-               log_level=logging.INFO,
-               fmt='[%(asctime)s] %(message)s',
-               datefmt='%b%d %H:%M:%S'):
-    log = logging.getLogger(name)
-    log.setLevel(logging.DEBUG)
-    # path = os.path.join(g_cfg.log_dir, 'log.txt')
-    # if not os.path.exists(dir_ := os.path.dirname(path)):
-    #     os.makedirs(dir_)
-    # fh = FileHandler(path)
-    # fh.setLevel(logging.DEBUG)
-    # log.addHandler(fh)
-    soh = SocketHandler('127.0.0.1', 19996)
+logger: logging.Logger = None
+
+
+def init_logger(name=__name__,
+                log_level=logging.INFO,
+                log_fmt='[%(asctime)s] %(message)s',
+                date_fmt='%b%d %H:%M:%S',
+                log_dir=None,
+                client_ip='127.0.0.1'):
+    np.set_printoptions(3, linewidth=1000, suppress=True)
+    torch.set_printoptions(linewidth=1000, profile='short')
+    global logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    if log_dir:
+        os.makedirs(log_dir)
+        fh = logging.FileHandler(os.path.join(log_dir, 'log.txt'))
+        fh.setLevel(logging.DEBUG)
+        logger.addHandler(fh)
+    soh = SocketHandler(client_ip, 19996)
     # soh = SocketHandler('10.12.120.120', 19996)
     soh.setFormatter(logging.Formatter())
-    log.addHandler(soh)
-    formatter = ColoredFormatter(fmt, datefmt)
-    sh = StreamHandler()
+    logger.addHandler(soh)
+    formatter = ColoredFormatter(log_fmt, date_fmt)
+    sh = logging.StreamHandler()
     sh.setLevel(log_level)
     sh.setFormatter(formatter)
-    log.addHandler(sh)
-    return log
+    logger.addHandler(sh)
 
 
-np.set_printoptions(3, linewidth=1000, suppress=True)
-torch.set_printoptions(linewidth=1000, profile='short')
-logger = get_logger()
-logger.DEBUG = logging.DEBUG
-logger.INFO = logging.INFO
-logger.WARNING = logging.WARNING
-logger.ERROR = logging.ERROR
-logger.CRITICAL = logging.CRITICAL
+def set_logger_level(log_level: str):
+    level_dict = {'DEBUG': logging.DEBUG,
+                  'INFO': logging.INFO,
+                  'WARNING': logging.WARNING,
+                  'ERROR': logging.ERROR,
+                  'CRITICAL': logging.CRITICAL}
+
+    logger.handlers[-1].setLevel(level_dict[log_level.upper()])
 
 
-def set_logger_level(log_level):
-    logger.handlers[-1].setLevel(log_level)
+def log_debug(*args, **kwargs):
+    return logger.debug(*args, **kwargs)
+
+
+def log_info(*args, **kwargs):
+    return logger.info(*args, **kwargs)
+
+
+def log_warn(*args, **kwargs):
+    return logger.warning(*args, **kwargs)
+
+
+def log_error(*args, **kwargs):
+    return logger.error(*args, **kwargs)
+
+
+def log_critical(*args, **kwargs):
+    return logger.critical(*args, **kwargs)
 
 
 if __name__ == '__main__':
-    set_logger_level(logger.INFO)
+    init_logger()
+    set_logger_level('DEBUG')
     logger.debug(torch.Tensor([1.0000001, 2, 3]))
     logger.info(123123)
     logger.warning(123123)

@@ -186,6 +186,32 @@ class RandomUniformTerrain(HeightFieldTerrain):
     #     return res
 
 
+def makeStandardRoughTerrain(pybullet_client, roughness=None, seed=None):
+    from burl.utils import g_cfg
+    if roughness is None:
+        roughness = g_cfg.trn_roughness
+    return RandomUniformTerrain(
+        pybullet_client, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
+        roughness=roughness, resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=seed)
+
+
+def makeTerrain(pybullet_client):
+    from burl.utils import g_cfg
+    if g_cfg.trn_type == 'plain':
+        terrain = PlainTerrain(pybullet_client)
+    elif g_cfg.trn_type == 'curriculum':
+        raise NotImplementedError
+        # g_cfg.trn_offset = tuple(g_cfg.trn_size / 6 * self._cmd)
+        # terrain = TerrainCurriculum(pybullet_client)
+    elif g_cfg.trn_type == 'rough':
+        terrain = makeStandardRoughTerrain(pybullet_client, seed=2)
+    elif g_cfg.trn_type == 'slope':
+        terrain = SlopeTerrain(pybullet_client)
+    else:
+        raise RuntimeError(f'Unknown terrain type {g_cfg.trn_type}')
+    return terrain
+
+
 if __name__ == '__main__':
     pybullet.connect(pybullet.GUI)
     # t = SlopeTerrain(pybullet, size=20, slope=np.pi / 12, resolution=0.1)

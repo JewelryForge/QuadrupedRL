@@ -65,16 +65,34 @@ class TrainParam(AlgParam):
         self.p_obs_dim = ExtendedObservation.dim
         self.action_dim = Action.dim
         self.device = torch.device('cuda')
+
+
+class RuntimeParam(object):
+    def __init__(self):
         self.log_dir = f'log/{timestamp()}'
         self.run_name = None
         self.task_class = None
         self.use_mp = True
         self.use_wandb = True
-        self.rewards_weights = None
-        self.ip_address = '127.0.0.1'  # FIXME: THIS DOES NOT MAKE SENSE
+        self.ip_address = '127.0.0.1'
         # self.ip_address = '10.12.120.120'
         self.port = '19996'
         self.validation = False
+        self.test_mode = False
+        self.rewards_weights = (
+            # (EluLinearVelocityReward(), 0.1),
+            ('LinearVelocityReward', 0.1),
+            ('YawRateReward', 0.08),
+            ('BodyHeightReward', 0.05),
+            ('RedundantLinearPenalty', 0.04),
+            ('RollPitchRatePenalty', 0.04),
+            ('BodyPosturePenalty', 0.04),
+            ('FootSlipPenalty', 0.04),
+            ('SmallStridePenalty', 0.08),
+            # (TargetMutationPenalty(), 0.02),
+            ('BodyCollisionPenalty', 0.02),
+            ('CostOfTransportReward', 0.04)
+        )
 
 
 class TerrainParam(object):
@@ -97,13 +115,15 @@ class TerrainCurriculumParam(object):
         self.distance_threshold = (2.5, 5.0)
 
 
-class TaskParam(SimParam, RenderParam, TrainParam, TerrainParam, TerrainCurriculumParam):
+class TaskParam(SimParam, RenderParam, TrainParam,
+                TerrainParam, TerrainCurriculumParam, RuntimeParam):
     def __init__(self):
         SimParam.__init__(self)
         RenderParam.__init__(self)
         TrainParam.__init__(self)
         TerrainParam.__init__(self)
         TerrainCurriculumParam.__init__(self)
+        RuntimeParam.__init__(self)
         self._init = True
 
     @property

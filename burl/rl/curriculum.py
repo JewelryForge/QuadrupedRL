@@ -1,5 +1,5 @@
-from burl.sim import Terrain, RandomUniformTerrain, PlainTerrain, SlopeTerrain
-from burl.utils import g_cfg, logger
+from burl.sim import Terrain, RandomUniformTerrain, PlainTerrain, SlopeTerrain, makeStandardRoughTerrain
+from burl.utils import g_cfg, log_debug
 
 
 class BasicTerrainManager(object):
@@ -14,14 +14,6 @@ class BasicTerrainManager(object):
 
     def reset(self):
         pass
-
-
-def makeStandardRoughTerrain(bullet_client, roughness=None, seed=None):
-    if roughness is None:
-        roughness = g_cfg.trn_roughness
-    return RandomUniformTerrain(
-        bullet_client, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
-        roughness=roughness, resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=seed)
 
 
 class SlopeTerrainManager(BasicTerrainManager):
@@ -42,14 +34,14 @@ class PlainTerrainManager(BasicTerrainManager):
         self.terrain = PlainTerrain(self.bullet_client)
 
 
-class FixedRoughTerrainManager(BasicTerrainManager):
-    def __init__(self, bullet_client, seed=None):
-        super().__init__()
-        self.seed = seed
-        self.terrain = makeStandardRoughTerrain(bullet_client, seed=seed)
-
-    def reset(self):
-        self.terrain = makeStandardRoughTerrain(self.bullet_client, self.seed)
+# class FixedRoughTerrainManager(BasicTerrainManager):
+#     def __init__(self, bullet_client, seed=None):
+#         super().__init__()
+#         self.seed = seed
+#         self.terrain = makeStandardRoughTerrain(bullet_client, seed=seed)
+#
+#     def reset(self):
+#         self.terrain = makeStandardRoughTerrain(self.bullet_client, self.seed)
 
 
 class TerrainCurriculum(BasicTerrainManager):
@@ -66,13 +58,13 @@ class TerrainCurriculum(BasicTerrainManager):
         if self.difficulty_level > 0:
             self.difficulty -= g_cfg.difficulty_step
             self.difficulty_level -= 1
-            logger.debug(f'decrease level, current {self.difficulty_level}')
+            log_debug(f'decrease level, current {self.difficulty_level}')
 
     def increaseLevel(self):
         if self.difficulty < g_cfg.max_difficulty:
             self.difficulty += g_cfg.difficulty_step
             self.difficulty_level += 1
-            logger.debug(f'increase level, current {self.difficulty_level}')
+            log_debug(f'increase level, current {self.difficulty_level}')
 
     def register(self, episode_len, distance):  # FIXME: THIS DISTANCE IS ON CMD DIRECTION
         self.counter += 1
@@ -82,7 +74,7 @@ class TerrainCurriculum(BasicTerrainManager):
         else:
             self.combo = 0
             self.miss += 1
-        logger.debug(f'Miss{self.miss} Combo{self.combo} distance{distance:.2f}')
+        log_debug(f'Miss{self.miss} Combo{self.combo} distance{distance:.2f}')
         if self.miss and self.miss % g_cfg.miss_threshold == 0:
             self.decreaseLevel()
             return True

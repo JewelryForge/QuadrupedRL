@@ -75,11 +75,8 @@ class ActorCritic(nn.Module):
 
     @staticmethod
     def init_weights(sequential, scales):  # not used at the moment
-        [torch.nn.init.orthogonal_(module.weight, gain=scales[idx]) for idx, module in
-         enumerate(mod for mod in sequential if isinstance(mod, nn.Linear))]
-
-    def reset(self, dones=None):
-        pass
+        for idx, module in enumerate(mod for mod in sequential if isinstance(mod, nn.Linear)):
+            torch.nn.init.orthogonal_(module.weight, gain=scales[idx])
 
     def forward(self):
         raise NotImplementedError

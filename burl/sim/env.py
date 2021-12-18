@@ -11,8 +11,9 @@ from burl.rl.state import ExtendedObservation, Action
 from burl.rl.task import BasicTask
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, Quadruped
+from burl.sim.terrain import makeTerrain
 from burl.sim.tg import LocomotionStateMachine
-from burl.utils import make_cls, g_cfg, logger, set_logger_level, unit, vec_cross
+from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
 from burl.utils.transforms import Rpy, Rotation
 
 
@@ -29,17 +30,17 @@ class QuadrupedEnv(object):
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
-        self._task = make_task(self)
-        self._terrain = self._task.makeTerrain()
+        self._terrain = makeTerrain(self._env)
         self._robot: Quadruped = make_robot(self._env, self._terrain.getMaxHeightInRange(*make_robot.ROBOT_SIZE)[2])
+        self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
         self._setPhysicsParameters()
         self._initSimulation()
         self._num_action_repeats = int(g_cfg.sim_frequency / g_cfg.action_frequency)
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
-        logger.debug(f'Action Repeats for {self._num_action_repeats} time(s)')
-        logger.debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
+        log_debug(f'Action Repeats for {self._num_action_repeats} time(s)')
+        log_debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
         if self._gui:
             self._initRendering()
         self._resetStates()
@@ -78,7 +79,7 @@ class QuadrupedEnv(object):
     def _loadEgl(self):
         import pkgutil
         if egl := pkgutil.get_loader('eglRenderer'):
-            logger.info(f'LoadPlugin: {egl.get_filename()}_eglRendererPlugin')
+            log_info(f'LoadPlugin: {egl.get_filename()}_eglRendererPlugin')
             self._env.loadPlugin(egl.get_filename(), '_eglRendererPlugin')
         else:
             self._env.loadPlugin("eglRendererPlugin")
@@ -210,11 +211,10 @@ class QuadrupedEnv(object):
         time_out = not is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
         self._episode_reward += (mean_reward := np.mean(rewards))
         info = {'time_out': time_out, 'torques': torques, 'reward_details': reward_details,
-                'accumulated_episode_reward': self._episode_reward}
+                'episode_reward': self._episode_reward}
         if hasattr(self._terrain, 'difficulty'):
             info['difficulty'] = self._terrain.difficulty
-        # logger.debug(is_failed or time_out)
-        # logger.debug(f'Step time: {time.time() - start}')
+        # log_debug(f'Step time: {time.time() - start}')
         return (self.makeStandardObservation(True),
                 self.makeStandardObservation(False),
                 mean_reward,
@@ -222,7 +222,8 @@ class QuadrupedEnv(object):
                 info)
 
     def reset(self):
-        completely_reset = self._task.register(self._sim_step_counter)
+        # completely_reset = self._task.curriculumUpdate(self._sim_step_counter)
+        completely_reset = False
         self._resetStates()
         self._task.reset()
         if completely_reset:
@@ -296,7 +297,7 @@ class TGEnv(QuadrupedEnv):
         eo: ExtendedObservation = super().makeStandardObservation(privileged)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
-        # logger.debug(eo.__dict__)
+        # log_debug(eo.__dict__)
         return (eo.to_array() - eo.offset) * eo.scale
 
     def step(self, action: Action):
@@ -341,14 +342,16 @@ class TGEnv(QuadrupedEnv):
 
 
 if __name__ == '__main__':
+    from burl.utils import init_logger, set_logger_level
+
     g_cfg.moving_camera = False
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.rendering = True
     g_cfg.trn_type = 'plain'
     g_cfg.trn_roughness = 0.1
-
-    set_logger_level(logger.DEBUG)
+    init_logger()
+    set_logger_level('DEBUG')
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
     tg = True

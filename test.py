@@ -1,12 +1,12 @@
 import sys
 
+sys.path.append('.')
+
 import torch
 import os
 
-sys.path.append('.')
-
 from burl.sim import A1, TGEnv, EnvContainer
-from burl.utils import make_cls, g_cfg, logger, set_logger_level, str2time, to_dev
+from burl.utils import make_cls, g_cfg, log_info, set_logger_level, str2time, to_dev, init_logger
 from burl.alg.ac import ActorCritic, ActorTeacher, Critic
 
 
@@ -20,21 +20,20 @@ class Player:
         self.env = EnvContainer(make_env, 1)
         self.actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
         self.actor_critic.load_state_dict(torch.load(model_dir)['model_state_dict'])
-        logger.info(f'load model {model_dir}')
+        log_info(f'load model {model_dir}')
 
     def play(self):
         privileged_obs, obs = self.env.init_observations()
 
         critic_obs = privileged_obs if privileged_obs is not None else obs
         obs, critic_obs = to_dev(obs, critic_obs)
-        import time
 
         for _ in range(20000):
             actions = self.actor_critic.act_inference(obs)
             obs, privileged_obs, _, dones, _ = self.env.step(actions)
             critic_obs = privileged_obs if privileged_obs is not None else obs
             obs, critic_obs = to_dev(obs, critic_obs)
-            # self.env.reset(dones)
+            self.env.reset(dones)
             # time.sleep(0.05)
 
 
@@ -102,11 +101,13 @@ if __name__ == '__main__':
     g_cfg.trn_roughness = 0.05
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
-    set_logger_level(logger.DEBUG)
-    remote = True
+    g_cfg.test_mode = True
+    init_logger()
+    set_logger_level('debug')
+    remote = False
     if remote:
-        model = find_log_remote(time=None, epoch=3000)
+        model = find_log_remote(time=None, epoch=8000)
     else:
-        model = find_log(time=1614, epoch=7800)
+        model = find_log(time=None, epoch=None)
     # model = 'log/model_9900.pt'
     main(model)

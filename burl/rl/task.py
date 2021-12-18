@@ -100,25 +100,9 @@ class BasicTask(object):
     def reset(self):
         pass
 
-    def makeTerrain(self):
-        from burl.rl.curriculum import (PlainTerrainManager, TerrainCurriculum,
-                                        FixedRoughTerrainManager, SlopeTerrainManager)
-        if g_cfg.trn_type == 'plain':
-            self._terrain = PlainTerrainManager(self._env.client)
-        elif g_cfg.trn_type == 'curriculum':
-            g_cfg.trn_offset = tuple(g_cfg.trn_size / 6 * self._cmd)
-            self._terrain = TerrainCurriculum(self._env.client)
-        elif g_cfg.trn_type == 'rough':
-            self._terrain = FixedRoughTerrainManager(self._env.client, seed=2)
-        elif g_cfg.trn_type == 'slope':
-            self._terrain = SlopeTerrainManager(self._env.client)
-        else:
-            raise RuntimeError(f'Unknown terrain type {g_cfg.trn_type}')
-        return self._terrain
-
-    def register(self, episode_len):
-        distance = np.dot(self.robot.position, self._cmd)
-        return self._terrain.register(episode_len, distance)
+    # def curriculumUpdate(self, episode_len):
+    #     distance = np.dot(self.robot.position, self._cmd)
+    #     return self._terrain.register(episode_len, distance)
 
     def isFailed(self):  # TODO: CHANGE TIME_OUT TO NORMALLY FINISH
         rob, env = self.robot, self._env
