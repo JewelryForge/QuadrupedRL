@@ -66,9 +66,15 @@ class QuadrupedEnv(object):
     def terrain(self):
         return self._terrain
 
+    @property
+    def task(self):
+        return self._task
+
     def initObservation(self):
         self.updateObservation()
-        return self.makeStandardObservation(True), self.makeStandardObservation(False)
+        # print(self.assembleObservation(False).__dict__)
+        return (self.assembleObservation(False).standard(),
+                self.assembleObservation(True).standard())
 
     def _initSimulation(self):
         pass
@@ -147,10 +153,9 @@ class QuadrupedEnv(object):
             for idc, pos in zip(self._terrain_indicators, positions):
                 self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
-    def makeStandardObservation(self, privileged=True):
+    def assembleObservation(self, if_noisy=False):
         eo = ExtendedObservation()
         r = self._robot
-        if_noisy = not privileged
         eo.command = self._task.cmd
         eo.gravity_vector = r.getBaseAxisZ()
         eo.base_linear = r.getBaseLinearVelocityInBaseFrame(if_noisy)
@@ -215,8 +220,8 @@ class QuadrupedEnv(object):
         if hasattr(self._terrain, 'difficulty'):
             info['difficulty'] = self._terrain.difficulty
         # log_debug(f'Step time: {time.time() - start}')
-        return (self.makeStandardObservation(True),
-                self.makeStandardObservation(False),
+        return (self.assembleObservation(False).standard(),
+                self.assembleObservation(True).standard(),
                 mean_reward,
                 is_failed or time_out,
                 info)
@@ -233,7 +238,10 @@ class QuadrupedEnv(object):
         self._robot.reset(self._terrain.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
                           reload=completely_reset)
         self._initSimulation()
-        return self._robot.updateObservation()
+        self._robot.updateObservation()
+        # print(self.assembleObservation(False).__dict__)
+        return (self.assembleObservation(False).standard(),
+                self.assembleObservation(True).standard())
 
     def close(self):
         self._env.disconnect()
@@ -284,21 +292,18 @@ class QuadrupedEnv(object):
         return 0.0
 
 
-from burl.utils import plotter
-
-
 class TGEnv(QuadrupedEnv):
     def __init__(self, **kwargs):
         super(TGEnv, self).__init__(**kwargs)
         self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency)
         # self._filter = self._stm.flags
 
-    def makeStandardObservation(self, privileged=True):
-        eo: ExtendedObservation = super().makeStandardObservation(privileged)
+    def assembleObservation(self, if_noisy=False):
+        eo: ExtendedObservation = super().assembleObservation(if_noisy)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
         # log_debug(eo.__dict__)
-        return (eo.to_array() - eo.offset) * eo.scale
+        return eo
 
     def step(self, action: Action):
         # 0 ~ 3 additional frequencies
@@ -311,28 +316,32 @@ class TGEnv(QuadrupedEnv):
         #     priori_in_base_frame = [h2b @ (0, 0, z) for z in priori]
         #     residuals = action.foot_pos_residuals + np.concatenate(priori_in_base_frame)
         # else:
-        residuals = action.foot_pos_residuals
+        des_pos = action.foot_pos_residuals
         for i in range(4):
-            residuals[i * 3 + 2] += priori[i]
-        # if True:
-        #     if any(self._stm.cycles == 5):
-        #         cmd, real = [], []
-        #         for i in range(4):
-        #             x, y, z = residuals[i * 3: i * 3 + 3]
-        #             cmd.append((x, z))
-        #             x, y, z = self._robot.getFootPositionInHipFrame(i)
-        #             real.append((x, z))
-        #
-        #         plotter(cmd, real)
+            des_pos[i * 3 + 2] += priori[i]
+        if g_cfg.plot_trajectory:
+            self.plot(des_pos)
 
         # NOTICE: HIP IS USED IN PAPER
-        commands = [self._robot.ik(i, residuals[i * 3: i * 3 + 3], 'shoulder') for i in range(4)]
+        commands = [self._robot.ik(i, des_pos[i * 3: i * 3 + 3], 'shoulder') for i in range(4)]
         # TODO: COMPLETE NOISY OBSERVATION CONVERSIONS
         return super().step(np.concatenate(commands))
 
     def reset(self):
         self._stm.reset()
         return super().reset()
+
+    def plot(self, des_pos):
+        from burl.utils import plotter
+        if any(self._stm.cycles == 5):
+            cmd, real = [], []
+            for i in range(4):
+                x, y, z = des_pos[i * 3: i * 3 + 3]
+                cmd.append((x, z))
+                x, y, z = self._robot.getFootPositionInHipFrame(i)
+                real.append((x, z))
+
+            plotter(cmd, real)
 
     def _initSimulation(self):  # for the stability of the beginning
         for _ in range(500):
@@ -354,7 +363,7 @@ if __name__ == '__main__':
     set_logger_level('DEBUG')
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = True
+    tg = False
     if tg:
         env = TGEnv()
         env.initObservation()

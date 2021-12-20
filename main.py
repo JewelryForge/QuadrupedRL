@@ -43,7 +43,7 @@ def main():
     g_cfg.sleeping_enabled = False
     g_cfg.schedule = 'fixed'
     update_cfg_from_args()
-    g_cfg.rewards_weights = [(r.__class__.__name__, w) for r, w in BasicTask.rewards_weights]
+    # g_cfg._rewards_weights = [(r.__class__.__name__, w) for r, w in BasicTask.rewards_weights]
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     log_warn(f'Training on {g_cfg.device}')

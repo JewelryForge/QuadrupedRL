@@ -1,101 +1,60 @@
-from burl.rl.reward import *
+import numpy as np
+from burl.rl.reward import RewardRegistry
 from burl.utils import g_cfg
 
 
-class BasicTask(object):
+class BasicTask(RewardRegistry):
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
-        self._env = env
-        self._cmd = np.asarray(cmd)
-        from burl.rl.curriculum import BasicTerrainManager
-        self._terrain: BasicTerrainManager = None
-        self._rewards, self._weights = [], []
-        for r, w in self.rewards_weights:
-            self._rewards.append(r)
-            self._weights.append(w)
-        self._weights = np.array(self._weights)
-        # self._weights = self._weights * 0.1 / self._weights.sum()
-        self._weights = self._weights * 0.25
-        self._details = {}
+        super().__init__(np.asarray(cmd), env, env.robot)
+        # from burl.rl.curriculum import BasicTerrainManager
+        # self._terrain: BasicTerrainManager = None
+        for reward, weight in g_cfg.rewards_weights:
+            self.register(reward, weight)
+
+        self.setCoefficient(0.25)
+        # self.setCoefficient(0.1 / self._weight_sum)
 
     @property
     def cmd(self):
         return self._cmd
 
     @property
-    def robot(self):
-        return self._env.robot
+    def env(self):
+        return self._env
 
-    rewards_weights = (
-        # (EluLinearVelocityReward(), 0.1),
-        (LinearVelocityReward(), 0.1),
-        (YawRateReward(), 0.08),
-        (BodyHeightReward(), 0.05),
-        (RedundantLinearPenalty(), 0.04),
-        (RollPitchRatePenalty(), 0.04),
-        (BodyPosturePenalty(), 0.04),
-        (FootSlipPenalty(), 0.04),
-        (SmallStridePenalty(), 0.08),
-        # (TargetMutationPenalty(), 0.02),
-        (BodyCollisionPenalty(), 0.02),
-        (CostOfTransportReward(), 0.04)
-    )
+    @property
+    def robot(self):
+        return self._robot
 
     def calculateReward(self):
-        linear = self.robot.getBaseLinearVelocityInBaseFrame()
-        r_rate, p_rate, y_rate = self.robot.getBaseRpyRate()
-        body_height = self._env.getSafetyHeightOfRobot()
-        safety_r, safety_p, _ = self._env.getSafetyRpyOfRobot()
-        # print(body_rpy, self.robot.rpy)
-        contact_states = self.robot.getContactStates()
-        # mutation = self._env.getActionMutation()
-        slips = self.robot.getFootSlipVelocity()
-        strides = np.array([np.dot(s, self._cmd[:2]) for s in self.robot.getStrides()])
-        # torques = self.robot.getLastAppliedTorques()
-        cot = self.robot.getCostOfTransport()
-        args = (
-            (self._cmd, linear),  # Linear Rew
-            (self._cmd[2], y_rate),  # yaw rate Rew
-            (body_height,),  # Height Rew
-            (self._cmd, linear),  # Linear Pen
-            (r_rate, p_rate),  # rp rate Pen
-            (safety_r, safety_p),  # Posture Pen
-            (slips,),  # Slip Pen
-            (strides,),  # Small Stride Pen
-            # (mutation,),  # Target Mut Pen
-            (contact_states,),  # Collision Pen
-            (cot,)  # COT Rew
-        )
+        if g_cfg.test_mode:
+            self.sendOrPrint()
+        return super().calculateReward()
 
-        assert len(args) == len(self._rewards)
-        rewards = [r(*arg) for r, arg in zip(self._rewards, args)]
-        self._details = dict(zip((r.__class__.__name__ for r in self._rewards), rewards))
-        weighted_sum = sum([r * w for r, w in zip(rewards, self._weights)])
-        self.sendOrPrint(locals())
-        return weighted_sum
+    def sendOrPrint(self):
+        from burl.sim import Quadruped, TGEnv
+        from burl.rl.reward import SmallStridePenalty
+        from burl.utils import udp_pub
+        env: TGEnv = self.env
+        rob: Quadruped = self.robot
 
-    # buf = [collections.deque(maxlen=20) for _ in range(4)]
-    def sendOrPrint(self, variables: dict):
-        def get(key):
-            return variables[key]
+        def wrap(reward_type):
+            r = reward_type()
+            return lambda: r.__call__(self.cmd, env, rob)
 
-        # for s, b in zip(self.robot.getFootSlipVelocity(), self.buf):
+        # for s, b in zip(rob.getFootSlipVelocity(), self.buf):
         #     b.append(s)
         # print(np.array([np.mean(b) for b in self.buf]))
-        # print(self.robot.getCostOfTransport())
-        if any(strides := get('strides')):
-            print(strides, SmallStridePenalty()(strides))
-        # print(get('cot'), CostOfTransportReward()(get('cot')))
-        # print(get('slips'))
-        # print()
-        # print(get('r_rate'), get('p_rate'), get('y_rate'))
-        # print()
-        # from burl.utils import udp_pub
+        # print(rob.getCostOfTransport())
+        # if not hasattr(self, 'acc_reward'):
+        #     self.acc_reward = 0.0
+        # self.acc_reward += reward
+        # print(reward)
+        # strides = [np.linalg.norm(s) for s in rob.getStrides()]
+        # if any(s != 0.0 for s in strides):
+        #     print(strides, wrap(SmallStridePenalty)())
         # data = {'hip_joints': tuple(self.robot.getJointPositions()[(0, 3, 6, 9),])}
         # udp_pub.send(data)
-        pass
-
-    def getRewardDetails(self):
-        return self._details
 
     def reset(self):
         pass

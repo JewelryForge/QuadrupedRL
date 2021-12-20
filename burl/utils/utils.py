@@ -132,9 +132,4 @@ def random_sample(indices, batch_size):
 
 
 if __name__ == '__main__':
-    t = timestamp()
-    print(t)
-    t1 = str2time(t)
-    t = timestamp()
-    t2 = str2time(t)
-    print(t1 > t2)
+    print(normalize(np.array((0.0, 1.0, 1.0, 0.0)) * np.pi))

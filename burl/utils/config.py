@@ -5,11 +5,19 @@ from burl.rl.state import ExtendedObservation, Action
 from burl.utils import timestamp
 
 
+class Options(object):
+    def __init__(self):
+        self.rendering = False
+        self.on_rack = False
+        self.test_mode = False
+        self.use_wandb = True
+        self.trn_type = 'plain'
+
+
 class PhysicsParam(object):
     def __init__(self):
         self.self_collision_enabled = False
         self.latency = 0.
-        self.on_rack = False
         self.joint_friction = 0.025
         self.foot_lateral_friction = 1.0
         self.foot_spinning_friction = 0.2
@@ -34,10 +42,11 @@ class RenderParam(object):
         self.sleeping_enabled = False
         self.moving_camera = True
         self.extra_visualization = True
+        self.plot_trajectory = False
         self.egl_rendering = False
 
 
-class AlgParam(object):
+class PPOParam(object):
     def __init__(self):
         self.storage_len = 256
         self.num_learning_epochs = 4
@@ -54,9 +63,8 @@ class AlgParam(object):
         self.desired_kl = 0.01
 
 
-class TrainParam(AlgParam):
+class TrainParam(object):
     def __init__(self):
-        super().__init__()
         self.num_iterations = 10000
         self.num_envs = 8
         self.init_noise_std = 0.05
@@ -73,12 +81,10 @@ class RuntimeParam(object):
         self.run_name = None
         self.task_class = None
         self.use_mp = True
-        self.use_wandb = True
         self.ip_address = '127.0.0.1'
         # self.ip_address = '10.12.120.120'
         self.port = '19996'
         self.validation = False
-        self.test_mode = False
         self.rewards_weights = (
             # (EluLinearVelocityReward(), 0.1),
             ('LinearVelocityReward', 0.1),
@@ -97,7 +103,6 @@ class RuntimeParam(object):
 
 class TerrainParam(object):
     def __init__(self):
-        self.trn_type = 'plain'
         self.trn_size = 30
         self.trn_slope = np.pi / 24
         self.trn_downsample = 15
@@ -115,12 +120,14 @@ class TerrainCurriculumParam(object):
         self.distance_threshold = (2.5, 5.0)
 
 
-class TaskParam(SimParam, RenderParam, TrainParam,
+class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam,
                 TerrainParam, TerrainCurriculumParam, RuntimeParam):
     def __init__(self):
+        Options.__init__(self)
         SimParam.__init__(self)
         RenderParam.__init__(self)
         TrainParam.__init__(self)
+        PPOParam.__init__(self)
         TerrainParam.__init__(self)
         TerrainCurriculumParam.__init__(self)
         RuntimeParam.__init__(self)

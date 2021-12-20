@@ -61,9 +61,7 @@ class OnPolicyRunner:
     #     self.alg.actor_critic.train()
 
     def learn(self):
-        privileged_obs, obs = self.env.init_observations()
-        critic_obs = privileged_obs if privileged_obs is not None else obs
-        obs, critic_obs = to_dev(obs, critic_obs)
+        p_obs, obs = to_dev(*self.env.init_observations())
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         reward_buffer, eps_len_buffer = deque(maxlen=10), deque(maxlen=10)
@@ -76,29 +74,30 @@ class OnPolicyRunner:
             with torch.inference_mode():
                 timer.start()
                 for _ in range(g_cfg.storage_len):
-                    actions = self.alg.act(obs, critic_obs)
-                    obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
-                    critic_obs = privileged_obs if privileged_obs is not None else obs
-                    obs, critic_obs, rewards, dones = to_dev(obs, critic_obs, rewards, dones)
-
+                    actions = self.alg.act(obs, p_obs)
+                    p_obs, obs, rewards, dones, infos = self.env.step(actions)
+                    p_obs, obs, rewards, dones = to_dev(p_obs, obs, rewards, dones)
                     self.alg.process_env_step(rewards, dones, infos['time_out'])
-                    self.env.reset(dones)
-
                     cur_reward_sum += rewards
                     cur_episode_length += 1
-                    new_ids = dones.nonzero(as_tuple=False)
-                    reward_buffer.extend(cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
-                    eps_len_buffer.extend(cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
-                    cur_reward_sum[new_ids] = 0
-                    cur_episode_length[new_ids] = 0
                     accountant.register(infos['reward_details'])
+
+                    if any(dones):
+                        reset_ids = torch.squeeze(dones.nonzero(), dim=1)
+                        p_obs_reset, obs_reset = to_dev(*self.env.reset(reset_ids))
+                        p_obs[reset_ids,], obs[reset_ids,] = p_obs_reset, obs_reset
+                        reward_buffer.extend(cur_reward_sum[reset_ids].cpu().numpy().tolist())
+                        eps_len_buffer.extend(cur_episode_length[reset_ids].cpu().numpy().tolist())
+                        cur_reward_sum[reset_ids] = 0
+                        cur_episode_length[reset_ids] = 0
+
                 if 'difficulty' in infos:
                     difficulty = np.mean(infos['difficulty'])
                 collection_time = timer.end()
 
                 timer.start()
                 # Learning step
-                self.alg.compute_returns(critic_obs)
+                self.alg.compute_returns(p_obs)
             mean_value_loss, mean_surrogate_loss = self.alg.update()
             learning_time = timer.end()
             self.log(it, locals())

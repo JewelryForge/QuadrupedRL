@@ -34,21 +34,20 @@ class Quadruped(object):
     A 'get' method will give a real observation, unless there's a 'noisy' option and 'noisy=True' is specified.
     """
 
-    INIT_POSITION: np.ndarray
-    INIT_RACK_POSITION: np.ndarray
-    INIT_ORIENTATION: np.ndarray
+    INIT_POSITION: tuple
+    INIT_RACK_POSITION: tuple
+    INIT_ORIENTATION: tuple
     NUM_MOTORS = 12
     LEG_NAMES: tuple[str]
     JOINT_TYPES: tuple[str]
     JOINT_SUFFIX: tuple[str]
     URDF_FILE: str
-    LINK_LENGTHS: np.ndarray
-    COM_OFFSET: np.ndarray
-    HIP_OFFSETS: np.ndarray
+    LINK_LENGTHS: tuple
+    HIP_OFFSETS: tuple
     STANCE_HEIGHT: float
-    STANCE_POSTURE: np.ndarray
-    TORQUE_LIMITS: np.ndarray
-    ROBOT_SIZE: np.ndarray
+    STANCE_POSTURE: tuple
+    TORQUE_LIMITS: tuple
+    ROBOT_SIZE: tuple
 
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
@@ -90,21 +89,24 @@ class Quadruped(object):
         self._time = 0.0
         self._step_counter = 0
 
+    def _loadRobotOnRack(self):
+        path = os.path.join(g_cfg.local_urdf, self.URDF_FILE)
+        robot = self._env.loadURDF(path, self.INIT_RACK_POSITION, self.INIT_ORIENTATION, flags=0)
+        self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
+                                   jointType=self._env.JOINT_FIXED,
+                                   jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
+                                   childFramePosition=self.INIT_RACK_POSITION,
+                                   childFrameOrientation=self.INIT_ORIENTATION)
+        return robot
+
     def _loadRobot(self, init_height_addition=0.0):
         if g_cfg.on_rack:
-            pos = self.INIT_RACK_POSITION
-        else:
-            pos = self.INIT_POSITION.copy()
-            pos[2] += init_height_addition
+            return self._loadRobotOnRack()
+        x, y, z = self.INIT_POSITION
+        z += init_height_addition
         flags = self._env.URDF_USE_SELF_COLLISION if g_cfg.self_collision_enabled else 0
         path = os.path.join(g_cfg.local_urdf, self.URDF_FILE)
-        robot = self._env.loadURDF(path, pos, self.INIT_ORIENTATION, flags=flags)
-        if g_cfg.on_rack:
-            self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
-                                       jointType=self._env.JOINT_FIXED,
-                                       jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
-                                       childFramePosition=self.INIT_RACK_POSITION,
-                                       childFrameOrientation=self.INIT_ORIENTATION)
+        robot = self._env.loadURDF(path, (x, y, z), self.INIT_ORIENTATION, flags=flags)
         return robot
 
     def _getJointIdByName(self, leg: str, joint_type: str):
@@ -184,18 +186,15 @@ class Quadruped(object):
         else:
             if g_cfg.on_rack:
                 self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
-                self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
             elif in_situ:
                 x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2] + height_addition
                 _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
                 orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
                 self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z), orn_q)
-                self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
             else:
-                init_position = self.INIT_POSITION.copy()
-                init_position[2] += height_addition
-                self._env.resetBasePositionAndOrientation(self._quadruped, init_position, TP_Q0)
-                self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+                x, y, z = self.INIT_POSITION
+                self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z + height_addition), TP_Q0)
+        self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
         self._resetPosture()
         self._motor.reset()
 
@@ -440,7 +439,7 @@ class Quadruped(object):
     #     return slip_velocity
 
     def getStrides(self):
-        return self._strides
+        return np.array(self._strides)
 
     def getCostOfTransport(self):
         mgv = self._mass * 9.8 * np.linalg.norm(self._base_twist.linear)
@@ -465,7 +464,9 @@ class Quadruped(object):
 
     def getCmdHistoryFromIndex(self, idx):
         len_requirement = -idx if idx < 0 else idx + 1
-        return self.STANCE_POSTURE if len(self._command_history) < len_requirement else self._command_history[idx]
+        if len(self._command_history) < len_requirement:
+            return np.array(self.STANCE_POSTURE)
+        return self._command_history[idx]
 
     def getObservationHistoryFromIndex(self, idx, noisy=False) -> ObservationRaw:
         len_requirement = -idx if idx < 0 else idx + 1
@@ -507,22 +508,21 @@ class Quadruped(object):
 
 
 class A1(Quadruped):
-    INIT_POSITION = np.array((0, 0, .33))
-    INIT_RACK_POSITION = np.array((0, 0, 1))
-    INIT_ORIENTATION = np.array((0, 0, 0, 1))
+    INIT_POSITION = (0., 0., .33)
+    INIT_RACK_POSITION = (0., 0., 1.)
+    INIT_ORIENTATION = (0., 0., 0., 1.)
     NUM_MOTORS = 12
-    LEG_NAMES = ['FR', 'FL', 'RR', 'RL']
-    JOINT_TYPES = ['hip', 'upper', 'lower', 'toe']
-    JOINT_SUFFIX = ['joint', 'joint', 'joint', 'fixed']
+    LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
+    JOINT_TYPES = ('hip', 'upper', 'lower', 'toe')
+    JOINT_SUFFIX = ('joint', 'joint', 'joint', 'fixed')
     URDF_FILE = 'a1/a1.urdf'
-    LINK_LENGTHS = np.array((0.08505, 0.2, 0.2))
-    COM_OFFSET = -np.array((0.012731, 0.002186, 0.000515))
-    HIP_OFFSETS = np.array(((0.183, -0.047, 0.), (0.183, 0.047, 0.),
-                            (-0.183, -0.047, 0.), (-0.183, 0.047, 0.)))
+    LINK_LENGTHS = (0.08505, 0.2, 0.2)
+    HIP_OFFSETS = ((0.183, -0.047, 0.), (0.183, 0.047, 0.),
+                   (-0.183, -0.047, 0.), (-0.183, 0.047, 0.))
     STANCE_HEIGHT = 0.3
-    STANCE_POSTURE = np.array((0, 0.723, -1.445) * 4)
-    TORQUE_LIMITS = np.array(((-33.5,) * 12, (33.5,) * 12))
-    ROBOT_SIZE = np.array(((-0.3, 0.3), (-0.1, 0.1)))
+    STANCE_POSTURE = (0, 0.723, -1.445) * 4
+    TORQUE_LIMITS = ((-33.5,) * 12, (33.5,) * 12)
+    ROBOT_SIZE = ((-0.3, 0.3), (-0.1, 0.1))
 
     def ik_absolute(self, leg: int | str, pos, frame='base'):
         """

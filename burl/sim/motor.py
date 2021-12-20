@@ -74,8 +74,8 @@ class MotorSim(object):
         self._observation_history.append(observation)
         self._pos = observation
         oh = self._observation_history
-        self._vel = (oh[-1] - oh[-2]) * self._frequency if len(oh) > 1 else 0
-        self._acc = (oh[-1] + oh[-3] - 2 * oh[-2]) * self._frequency ** 2 if len(oh) > 2 else 0
+        self._vel = (oh[-1] - oh[-2]) * self._frequency if len(oh) > 1 else 0.0
+        self._acc = (oh[-1] + oh[-3] - 2 * oh[-2]) * self._frequency ** 2 if len(oh) > 2 else 0.0
         return MotorState(position=self._pos, velocity=self._vel, acceleration=self._acc)
 
     def apply_command(self, command, *args):

@@ -23,17 +23,18 @@ class Player:
         log_info(f'load model {model_dir}')
 
     def play(self):
-        privileged_obs, obs = self.env.init_observations()
-
-        critic_obs = privileged_obs if privileged_obs is not None else obs
-        obs, critic_obs = to_dev(obs, critic_obs)
+        p_obs, obs = to_dev(*self.env.init_observations())
 
         for _ in range(20000):
             actions = self.actor_critic.act_inference(obs)
-            obs, privileged_obs, _, dones, _ = self.env.step(actions)
-            critic_obs = privileged_obs if privileged_obs is not None else obs
-            obs, critic_obs = to_dev(obs, critic_obs)
-            self.env.reset(dones)
+            p_obs, obs, _, dones, info = self.env.step(actions)
+            p_obs, obs = to_dev(p_obs, obs)
+
+            if any(dones):
+                reset_ids = torch.nonzero(dones)
+                p_obs_reset, obs_reset = to_dev(*self.env.reset(reset_ids))
+                p_obs[reset_ids,], obs[reset_ids,] = p_obs_reset, obs_reset
+                print(info['episode_reward'])
             # time.sleep(0.05)
 
 
@@ -65,7 +66,7 @@ def find_log(time=None, epoch=None):
     return os.path.join(folder, f'model_{epoch}.pt')
 
 
-def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-art/log', time=None, epoch=None):
+def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-debug/log', time=None, epoch=None):
     remote_logs = os.popen(f'ssh {host} -p {port} ls {log_dir}').read().split('\n')
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
@@ -73,7 +74,7 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-ar
         folder = folders[0]
     else:
         for f in folders:
-            if ''.join(f.split('_')[1].split('-')).startswith(time):
+            if ''.join(f.split('_')[1].split('-')).startswith(str(time)):
                 folder = f
                 break
         else:
@@ -106,8 +107,9 @@ if __name__ == '__main__':
     set_logger_level('debug')
     remote = False
     if remote:
-        model = find_log_remote(time=None, epoch=8000)
+        model = find_log_remote(time=1234, epoch=10850, log_dir='teacher-student-debug/log')
     else:
-        model = find_log(time=None, epoch=None)
+        # model = find_log(time=1614, epoch=7800)
+        model = find_log(time=None, epoch=1900)
     # model = 'log/model_9900.pt'
     main(model)

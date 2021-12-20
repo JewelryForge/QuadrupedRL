@@ -142,6 +142,9 @@ class ExtendedObservation(Observation, PrivilegedInformation):
         return np.concatenate((Observation.to_array(self),
                                PrivilegedInformation.to_array(self)))
 
+    def standard(self):
+        return (self.to_array() - self.offset) * self.scale
+
 
 class Action:
     dim = 16

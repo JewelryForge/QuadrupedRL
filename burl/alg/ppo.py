@@ -140,10 +140,11 @@ class PPO(object):
     def __init__(self, actor_critic):
         self.actor_critic = actor_critic
         self.actor_critic.to(g_cfg.dev)
-        self.optimizer = torch.optim.Adam(self.actor_critic.parameters(), lr=g_cfg.learning_rate)
+        self.optimizer = torch.optim.AdamW(self.actor_critic.parameters(), lr=g_cfg.learning_rate,
+                                           eps=1e-5, weight_decay=1e-2)
         if g_cfg.schedule == 'linearLR':
             self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
-                                                               total_iters=5000)
+                                                               total_iters=2000)
         self.transition = RolloutStorage.Transition()
         self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (g_cfg.p_obs_dim,), (g_cfg.p_obs_dim,),
                                       (g_cfg.action_dim,))
@@ -249,7 +250,7 @@ class PPO(object):
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
 
-        if cfg.schedule == 'linearLR':
+        if hasattr(self, 'scheduler'):
             self.scheduler.step()
         num_updates = cfg.num_learning_epochs * cfg.num_mini_batches
         mean_value_loss /= num_updates

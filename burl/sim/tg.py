@@ -6,7 +6,7 @@ from burl.utils import normalize
 class LocomotionStateMachine(object):
     FIXED_INIT = True
     # INIT_ANGLES = (0, 1.5, 0.5, 1.0)
-    INIT_ANGLES = normalize(np.array((0.0, 1.0, 1.0, 0.0)) * np.pi)
+    INIT_ANGLES = (0.0, -np.pi, -np.pi, 0.0)
 
     def __init__(self, time_step, **kwargs):
         # We set the base frequency f0 to zero when the zero command is given for 0.5s,
@@ -16,13 +16,12 @@ class LocomotionStateMachine(object):
         # The state machine is included in the training environment.
         self._time_step = time_step
         if self.FIXED_INIT:
-            self._phases = self.INIT_ANGLES.copy()
+            self._phases = np.array(self.INIT_ANGLES)
         else:
             self._phases = normalize(np.random.random(4) * 2 * np.pi)
         self._frequency = np.ones(4) * self.base_frequency
         self._lower_frequency = kwargs.get('lower_frequency', 0.5)
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
-        self._flags = np.zeros(4, dtype=bool)
         self._tg = designed_tg()
         self._cycles = np.zeros(4)
         # self._tg = end_trajectory_generator()
@@ -45,9 +44,11 @@ class LocomotionStateMachine(object):
 
     def reset(self):
         if self.FIXED_INIT:
-            self._phases = normalize(np.array(self.INIT_ANGLES) * np.pi)
+            self._phases = np.array(self.INIT_ANGLES)
         else:
             self._phases = normalize(np.random.random(4) * 2 * np.pi)
+        self._frequency = np.ones(4) * self.base_frequency
+        self._cycles = np.zeros(4)
 
     def update(self, frequency_offsets):
         frequency_offsets = np.asarray(frequency_offsets)
@@ -55,9 +56,9 @@ class LocomotionStateMachine(object):
         self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
         _phases = self._phases.copy()
         self._phases += self._frequency * self._time_step * 2 * np.pi
-        self._flags = np.logical_and(normalize(_phases - self.INIT_ANGLES) < 0,
-                                     normalize(self._phases - self.INIT_ANGLES) >= 0)
-        self._cycles[self._flags.nonzero(),] += 1
+        flags = np.logical_and(normalize(_phases - self.INIT_ANGLES) < 0,
+                               normalize(self._phases - self.INIT_ANGLES) >= 0)
+        self._cycles[flags.nonzero(),] += 1
         self._phases = normalize(self._phases)
         return self._phases
 
@@ -135,13 +136,11 @@ def designed_tg(c=0.2, h=0.08):
 
 
 if __name__ == '__main__':
-    # print(solve_5th((-2, 0, 0, 0), (-1, -0.2 * 0.08, 0, 0)))
     import matplotlib.pyplot as plt
 
     tg = designed_tg()
     tg2 = end_trajectory_generator()
     x = np.linspace(-2, 2, 1000)
-    # print(tg(0.1))
     # y1 = [tg(x) for x in x]
     y2 = [tg2(x) for x in x]
     # plt.plot(x, y1)

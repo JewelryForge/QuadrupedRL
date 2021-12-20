@@ -17,6 +17,7 @@ class EnvContainer(object):
             self.num_envs = len(self._envs)
         else:
             self._envs: list[TGEnv] = [make_env() for _ in range(self.num_envs)]
+        self._envs[0].task.report()
 
     def step(self, actions: torch.Tensor):
         actions = [Action.from_array(action.cpu().numpy()) for action in actions]
@@ -42,10 +43,9 @@ class EnvContainer(object):
         return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
                 torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), _merge_dict_recursively(infos))
 
-    def reset(self, dones):
-        for env, done in zip(self._envs, dones):
-            if done:
-                env.reset()
+    def reset(self, ids):
+        p_obs, obs = zip(*[self._envs[i].reset() for i in ids])
+        return torch.Tensor(np.array(p_obs)), torch.Tensor(np.array(obs))
 
     def init_observations(self):
         # TO MY ASTONISHMENT, A LIST COMPREHENSION IS FASTER THAN A GENERATOR!!!
@@ -97,7 +97,8 @@ class EnvContainerMultiProcess2(EnvContainer):
         while True:
             action = conn.recv()
             if action == 'reset':
-                env.reset()
+                obs = env.reset()
+                conn.send(obs)
             elif isinstance(action, Action):
                 obs = env.step(action)
                 conn.send(obs)
@@ -123,7 +124,8 @@ class EnvContainerMultiProcess2(EnvContainer):
         results = [conn.recv() for conn in self._conn2]
         return (torch.Tensor(np.asarray(o)) for o in zip(*results))
 
-    def reset(self, dones):
-        for conn, done in zip(self._conn2, dones):
-            if done:
-                conn.send('reset')
+    def reset(self, ids):
+        for i in ids:
+            self._conn2[i].send('reset')
+        p_obs, obs = zip(*[self._conn2[i].recv() for i in ids])
+        return torch.Tensor(np.array(p_obs)), torch.Tensor(np.array(obs))
