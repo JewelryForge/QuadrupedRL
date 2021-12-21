@@ -1,11 +1,11 @@
+import random
+
 import numpy as np
 
-from burl.utils import normalize
+from burl.utils import normalize, g_cfg
 
 
 class LocomotionStateMachine(object):
-    FIXED_INIT = True
-    # INIT_ANGLES = (0, 1.5, 0.5, 1.0)
     INIT_ANGLES = (0.0, -np.pi, -np.pi, 0.0)
 
     def __init__(self, time_step, **kwargs):
@@ -15,16 +15,26 @@ class LocomotionStateMachine(object):
         # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
         # The state machine is included in the training environment.
         self._time_step = time_step
-        if self.FIXED_INIT:
-            self._phases = np.array(self.INIT_ANGLES)
-        else:
-            self._phases = normalize(np.random.random(4) * 2 * np.pi)
+        self._init_phases()
         self._frequency = np.ones(4) * self.base_frequency
         self._lower_frequency = kwargs.get('lower_frequency', 0.5)
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
         self._tg = designed_tg()
         self._cycles = np.zeros(4)
         # self._tg = end_trajectory_generator()
+
+    @staticmethod
+    def symmetric(phases):
+        fr, fl, rr, rl = phases
+        return fl, fr, rl, rr
+
+    def _init_phases(self):
+        if g_cfg.tg_init == 'fixed':
+            self._phases = np.array(self.INIT_ANGLES)
+        elif g_cfg.tg_init == 'symmetric':
+            self._phases = np.array(random.choice((self.INIT_ANGLES, self.symmetric(self.INIT_ANGLES))))
+        else:
+            self._phases = normalize(np.random.random(4) * 2 * np.pi)
 
     @property
     def base_frequency(self):
@@ -43,10 +53,7 @@ class LocomotionStateMachine(object):
         return self._cycles
 
     def reset(self):
-        if self.FIXED_INIT:
-            self._phases = np.array(self.INIT_ANGLES)
-        else:
-            self._phases = normalize(np.random.random(4) * 2 * np.pi)
+        self._init_phases()
         self._frequency = np.ones(4) * self.base_frequency
         self._cycles = np.zeros(4)
 
@@ -138,12 +145,19 @@ def designed_tg(c=0.2, h=0.08):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    tg = designed_tg()
-    tg2 = end_trajectory_generator()
-    x = np.linspace(-2, 2, 1000)
-    # y1 = [tg(x) for x in x]
-    y2 = [tg2(x) for x in x]
-    # plt.plot(x, y1)
-    plt.plot(x, y2)
-    # plt.legend(['des', 'raw'])
-    plt.show()
+    g_cfg.tg_init = 'symmetric'
+    stm = LocomotionStateMachine(0.01)
+    print(stm.phases)
+    for _ in range(10):
+        stm._init_phases()
+        print(stm.phases)
+
+    # tg = designed_tg()
+    # tg2 = end_trajectory_generator()
+    # x = np.linspace(-2, 2, 1000)
+    # # y1 = [tg(x) for x in x]
+    # y2 = [tg2(x) for x in x]
+    # # plt.plot(x, y1)
+    # plt.plot(x, y2)
+    # # plt.legend(['des', 'raw'])
+    # plt.show()
