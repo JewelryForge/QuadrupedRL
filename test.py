@@ -103,13 +103,14 @@ if __name__ == '__main__':
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.test_mode = True
+    g_cfg.tg_init = 'symmetric'
     init_logger()
     set_logger_level('debug')
     remote = False
     if remote:
         model = find_log_remote(time=1234, epoch=10850, log_dir='teacher-student-debug/log')
     else:
-        # model = find_log(time=1614, epoch=7800)
-        model = find_log(time=None, epoch=1900)
+        model = find_log(time=1614, epoch=7800)
+        # model = find_log(time=None, epoch=None)
     # model = 'log/model_9900.pt'
     main(model)

@@ -34,6 +34,7 @@ class SimParam(PhysicsParam):
         self.sim_frequency = 400.
         self.execution_frequency = 400.
         self.max_sim_iterations = 8000  # 20s
+        self.tg_init = 'fixed'
 
 
 class RenderParam(object):

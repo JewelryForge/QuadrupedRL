@@ -9,16 +9,18 @@ class Reward(ABC):
         raise NotImplementedError
 
 
-def tanh2_reshape(lower, upper, symmetric=False):
+def tanh2_reshape(lower, upper):
     w = np.sqrt(np.arctanh(0.95)) / (upper - lower)
 
-    def _reward_reshape(v):
+    def _reshape(v):
         return np.tanh(np.power((v - lower) * w, 2)) if v > lower else 0
 
-    def _reward_reshape_symmetric(v):
-        return np.tanh(np.power((v - lower) * w, 2))
+    return _reshape
 
-    return _reward_reshape_symmetric if symmetric else _reward_reshape
+
+def tanh2_reverse(lower, upper, value):
+    w = np.sqrt(np.arctanh(0.95)) / (upper - lower)
+    return np.sqrt(np.arctanh(value)) / w + lower
 
 
 def tanh_reshape(lower, upper):
@@ -35,6 +37,12 @@ def tanh_reshape(lower, upper):
     return _reshape
 
 
+def tanh_reverse(lower, upper, value):
+    middle = (lower + upper) / 2
+    w = np.arctanh(0.9) / (upper - middle)
+    return np.arctanh(value) / w + middle
+
+
 def elu_reshape(coeff):
     def _reshape(v):
         return (v if v >= 0 else math.exp(v) - 1) * coeff
@@ -43,8 +51,8 @@ def elu_reshape(coeff):
 
 
 class LinearVelocityReward(Reward):
-    def __init__(self, lower=-0.1, upper=0.6):
-        self.reshape = tanh2_reshape(lower, upper)
+    def __init__(self, lower=-0.15, upper=0.45):
+        self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()
@@ -268,9 +276,10 @@ if __name__ == '__main__':
 
     registry = RewardRegistry(1, 2, 3)
     registry.register('CostOfTransportReward', 0.1)
-    registry.register('RedundantAngularPenalty', 0.2)
+    # registry.register('RedundantAngularPenalty', 0.2)
     registry.report()
 
+    print(tanh_reverse(-0.15, 0.45, 0))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
     # x = np.linspace(-0.5, 2.5, 1000)

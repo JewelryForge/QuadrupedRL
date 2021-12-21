@@ -35,6 +35,7 @@ class BasicTask(RewardRegistry):
         from burl.sim import Quadruped, TGEnv
         from burl.rl.reward import SmallStridePenalty
         from burl.utils import udp_pub
+        cmd = self.cmd
         env: TGEnv = self.env
         rob: Quadruped = self.robot
 
@@ -50,9 +51,13 @@ class BasicTask(RewardRegistry):
         #     self.acc_reward = 0.0
         # self.acc_reward += reward
         # print(reward)
-        # strides = [np.linalg.norm(s) for s in rob.getStrides()]
-        # if any(s != 0.0 for s in strides):
-        #     print(strides, wrap(SmallStridePenalty)())
+
+        linear = rob.getBaseLinearVelocityInBaseFrame()
+        projected_velocity = np.dot(cmd[:2], linear[:2])
+        print(projected_velocity)
+        strides = [np.linalg.norm(s) for s in rob.getStrides()]
+        if any(s != 0.0 for s in strides):
+            print(strides, wrap(SmallStridePenalty)())
         # data = {'hip_joints': tuple(self.robot.getJointPositions()[(0, 3, 6, 9),])}
         # udp_pub.send(data)
 
