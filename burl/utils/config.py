@@ -90,7 +90,7 @@ class RuntimeParam(object):
             # (EluLinearVelocityReward(), 0.1),
             ('LinearVelocityReward', 0.1),
             ('YawRateReward', 0.08),
-            ('BodyHeightReward', 0.05),
+            ('BodyHeightReward', 0.03),
             ('RedundantLinearPenalty', 0.04),
             ('RollPitchRatePenalty', 0.04),
             ('BodyPosturePenalty', 0.04),

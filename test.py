@@ -44,8 +44,7 @@ def main(model_dir):
 
 
 def find_log(time=None, epoch=None):
-    local_logs = [l for l in os.listdir('log') if not l.startswith('remote')]
-    folders = sorted(local_logs, key=str2time, reverse=True)
+    folders = sorted(os.listdir('log'), key=lambda s: str2time(s.removeprefix('remote-')), reverse=True)
     if not time:
         folder = folders[0]
     else:
@@ -108,9 +107,16 @@ if __name__ == '__main__':
     set_logger_level('debug')
     remote = False
     if remote:
-        model = find_log_remote(time=1234, epoch=10850, log_dir='teacher-student-debug/log')
+        # 2240 5800
+        model = find_log_remote(time=1910, epoch=5650, log_dir='teacher-student-dev/log')
+        # model = find_log_remote(time=2240, epoch=4800, log_dir='python_ws/ts-dev/log',
+        #                         host='jewelry@10.192.119.171', port=22)
+        # model = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',
+        #                         host='jewelry@10.192.119.171', port=22)
     else:
-        model = find_log(time=1614, epoch=7800)
-        # model = find_log(time=None, epoch=None)
+        # 2240 5800
+        # model = find_log(time=2240, epoch=4800)
+        # model = find_log(time=1614, epoch=7800)
+        model = find_log(time=1547, epoch=7200)
     # model = 'log/model_9900.pt'
     main(model)

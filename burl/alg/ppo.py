@@ -141,7 +141,7 @@ class PPO(object):
         self.actor_critic = actor_critic
         self.actor_critic.to(g_cfg.dev)
         self.optimizer = torch.optim.AdamW(self.actor_critic.parameters(), lr=g_cfg.learning_rate,
-                                           eps=1e-5, weight_decay=1e-2)
+                                           weight_decay=1e-2)
         if g_cfg.schedule == 'linearLR':
             self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
                                                                total_iters=2000)

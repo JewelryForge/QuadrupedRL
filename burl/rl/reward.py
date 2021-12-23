@@ -103,7 +103,7 @@ class RollPitchRatePenalty(Reward):
 
     def __call__(self, cmd, env, robot):
         r_rate, p_rate, _ = robot.getBaseRpyRate()
-        return -(self.dr_reshape(r_rate) + self.dp_reshape(p_rate)) / 2
+        return -(self.dr_reshape(abs(r_rate)) + self.dp_reshape(abs(p_rate))) / 2
 
 
 class RedundantLinearPenalty(Reward):
@@ -150,7 +150,7 @@ class BodyPosturePenalty(Reward):
 
 
 class BodyHeightReward(Reward):
-    def __init__(self, lower=0.2, upper=0.35):
+    def __init__(self, lower=0.24, upper=0.32):
         self.reshape = tanh2_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
@@ -212,7 +212,7 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def __init__(self, lower=0.0, upper=2.0):
+    def __init__(self, lower=0.0, upper=1.6):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
@@ -279,7 +279,7 @@ if __name__ == '__main__':
     # registry.register('RedundantAngularPenalty', 0.2)
     registry.report()
 
-    print(tanh_reverse(-0.15, 0.45, 0))
+    print(tanh_reverse(0.0, 2.0, -0.6))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
     # x = np.linspace(-0.5, 2.5, 1000)

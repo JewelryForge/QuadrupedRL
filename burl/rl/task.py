@@ -33,7 +33,7 @@ class BasicTask(RewardRegistry):
 
     def sendOrPrint(self):
         from burl.sim import Quadruped, TGEnv
-        from burl.rl.reward import SmallStridePenalty
+        from burl.rl.reward import SmallStridePenalty, BodyHeightReward, RollPitchRatePenalty
         from burl.utils import udp_pub
         cmd = self.cmd
         env: TGEnv = self.env
@@ -47,17 +47,16 @@ class BasicTask(RewardRegistry):
         #     b.append(s)
         # print(np.array([np.mean(b) for b in self.buf]))
         # print(rob.getCostOfTransport())
-        # if not hasattr(self, 'acc_reward'):
-        #     self.acc_reward = 0.0
-        # self.acc_reward += reward
-        # print(reward)
 
-        linear = rob.getBaseLinearVelocityInBaseFrame()
-        projected_velocity = np.dot(cmd[:2], linear[:2])
-        print(projected_velocity)
-        strides = [np.linalg.norm(s) for s in rob.getStrides()]
-        if any(s != 0.0 for s in strides):
-            print(strides, wrap(SmallStridePenalty)())
+        r_rate, p_rate, _ = rob.getBaseRpyRate()
+        print(r_rate, p_rate, wrap(RollPitchRatePenalty)())
+        # linear = rob.getBaseLinearVelocityInBaseFrame()
+        # projected_velocity = np.dot(cmd[:2], linear[:2])
+        # print(projected_velocity)
+        # print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward)())
+        # strides = [np.linalg.norm(s) for s in rob.getStrides()]
+        # if any(s != 0.0 for s in strides):
+        #     print(strides, wrap(SmallStridePenalty)())
         # data = {'hip_joints': tuple(self.robot.getJointPositions()[(0, 3, 6, 9),])}
         # udp_pub.send(data)
 
