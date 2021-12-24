@@ -212,7 +212,7 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def __init__(self, lower=0.0, upper=1.6):
+    def __init__(self, lower=0.0, upper=2.0):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
@@ -269,6 +269,15 @@ class RewardRegistry(object):
             self._reward_details[reward.__class__.__name__] = rew
             weighted_sum += rew * weight
         return weighted_sum * self._coefficient
+
+    def calculateEveryTermOfReward(self):
+        self._reward_details.clear()
+        reward_terms = []
+        for reward, weight in self._rewards_weights:
+            rew = reward(self._cmd, self._env, self._robot)
+            self._reward_details[reward.__class__.__name__] = rew
+            reward_terms.append(rew * weight)
+        return reward_terms
 
 
 if __name__ == '__main__':

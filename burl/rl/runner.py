@@ -7,9 +7,10 @@ import numpy as np
 import torch
 import wandb
 
-from burl.alg.ac import ActorCritic, ActorTeacher, Critic
+from burl.alg.ac import ActorCritic, Actor, Critic
 from burl.alg.ppo import PPO
 from burl.rl.task import BasicTask, RandomCmdTask
+from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 from burl.sim import TGEnv, A1, EnvContainerMultiProcess2, EnvContainer
 from burl.utils import make_cls, g_cfg, to_dev, WithTimer, log_info
 
@@ -51,14 +52,17 @@ class OnPolicyRunner:
             self.env = EnvContainer(make_env, g_cfg.num_envs)
         if g_cfg.validation:
             self.eval_env = EnvContainer(make_env, 1)
-        actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
+        actor_critic = ActorCritic(
+            Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
+            Critic(ExtendedObservation.dim, 1), g_cfg.init_noise_std).to(g_cfg.dev)
         self.alg = PPO(actor_critic)
 
         self.current_iter = 0
 
-    # def evaluate(self):
-    #     self.alg.actor_critic.eval()
-    #     self.alg.actor_critic.train()
+        # def evaluate(self):
+        #     self.alg.actor_critic.eval()
+        #     self.alg.actor_critic.train()
 
     def learn(self):
         p_obs, obs = to_dev(*self.env.init_observations())

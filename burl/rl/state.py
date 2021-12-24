@@ -55,11 +55,11 @@ class ProprioceptiveObservation(ArrayAttr):
         ))
 
 
-class Observation(ProprioceptiveObservation):
+class ProprioObservation(ProprioceptiveObservation):
     dim = ProprioceptiveObservation.dim + 73
 
     def __init__(self):
-        super(Observation, self).__init__()
+        super(ProprioObservation, self).__init__()
         self.joint_pos_err_his = zero(24)
         self.joint_vel_his = zero(24)
         self.joint_pos_target = zero(12)
@@ -91,7 +91,7 @@ class Observation(ProprioceptiveObservation):
         ))
 
 
-class PrivilegedInformation(object):
+class ExteroObservation(object):
     dim = 79
     TERRAIN_CLIP = 0.25
     FORCE_CLIP = np.array((25, 25, 50) * 4)
@@ -129,18 +129,18 @@ class PrivilegedInformation(object):
         ))
 
 
-class ExtendedObservation(Observation, PrivilegedInformation):
-    dim = Observation.dim + PrivilegedInformation.dim
-    offset = np.concatenate((Observation.offset, PrivilegedInformation.offset))
-    scale = np.concatenate((Observation.scale, PrivilegedInformation.scale))
+class ExtendedObservation(ExteroObservation, ProprioObservation):
+    dim = ExteroObservation.dim + ProprioObservation.dim
+    offset = np.concatenate((ExteroObservation.offset, ProprioObservation.offset))
+    scale = np.concatenate((ExteroObservation.scale, ProprioObservation.scale))
 
     def __init__(self):
-        Observation.__init__(self)
-        PrivilegedInformation.__init__(self)
+        ExteroObservation.__init__(self)
+        ProprioObservation.__init__(self)
 
     def to_array(self):
-        return np.concatenate((Observation.to_array(self),
-                               PrivilegedInformation.to_array(self)))
+        return np.concatenate((ExteroObservation.to_array(self),
+                               ProprioObservation.to_array(self)))
 
     def standard(self):
         return (self.to_array() - self.offset) * self.scale
@@ -154,7 +154,6 @@ class Action:
         self.foot_pos_residuals = zero(12)
 
     offset = np.zeros(16)
-
     scale = np.concatenate((
         (0.5 * freq_scale,) * 4, (0.1, 0.1, 0.025) * 4
     ))
@@ -254,7 +253,7 @@ class ObservationRaw(object):
 
 
 if __name__ == '__main__':
-    s = ExtendedObservation()
+    s = ProprioObservation()
     print(s.dim)
     print(s.offset.shape, s.scale.shape)
     print(s.to_array().shape)

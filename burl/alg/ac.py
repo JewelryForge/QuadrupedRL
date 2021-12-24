@@ -1,75 +1,106 @@
 import torch
 from torch import nn
 
-from burl.rl.state import PrivilegedInformation, Observation, Action, ExtendedObservation
-from burl.utils import g_cfg
 
-
-class ActorTeacher(nn.Module):
-    NUM_FEATURES = (72, 64, 256, 128, 64)
-    INPUT_DIM = ExtendedObservation.dim
-    OUTPUT_DIM = Action.dim
+class Actor(nn.Module):
     activation = nn.Tanh
 
-    def __init__(self):
+    def __init__(self, extero_obs_dim, proprio_obs_dim, action_dim,
+                 extero_layer_dims=(72, 64),
+                 proprio_layer_dims=None,
+                 action_layer_dims=(256, 128, 64)):
         super().__init__()
-        self.encoder = nn.Sequential(
-            nn.Linear(PrivilegedInformation.dim, self.NUM_FEATURES[0]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[0], self.NUM_FEATURES[1]),
-            self.activation()
-        )
+        extero_layers, proprio_layers, action_layers = [], [], []
+        self.extero_obs_dim = extero_feature_dim = extero_obs_dim
+        if extero_layer_dims:
+            for dim in extero_layer_dims:
+                extero_layers.append(nn.Linear(extero_feature_dim, dim))
+                extero_layers.append(self.activation())
+                extero_feature_dim = dim
 
-        self.decoder = nn.Sequential(
-            nn.Linear(Observation.dim + self.NUM_FEATURES[1], self.NUM_FEATURES[2]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[2], self.NUM_FEATURES[3]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[3], self.NUM_FEATURES[4]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[4], self.OUTPUT_DIM)
-        )
+        self.proprio_obs_dim = proprio_feature_dim = proprio_obs_dim
+        if proprio_layer_dims:
+            for dim in extero_layer_dims:
+                proprio_layers.append(nn.Linear(proprio_feature_dim, dim))
+                proprio_layers.append(self.activation())
+                proprio_feature_dim = dim
+
+        action_feature_dim = extero_feature_dim + proprio_feature_dim
+        for dim in action_layer_dims:
+            action_layers.append(nn.Linear(action_feature_dim, dim))
+            action_layers.append(self.activation())
+            action_feature_dim = dim
+        action_layers.append(nn.Linear(action_feature_dim, action_dim))
+
+        self.extero_layers = nn.Sequential(*extero_layers)
+        self.proprio_layers = nn.Sequential(*proprio_layers)
+        self.action_layers = nn.Sequential(*action_layers)
 
     def forward(self, x):
-        pinfo, obs = x[:, :PrivilegedInformation.dim], x[:, PrivilegedInformation.dim:]
-        features = self.encoder(pinfo)
-        generalized = torch.concat((obs, features), dim=1)
-        return self.decoder(generalized)
+        extero_obs, proprio_obs = x[:, :self.extero_obs_dim], x[:, self.extero_obs_dim:]
+        extero_features, proprio_features = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
+        return self.action_layers(torch.concat((extero_features, proprio_features), dim=-1))
+
+# class Actor(nn.Module):
+#     activation = nn.Tanh
+#
+#     def __init__(self, p_info_dim, obs_dim, action_dim,
+#                  encoder_dims=(72, 64), decoder_dims=(256, 128, 64),
+#                  init_noise=0.05):
+#         super().__init__()
+#         encoder_layers, decoder_layers = [], []
+#         self.p_info_dim = p_info_dim
+#         for dim in encoder_dims:
+#             encoder_layers.append(nn.Linear(p_info_dim, dim))
+#             encoder_layers.append(self.activation())
+#             p_info_dim = dim
+#
+#         decoder_input_dim = encoder_dims[-1] + obs_dim
+#         for dim in decoder_dims:
+#             decoder_layers.append(nn.Linear(decoder_input_dim, dim))
+#             decoder_layers.append(self.activation())
+#             decoder_input_dim = dim
+#         decoder_layers.append(nn.Linear(decoder_input_dim, action_dim))
+#
+#         self.encoder = nn.Sequential(*encoder_layers)
+#         self.decoder = nn.Sequential(*decoder_layers)
+#         # self.action_log_std = nn.Parameter(torch.ones((1, action_dim)) * np.log(init_noise), requires_grad=True)
+#
+#     def forward(self, x):
+#         p_info, obs = x[:, :self.p_info_dim], x[:, self.p_info_dim:]
+#         features = self.encoder(p_info)
+#         generalized = torch.concat((obs, features), dim=-1)
+#         return self.decoder(generalized)
 
 
 class Critic(nn.Module):
-    NUM_FEATURES = (256, 128, 64)
-    INPUT_DIM = ExtendedObservation.dim
-    OUTPUT_DIM = 1
     activation = nn.ELU
 
-    def __init__(self):
+    def __init__(self, input_dim, output_dim=1, hidden_dims=(256, 128, 64)):
         super().__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(ExtendedObservation.dim, self.NUM_FEATURES[0]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[0], self.NUM_FEATURES[1]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[1], self.NUM_FEATURES[2]),
-            self.activation(),
-            nn.Linear(self.NUM_FEATURES[2], 1)
-        )
+        layers = []
+        for dim in hidden_dims:
+            layers.append(nn.Linear(input_dim, dim))
+            layers.append(self.activation())
+            input_dim = dim
+        layers.append(nn.Linear(input_dim, output_dim))
+        self.layers = nn.Sequential(*layers)
 
-    def forward(self, x):
-        return self.layers(x)
+    def forward(self, state):
+        return self.layers(state)
 
 
 class ActorCritic(nn.Module):
     is_recurrent = False
 
-    def __init__(self, actor: ActorTeacher, critic: Critic):
+    def __init__(self, actor: Actor, critic: Critic, init_noise_std):
         super(ActorCritic, self).__init__()
 
         # Policy and value function
         self.actor, self.critic = actor, critic
 
         # Action noise
-        self.std = nn.Parameter(g_cfg.init_noise_std * torch.ones(actor.OUTPUT_DIM))
+        self.std = nn.Parameter(init_noise_std * torch.ones(16))
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 
@@ -114,5 +145,10 @@ class ActorCritic(nn.Module):
 
 
 if __name__ == '__main__':
-    t = ActorTeacher()
-    c = Critic()
+    from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
+
+    actor = Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim)
+    critic = Critic(ExtendedObservation.dim)
+    print(actor, critic, sep='\n')
+    print(actor(torch.unsqueeze(torch.Tensor(ExtendedObservation().to_array()), dim=0)))
+    print(critic(torch.unsqueeze(torch.Tensor(ExtendedObservation().to_array()), dim=0)))
