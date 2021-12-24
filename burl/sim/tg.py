@@ -33,8 +33,10 @@ class LocomotionStateMachine(object):
             self._phases = np.array(self.INIT_ANGLES)
         elif g_cfg.tg_init == 'symmetric':
             self._phases = np.array(random.choice((self.INIT_ANGLES, self.symmetric(self.INIT_ANGLES))))
-        else:
+        elif g_cfg.tg_init == 'random':
             self._phases = normalize(np.random.random(4) * 2 * np.pi)
+        else:
+            raise RuntimeError(f'Unknown TG Init Mode {g_cfg.tg_init}')
 
     @property
     def base_frequency(self):

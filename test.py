@@ -108,14 +108,15 @@ if __name__ == '__main__':
     remote = False
     if remote:
         # 2240 5800
-        model = find_log_remote(time=1910, epoch=5650, log_dir='teacher-student-dev/log')
-        # model = find_log_remote(time=2240, epoch=4800, log_dir='python_ws/ts-dev/log',
-        #                         host='jewelry@10.192.119.171', port=22)
+        # model = find_log_remote(time=210944, epoch=None, log_dir='teacher-student-dev/log')
+        model = find_log_remote(time=2240, epoch=4800, log_dir='python_ws/ts-dev/log',
+                                host='jewelry@10.192.119.171', port=22)
         # model = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',
         #                         host='jewelry@10.192.119.171', port=22)
     else:
         # 2240 5800
-        # model = find_log(time=2240, epoch=4800)
+        # model = find_log(time=211850, epoch=None)
+        # model = find_log(time=2240, epoch=5800)
         # model = find_log(time=1614, epoch=7800)
         model = find_log(time=1547, epoch=7200)
     # model = 'log/model_9900.pt'

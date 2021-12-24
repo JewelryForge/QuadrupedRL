@@ -97,7 +97,7 @@ class RuntimeParam(object):
             ('FootSlipPenalty', 0.04),
             ('SmallStridePenalty', 0.08),
             # (TargetMutationPenalty(), 0.02),
-            ('BodyCollisionPenalty', 0.02),
+            ('BodyCollisionPenalty', 0.04),
             ('CostOfTransportReward', 0.04)
         )
 

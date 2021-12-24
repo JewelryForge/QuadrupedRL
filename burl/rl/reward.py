@@ -279,7 +279,8 @@ if __name__ == '__main__':
     # registry.register('RedundantAngularPenalty', 0.2)
     registry.report()
 
-    print(tanh_reverse(0.0, 2.0, -0.6))
+    print(tanh_reverse(0.0, 2.0, -0.64))
+    # print(tanh_reshape(-0.15, 0.45)(0.0))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
     # x = np.linspace(-0.5, 2.5, 1000)
