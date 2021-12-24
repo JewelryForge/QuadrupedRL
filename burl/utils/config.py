@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 
-from burl.rl.state import ExtendedObservation, Action
 from burl.utils import timestamp
 
 
@@ -70,10 +69,10 @@ class TrainParam(object):
         self.num_envs = 8
         self.init_noise_std = 0.05
         self.save_interval = 50
-        self.obs_dim = ExtendedObservation.dim
-        self.p_obs_dim = ExtendedObservation.dim
-        self.action_dim = Action.dim
         self.device = torch.device('cuda')
+        self.extero_layer_dims = (72, 64)
+        self.proprio_layer_dims = ()
+        self.action_layer_dims = (256, 128, 64)
 
 
 class RuntimeParam(object):

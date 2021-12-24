@@ -70,19 +70,6 @@ class EluLinearVelocityReward(Reward):
         return self.reshape(projected_velocity)
 
 
-# class AngularVelocityReward(Reward):
-#     def __init__(self, lower=0., upper=0.6):
-#         self.reshape = tanh2_reshape(lower, upper)
-#
-#     def __call__(self, cmd, env, robot):
-#         angular = robot.getBaseAngularVelocity()
-#         if cmd[2] != 0.0:
-#             projected_angular = angular[2] * cmd[2]
-#             return self.reshape(projected_angular)
-#         else:
-#             return 1 - self.reshape(abs(angular[2]))
-
-
 class YawRateReward(Reward):
     def __init__(self, upper_pos=0.6, upper_neg=0.6):
         self.reshape_pos = tanh2_reshape(0.0, upper_pos)
@@ -116,16 +103,6 @@ class RedundantLinearPenalty(Reward):
         return 1 - self.reshape(np.linalg.norm(v_o))
 
 
-# class RedundantAngularPenalty(Reward):
-#     def __init__(self, angular_upper=1.5):
-#         self.reshape = tanh2_reshape(0, angular_upper)
-#
-#     def __call__(self, cmd, env, robot):
-#         angular = robot.getBaseAngularVelocity()
-#         w_xy = np.linalg.norm(angular[:2])
-#         return 1 - self.reshape(w_xy)
-
-
 class BodyPosturePenalty(Reward):
     def __init__(self, roll_upper=np.pi / 12, pitch_upper=np.pi / 6):
         self.roll_reshape = tanh2_reshape(0, roll_upper)
@@ -134,19 +111,6 @@ class BodyPosturePenalty(Reward):
     def __call__(self, cmd, env, robot):
         r, p, _ = env.getSafetyRpyOfRobot()
         return 1 - (self.roll_reshape(abs(r)) + self.pitch_reshape(abs(p))) / 2
-
-
-# class BaseStabilityReward(Reward):
-#     def __init__(self, linear_upper=0.3, angular_upper=1.5):
-#         self.reshape_linear = tanh2_reshape(0, linear_upper)
-#         self.reshape_angular = tanh2_reshape(0, angular_upper)
-#
-#     def __call__(self, cmd, linear, angular):
-#         v_o = np.asarray(linear[:2]) - np.asarray(cmd[:2]) * np.dot(linear[:2], cmd[:2])
-#         v_o = np.linalg.norm(v_o)
-#         w_xy = angular[:2]
-#         w_xy = np.linalg.norm(w_xy)
-#         return (1 - self.reshape_linear(v_o)) + (1 - self.reshape_angular(w_xy))
 
 
 class BodyHeightReward(Reward):
@@ -212,7 +176,7 @@ class TorquePenalty(Reward):
 
 
 class CostOfTransportReward(Reward):
-    def __init__(self, lower=0.0, upper=1.6):
+    def __init__(self, lower=0.0, upper=2.0):
         self.reshape = tanh_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
@@ -270,6 +234,15 @@ class RewardRegistry(object):
             weighted_sum += rew * weight
         return weighted_sum * self._coefficient
 
+    def calculateEveryTermOfReward(self):
+        self._reward_details.clear()
+        reward_terms = []
+        for reward, weight in self._rewards_weights:
+            rew = reward(self._cmd, self._env, self._robot)
+            self._reward_details[reward.__class__.__name__] = rew
+            reward_terms.append(rew * weight)
+        return reward_terms
+
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
@@ -279,8 +252,8 @@ if __name__ == '__main__':
     # registry.register('RedundantAngularPenalty', 0.2)
     registry.report()
 
-    print(tanh_reverse(0.0, 2.0, -0.64))
-    # print(tanh_reshape(-0.15, 0.45)(0.0))
+    print(tanh_reverse(0.0, 2.0, -0.7))
+    print(tanh2_reverse(0.24, 0.32, 0.85))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
     # x = np.linspace(-0.5, 2.5, 1000)

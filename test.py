@@ -7,7 +7,8 @@ import os
 
 from burl.sim import A1, TGEnv, EnvContainer
 from burl.utils import make_cls, g_cfg, log_info, set_logger_level, str2time, to_dev, init_logger
-from burl.alg.ac import ActorCritic, ActorTeacher, Critic
+from burl.alg.ac import ActorCritic, Actor, Critic
+from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 
 
 class Player:
@@ -18,9 +19,12 @@ class Player:
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
         self.env = EnvContainer(make_env, 1)
-        self.actor_critic = ActorCritic(ActorTeacher(), Critic()).to(g_cfg.dev)
+        self.actor_critic = ActorCritic(
+            Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
+            Critic(ExtendedObservation.dim, 1), g_cfg.init_noise_std).to(g_cfg.dev)
+        log_info(f'Loading model {model_dir}')
         self.actor_critic.load_state_dict(torch.load(model_dir)['model_state_dict'])
-        log_info(f'load model {model_dir}')
 
     def play(self):
         p_obs, obs = to_dev(*self.env.init_observations())
@@ -118,6 +122,6 @@ if __name__ == '__main__':
         # model = find_log(time=211850, epoch=None)
         # model = find_log(time=2240, epoch=5800)
         # model = find_log(time=1614, epoch=7800)
-        model = find_log(time=1547, epoch=7200)
+        model = find_log(time=None, epoch=None)
     # model = 'log/model_9900.pt'
     main(model)

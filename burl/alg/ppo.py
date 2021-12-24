@@ -1,6 +1,7 @@
 import torch
 
 from burl.alg.ac import ActorCritic
+from burl.rl.state import Action, ExtendedObservation
 from burl.utils import g_cfg
 
 
@@ -146,8 +147,8 @@ class PPO(object):
             self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
                                                                total_iters=2000)
         self.transition = RolloutStorage.Transition()
-        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (g_cfg.p_obs_dim,), (g_cfg.p_obs_dim,),
-                                      (g_cfg.action_dim,))
+        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (ExtendedObservation.dim,),
+                                      (ExtendedObservation.dim,), (Action.dim,))
         self.learning_rate = g_cfg.learning_rate
 
     def test_mode(self):

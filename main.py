@@ -35,13 +35,13 @@ def update_cfg_from_args():
 def main():
     init_logger()
     g_cfg.task_class = BasicTask
-    g_cfg.num_envs = 1
-    g_cfg.trn_type = 'plain'
-    g_cfg.rendering = True
-    g_cfg.use_mp = False
-    g_cfg.use_wandb = False
-    g_cfg.sleeping_enabled = False
-    g_cfg.schedule = 'fixed'
+    # g_cfg.num_envs = 1
+    # g_cfg.trn_type = 'plain'
+    # g_cfg.rendering = True
+    # g_cfg.use_mp = False
+    # g_cfg.use_wandb = False
+    # g_cfg.sleeping_enabled = False
+    # g_cfg.schedule = 'fixed'
     update_cfg_from_args()
     # g_cfg._rewards_weights = [(r.__class__.__name__, w) for r, w in BasicTask.rewards_weights]
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
