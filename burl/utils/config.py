@@ -71,7 +71,7 @@ class TrainParam(object):
         self.save_interval = 50
         self.device = torch.device('cuda')
         self.extero_layer_dims = (72, 64)
-        self.proprio_layer_dims = None
+        self.proprio_layer_dims = ()
         self.action_layer_dims = (256, 128, 64)
 
 

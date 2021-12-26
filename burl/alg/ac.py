@@ -7,7 +7,7 @@ class Actor(nn.Module):
 
     def __init__(self, extero_obs_dim, proprio_obs_dim, action_dim,
                  extero_layer_dims=(72, 64),
-                 proprio_layer_dims=None,
+                 proprio_layer_dims=(),
                  action_layer_dims=(256, 128, 64)):
         super().__init__()
         extero_layers, proprio_layers, action_layers = [], [], []
@@ -41,37 +41,6 @@ class Actor(nn.Module):
         extero_features, proprio_features = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
         return self.action_layers(torch.concat((extero_features, proprio_features), dim=-1))
 
-# class Actor(nn.Module):
-#     activation = nn.Tanh
-#
-#     def __init__(self, p_info_dim, obs_dim, action_dim,
-#                  encoder_dims=(72, 64), decoder_dims=(256, 128, 64),
-#                  init_noise=0.05):
-#         super().__init__()
-#         encoder_layers, decoder_layers = [], []
-#         self.p_info_dim = p_info_dim
-#         for dim in encoder_dims:
-#             encoder_layers.append(nn.Linear(p_info_dim, dim))
-#             encoder_layers.append(self.activation())
-#             p_info_dim = dim
-#
-#         decoder_input_dim = encoder_dims[-1] + obs_dim
-#         for dim in decoder_dims:
-#             decoder_layers.append(nn.Linear(decoder_input_dim, dim))
-#             decoder_layers.append(self.activation())
-#             decoder_input_dim = dim
-#         decoder_layers.append(nn.Linear(decoder_input_dim, action_dim))
-#
-#         self.encoder = nn.Sequential(*encoder_layers)
-#         self.decoder = nn.Sequential(*decoder_layers)
-#         # self.action_log_std = nn.Parameter(torch.ones((1, action_dim)) * np.log(init_noise), requires_grad=True)
-#
-#     def forward(self, x):
-#         p_info, obs = x[:, :self.p_info_dim], x[:, self.p_info_dim:]
-#         features = self.encoder(p_info)
-#         generalized = torch.concat((obs, features), dim=-1)
-#         return self.decoder(generalized)
-
 
 class Critic(nn.Module):
     activation = nn.ELU
@@ -104,6 +73,8 @@ class ActorCritic(nn.Module):
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 
+        print('Actor:', self.actor, 'Critic:', self.critic, sep='\n')
+
     @staticmethod
     def init_weights(sequential, scales):  # not used at the moment
         for idx, module in enumerate(mod for mod in sequential if isinstance(mod, nn.Linear)):
@@ -124,11 +95,9 @@ class ActorCritic(nn.Module):
     def entropy(self):
         return self.distribution.entropy().sum(dim=-1)
 
-    def update_distribution(self, observations):
+    def act(self, observations, **kwargs):
         mean = self.actor(observations)
         self.distribution = torch.distributions.Normal(mean, torch.clip(self.std, 0.01))
-
-    def act(self, observations, **kwargs):
         self.update_distribution(observations)
         return self.distribution.sample()
 

@@ -23,8 +23,8 @@ class Player:
             Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
                   g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
             Critic(ExtendedObservation.dim, 1), g_cfg.init_noise_std).to(g_cfg.dev)
+        log_info(f'Loading model {model_dir}')
         self.actor_critic.load_state_dict(torch.load(model_dir)['model_state_dict'])
-        log_info(f'load model {model_dir}')
 
     def play(self):
         p_obs, obs = to_dev(*self.env.init_observations())

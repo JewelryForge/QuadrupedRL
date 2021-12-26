@@ -48,8 +48,8 @@ class BasicTask(RewardRegistry):
         # print(np.array([np.mean(b) for b in self.buf]))
         # print(rob.getCostOfTransport())
 
-        r_rate, p_rate, _ = rob.getBaseRpyRate()
-        print(r_rate, p_rate, wrap(RollPitchRatePenalty)())
+        # r_rate, p_rate, _ = rob.getBaseRpyRate()
+        # print(r_rate, p_rate, wrap(RollPitchRatePenalty)())
         # linear = rob.getBaseLinearVelocityInBaseFrame()
         # projected_velocity = np.dot(cmd[:2], linear[:2])
         # print(projected_velocity)
