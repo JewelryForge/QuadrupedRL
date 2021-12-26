@@ -168,7 +168,7 @@ class QuadrupedEnv(object):
         eo.joint_vel_his = np.concatenate((r.getJointVelHistoryFromMoment(-0.01, if_noisy),
                                            r.getJointVelHistoryFromMoment(-0.02, if_noisy)))
         eo.joint_pos_target = r.getCmdHistoryFromIndex(-1)
-        eo.joint_prev_pos_target = r.getCmdHistoryFromIndex(-2)
+        eo.joint_prev_pos_target = r.getCmdHistoryFromIndex(-self._num_action_repeats - 1)
         foot_xy = r.getFootXYsInWorldFrame()
         eo.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.rpy.y) for x, y in foot_xy])
         eo.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
@@ -220,6 +220,10 @@ class QuadrupedEnv(object):
         if hasattr(self._terrain, 'difficulty'):
             info['difficulty'] = self._terrain.difficulty
         # log_debug(f'Step time: {time.time() - start}')
+        # print(self.assembleObservation(False).__dict__)
+        # print(self.assembleObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
+        #       self.assembleObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
+        #       self.assembleObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
         return (self.assembleObservation(False).standard(),
                 self.assembleObservation(True).standard(),
                 mean_reward,
@@ -302,7 +306,6 @@ class TGEnv(QuadrupedEnv):
         eo: ExtendedObservation = super().assembleObservation(if_noisy)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
-        # log_debug(eo.__dict__)
         return eo
 
     def step(self, action: Action):
@@ -369,6 +372,7 @@ if __name__ == '__main__':
         env.initObservation()
         for i in range(1, 100000):
             act = Action()
+            env.robot.addDisturbanceOnBase((0, 0, 300))
             env.step(act)
             # time.sleep(0.05)
             # if i % 500 == 0:
@@ -377,4 +381,5 @@ if __name__ == '__main__':
         env = QuadrupedEnv()
         env.initObservation()
         for i in range(1, 100000):
+            env.robot.addDisturbanceOnBase((200, 0, 400))
             env.step(env.robot.STANCE_POSTURE)

@@ -250,8 +250,9 @@ class Quadruped(object):
         raise NotImplementedError
 
     def addDisturbanceOnBase(self, force, pos=TP_ZERO3):
-        self._disturbance = force
-        self._env.applyExternalForce(self._quadruped, -1, force, pos)
+        self._disturbance = np.asarray(force)
+        self._env.applyExternalForce(self._quadruped, -1, force, self._base_pose.position + pos,
+                                     flags=pybullet.WORLD_FRAME)
 
     def _rotateFromWorld(self, vector_world, reference):
         _, reference_inv = self._env.invertTransform(TP_ZERO3, reference)
@@ -466,6 +467,7 @@ class Quadruped(object):
         len_requirement = -idx if idx < 0 else idx + 1
         if len(self._command_history) < len_requirement:
             return np.array(self.STANCE_POSTURE)
+        # print(self._command_history[-2], self._command_history[-1])
         return self._command_history[idx]
 
     def getObservationHistoryFromIndex(self, idx, noisy=False) -> ObservationRaw:
@@ -505,6 +507,10 @@ class Quadruped(object):
     def printJointInfos(self):
         for i in range(p.getNumJoints(self._quadruped)):
             print(JointInfo(p.getJointInfo(self._quadruped, i)))
+
+    def analyseDynamicsInfos(self):
+        for i in range(p.getNumJoints(self._quadruped)):
+            print(p.getDynamicsInfo(self._quadruped, i))
 
 
 class A1(Quadruped):
@@ -625,6 +631,7 @@ if __name__ == '__main__':
     # robot = p.loadURDF(A1.URDF_FILE, A1.INIT_POSITION, A1.INIT_ORIENTATION)
     # q.reset(reload=True)
     q.printJointInfos()
+    q.analyseDynamicsInfos()
     p.setGravity(0, 0, -9.8)
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)
     for _ in range(100000):
