@@ -29,7 +29,7 @@ class EnvContainer(object):
 
     @staticmethod
     def merge_results(results):
-        pri_observations, observations, rewards, dones, infos = zip(*results)
+        p_obs, obs, rewards, dones, infos = zip(*results)
 
         def _merge_dict_recursively(_infos: list[dict]):
             _infos_merged = {}
@@ -40,7 +40,7 @@ class EnvContainer(object):
                     _infos_merged[_k] = torch.tensor(np.array([_info[_k] for _info in _infos]))
             return _infos_merged
 
-        return (torch.Tensor(np.array(pri_observations)), torch.Tensor(np.array(observations)),
+        return (torch.Tensor(np.array(p_obs)), torch.Tensor(np.array(obs)),
                 torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), _merge_dict_recursively(infos))
 
     def reset(self, ids):

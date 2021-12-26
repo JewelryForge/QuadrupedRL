@@ -60,10 +60,6 @@ class OnPolicyRunner:
 
         self.current_iter = 0
 
-        # def evaluate(self):
-        #     self.alg.actor_critic.eval()
-        #     self.alg.actor_critic.train()
-
     def learn(self):
         p_obs, obs = to_dev(*self.env.init_observations())
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
@@ -121,7 +117,10 @@ class OnPolicyRunner:
         logs = {'Loss/value_function': locs['mean_value_loss'],
                 'Loss/surrogate': locs['mean_surrogate_loss'],
                 'Loss/learning_rate': self.alg.learning_rate,
-                'Policy/mean_noise_std': self.alg.actor_critic.std.mean().item(),
+                'Policy/freq_noise_std': self.alg.actor_critic.std.cpu()[:4].mean().item(),
+                'Policy/X_noise_std': self.alg.actor_critic.std.cpu()[(4, 7, 10, 13),].mean().item(),
+                'Policy/Y_noise_std': self.alg.actor_critic.std.cpu()[(5, 8, 11, 14),].mean().item(),
+                'Policy/Z_noise_std': self.alg.actor_critic.std.cpu()[(6, 9, 12, 15),].mean().item(),
                 'Perform/total_fps': fps,
                 'Perform/collection time': locs['collection_time'],
                 'Perform/learning_time': locs['learning_time']}

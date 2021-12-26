@@ -10,6 +10,7 @@ class Actor(nn.Module):
                  proprio_layer_dims=(),
                  action_layer_dims=(256, 128, 64)):
         super().__init__()
+        self.extero_obs_dim, self.proprio_obs_dim, self.action_dim = extero_obs_dim, proprio_obs_dim, action_dim
         extero_layers, proprio_layers, action_layers = [], [], []
         self.extero_obs_dim = extero_feature_dim = extero_obs_dim
         if extero_layer_dims:
@@ -69,7 +70,9 @@ class ActorCritic(nn.Module):
         self.actor, self.critic = actor, critic
 
         # Action noise
-        self.std = nn.Parameter(init_noise_std * torch.ones(16))
+        # self.log_std = nn.Parameter(torch.full(actor.action_dim, torch.log(init_noise_std)), requires_grad=True)
+        # self.std = torch.exp(self.log_std)
+        self.std = nn.Parameter(torch.full(16, init_noise_std), requires_grad=True)
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 
@@ -97,8 +100,9 @@ class ActorCritic(nn.Module):
 
     def act(self, observations, **kwargs):
         mean = self.actor(observations)
+        # self.std = torch.exp(self.log_std)
+        # self.distribution = torch.distributions.Normal(mean, self.std)
         self.distribution = torch.distributions.Normal(mean, torch.clip(self.std, 0.01))
-        self.update_distribution(observations)
         return self.distribution.sample()
 
     def get_actions_log_prob(self, actions):
