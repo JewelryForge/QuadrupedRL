@@ -51,13 +51,15 @@ def elu_reshape(coeff):
 
 
 class LinearVelocityReward(Reward):
-    def __init__(self, lower=-0.15, upper=0.45):
+    def __init__(self, lower=-0.4, upper=0.8):
         self.reshape = tanh_reshape(lower, upper)
+        self.offset = self.reshape(0.0)
+        self.coeff = 1. / (1. - self.offset)
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()
         projected_velocity = np.dot(cmd[:2], linear[:2])
-        return self.reshape(projected_velocity)
+        return (self.reshape(projected_velocity) - self.offset) * self.coeff
 
 
 class EluLinearVelocityReward(Reward):
@@ -252,8 +254,8 @@ if __name__ == '__main__':
     # registry.register('RedundantAngularPenalty', 0.2)
     registry.report()
 
-    print(tanh_reverse(0.0, 2.0, -0.7))
-    print(tanh2_reverse(0.24, 0.32, 0.85))
+    print(tanh_reverse(0.0, 2.0, -0.62))
+    # print(tanh2_reverse(0.24, 0.32, 0.85))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
     # x = np.linspace(-0.5, 2.5, 1000)

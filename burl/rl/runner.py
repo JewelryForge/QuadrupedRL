@@ -11,7 +11,7 @@ from burl.alg.ac import ActorCritic, Actor, Critic
 from burl.alg.ppo import PPO
 from burl.rl.task import BasicTask, RandomCmdTask
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
-from burl.sim import TGEnv, A1, EnvContainerMultiProcess2, EnvContainer
+from burl.sim import TGEnv, A1, AlienGo, EnvContainerMultiProcess2, EnvContainer
 from burl.utils import make_cls, g_cfg, to_dev, WithTimer, log_info
 
 
@@ -42,7 +42,7 @@ class Accountant:
 
 class OnPolicyRunner:
     def __init__(self):
-        make_robot = make_cls(A1)
+        make_robot = make_cls(AlienGo)
         make_task = make_cls(BasicTask)
         # make_task = make_cls(RandomCmdTask)
         make_env = make_cls(TGEnv, make_task=make_task, make_robot=make_robot)

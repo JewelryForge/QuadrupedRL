@@ -19,9 +19,9 @@ class LocomotionStateMachine(object):
         self._frequency = np.ones(4) * self.base_frequency
         self._lower_frequency = kwargs.get('lower_frequency', 0.5)
         self._upper_frequency = kwargs.get('upper_frequency', 3.0)
-        self._tg = designed_tg()
+        # self._tg = designed_tg()
+        self._tg = end_trajectory_generator()
         self._cycles = np.zeros(4)
-        # self._tg = end_trajectory_generator()
 
     @staticmethod
     def symmetric(phases):
@@ -40,7 +40,7 @@ class LocomotionStateMachine(object):
 
     @property
     def base_frequency(self):
-        return 1.25  # TODO: COMPLETE THE STATE MACHINE
+        return 2.0  # TODO: COMPLETE THE STATE MACHINE
 
     @property
     def phases(self):
@@ -73,7 +73,7 @@ class LocomotionStateMachine(object):
 
     def get_priori_trajectory(self):
         # k: [-2, 2)
-        return np.array([self._tg(phi / np.pi * 2) for phi in self._phases])
+        return np.array([(0., 0., self._tg(phi / np.pi * 2)) for phi in self._phases])
 
 
 def joint_trajectory_generator():
@@ -93,7 +93,8 @@ def end_trajectory_generator(h=0.08):  # 0.2 in paper
 
     def _tg(k):
         if k < 0:
-            return -_tg(-k) * 0.2
+            return 0.0
+            # return -_tg(-k) * 0.2
         k_pow = list(power(k, 3))
         if 0 < k <= 1:
             return coeff1 @ k_pow
@@ -104,7 +105,7 @@ def end_trajectory_generator(h=0.08):  # 0.2 in paper
     return _tg
 
 
-def designed_tg(c=0.2, h=0.08):
+def designed_tg(c=0.3, h=0.1):
     def _poly5th(x, coeff):
         return np.asarray(coeff) @ list(power(x, 5))
 
@@ -147,19 +148,19 @@ def designed_tg(c=0.2, h=0.08):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    g_cfg.tg_init = 'symmetric'
-    stm = LocomotionStateMachine(0.01)
-    print(stm.phases)
-    for _ in range(10):
-        stm._init_phases()
-        print(stm.phases)
+    # g_cfg.tg_init = 'symmetric'
+    # stm = LocomotionStateMachine(0.01)
+    # print(stm.phases)
+    # for _ in range(10):
+    #     stm._init_phases()
+    #     print(stm.phases)
 
-    # tg = designed_tg()
+    tg = designed_tg()
     # tg2 = end_trajectory_generator()
-    # x = np.linspace(-2, 2, 1000)
-    # # y1 = [tg(x) for x in x]
+    x = np.linspace(-2, 2, 1000)
+    y1 = [tg(x) for x in x]
     # y2 = [tg2(x) for x in x]
-    # # plt.plot(x, y1)
+    plt.plot(x, y1)
     # plt.plot(x, y2)
-    # # plt.legend(['des', 'raw'])
-    # plt.show()
+    # plt.legend(['des', 'raw'])
+    plt.show()
