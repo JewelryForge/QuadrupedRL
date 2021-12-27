@@ -72,7 +72,7 @@ class ActorCritic(nn.Module):
         # Action noise
         # self.log_std = nn.Parameter(torch.full(actor.action_dim, torch.log(init_noise_std)), requires_grad=True)
         # self.std = torch.exp(self.log_std)
-        self.std = nn.Parameter(torch.full(16, init_noise_std), requires_grad=True)
+        self.std = nn.Parameter(torch.full((16,), init_noise_std), requires_grad=True)
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 

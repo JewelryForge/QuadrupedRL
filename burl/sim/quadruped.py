@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import os.path
 from collections import deque
 from typing import Deque
@@ -12,7 +11,7 @@ from pybullet_utils import bullet_client
 
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
-from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg, vec_cross
+from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity
 
 TP_ZERO3 = (0., 0., 0.)
@@ -52,9 +51,11 @@ class Quadruped(object):
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
-        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
+        # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
+        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
+                                           kp=80, kd=(1.0, 2.0, 2.0) * 4)
         # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-        #                                    kp=80, kd=(1.0, 2.0, 2.0) * 4)
+        #                                    kp=80, kd=(0.5, 1.0, 1.0) * 4)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 
@@ -69,7 +70,8 @@ class Quadruped(object):
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
-        self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency / 1.25))
+        # self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency / 1.25))
+        self._cot_buffer: Deque[float] = deque()
 
     @property
     def id(self):
@@ -175,6 +177,7 @@ class Quadruped(object):
         :param in_situ: Reset in situ if true.
         :return: Initial observation after reset.
         """
+        # print(np.mean(self._cot_buffer))
         self._resetStates()
         self._observation_history.clear()
         self._observation_noisy_history.clear()
@@ -244,14 +247,14 @@ class Quadruped(object):
         all_joint_angles = self._env.calculateInverseKinematics(
             self._quadruped, self._foot_ids[leg], pos_world, solver=0)
 
-        return all_joint_angles[leg * 3: leg * 3 + 3]
+        return np.array(all_joint_angles[leg * 3: leg * 3 + 3])
 
     def fk(self, leg, angles) -> Odometry:
         raise NotImplementedError
 
-    def addDisturbanceOnBase(self, force, pos=TP_ZERO3):
+    def addDisturbanceOnBase(self, force):
         self._disturbance = np.asarray(force)
-        self._env.applyExternalForce(self._quadruped, -1, force, self._base_pose.position + pos,
+        self._env.applyExternalForce(self._quadruped, 0, force, self._base_pose.position,
                                      flags=pybullet.WORLD_FRAME)
 
     def _rotateFromWorld(self, vector_world, reference):
@@ -266,7 +269,7 @@ class Quadruped(object):
         def _getContactState(link_id):
             return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
 
-        contact_states = [_getContactState(range(self._num_joints))]
+        contact_states = [_getContactState(i) for i in range(self._num_joints)]
         return contact_states
 
     def _getFootStates(self):
@@ -445,7 +448,8 @@ class Quadruped(object):
     def getCostOfTransport(self):
         mgv = self._mass * 9.8 * np.linalg.norm(self._base_twist.linear)
         work = sum(filter(lambda i: i > 0, self._last_torque * self.getJointVelocities()))
-        self._cot_buffer.append(1.0 if mgv == 0.0 else work / mgv)
+        # print(self._last_torque, self.getJointVelocities())
+        self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         return np.mean(self._cot_buffer)
 
     def getJointStates(self) -> JointStates:
@@ -504,9 +508,27 @@ class Quadruped(object):
     def getJointVelHistoryFromMoment(self, moment, noisy=False):
         return self.getJointVelHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
 
-    def printJointInfos(self):
+    def analyseJointInfos(self):
+        from burl.utils.utils import tuple_compact_string as t2s
+        print(f"{'id':>2}  {'name':^14} {'type':>4}  {'q u':^5}  {'damp'}  {'fric'}  {'range':^13} "
+              f"{'maxF':>4}  {'maxV':>4}  {'link':^10}  {'AX'}  {'parent'}  {'parent_pos':^16}{'parent_orn':^18}")
         for i in range(p.getNumJoints(self._quadruped)):
-            print(JointInfo(p.getJointInfo(self._quadruped, i)))
+            info = JointInfo(p.getJointInfo(self._quadruped, i))
+            is_fixed = info.type == pybullet.JOINT_FIXED
+            print(f'{info.idx:>2d}  {info.name[:14]:^14} {info.joint_types[info.type]:>4}', end='  ')
+            print(f"{f'{info.q_idx}':>2} {f'{info.u_idx}':<2} " if not is_fixed else f"{'---':^6}", end=' ')
+            print(f"{f'{info.damping:.2f}':^4}  {f'{info.friction:.2f}':^4}  ", end='')
+            print(f"{f'{info.limits[0]:.2f}':>5} ~{f'{info.limits[1]:.2f}':>5}  "
+                  if not is_fixed else f"{'---':^13} ", end='')
+            print(f"{f'{info.max_force:.1f}':>4}  {f'{info.max_vel:.1f}':>4}"
+                  if not is_fixed else f"{'--':^4}  {f'--':^4}", end='  ')
+            print(f"{f'{info.link_name[:10]}':^10}  ", end='')
+            if not is_fixed:
+                axis = info.axis_dict[info.axis] if info.axis in info.axis_dict else 'OT'
+            else:
+                axis = '--'
+            print(f"{axis:>2}  {info.parent_idx:>4}  "
+                  f"{t2s(info.parent_frame_pos, 8):>16}  {t2s(info.parent_frame_orn, 8):<19}")
 
     def analyseDynamicsInfos(self):
         for i in range(p.getNumJoints(self._quadruped)):
@@ -616,31 +638,48 @@ class A1(Quadruped):
         return self.getObservationHistoryFromIndex(-2).contact_states[(3, 6, 9, 12),]
 
 
+class AlienGo(A1):
+    INIT_POSITION = (0., 0., .41)
+    INIT_RACK_POSITION = (0., 0., 1.)
+    INIT_ORIENTATION = (0., 0., 0., 1.)
+    NUM_MOTORS = 12
+    LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
+    JOINT_TYPES = ('hip', 'thigh', 'calf', 'foot')
+    JOINT_SUFFIX = ('joint', 'joint', 'joint', 'fixed')
+    URDF_FILE = 'aliengo/urdf/aliengo.urdf'
+    LINK_LENGTHS = (0.083, 0.25, 0.25)
+    HIP_OFFSETS = ((0.2399, -0.051, 0.), (0.2399, 0.051, 0.),
+                   (-0.2399, -0.051, 0), (-0.2399, 0.051, 0.))
+    STANCE_HEIGHT = 0.4
+    STANCE_POSTURE = (0., 0.6435, -1.287, 0., 0.6435, -1.287,
+                      0., 0.655, -1.272, 0., 0.655, -1.272)
+    TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)
+    ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
+
+
 if __name__ == '__main__':
     import time
-    from burl.sim.terrain import RandomUniformTerrain
+    from burl.sim.terrain import PlainTerrain
 
-    g_cfg.on_rack = True
+    g_cfg.on_rack = False
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    terrain = RandomUniformTerrain(p, size=30, downsample=5, resolution=0.05)
+    terrain = PlainTerrain(p)
     make_motor = make_cls(MotorSim)
-    q = A1(sim_env=p, make_motor=make_motor)
+    q = AlienGo(sim_env=p, make_motor=make_motor)
     # p.resetSimulation()
     # terrain.reset()
     # robot = p.loadURDF(A1.URDF_FILE, A1.INIT_POSITION, A1.INIT_ORIENTATION)
     # q.reset(reload=True)
-    q.printJointInfos()
+    q.analyseJointInfos()
     q.analyseDynamicsInfos()
     p.setGravity(0, 0, -9.8)
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)
     for _ in range(100000):
         p.stepSimulation()
-        # q.updateObservation()
+        q.updateObservation()
         time.sleep(1. / 240)
-        # cmd0 = q.ik(0, (0, 0, -0.3), 'shoulder')
-        # cmd1 = q.ik(1, (0, 0, -0.3), 'shoulder')
-        # cmd2 = q.ik(2, (0, 0, -0.3), 'shoulder')
-        # cmd3 = q.ik(3, (0, 0, -0.3), 'shoulder')
-        # tq = q.applyCommand(np.concatenate([cmd0, cmd1, cmd2, cmd3]))
+        tq = q.applyCommand(q.STANCE_POSTURE)
+        print(q.position, q.rpy)
+        # print(q.ik_absolute(0, (0, 0, -0.4), 'shoulder'))
         # print(q.getHorizontalFrameInBaseFrame())

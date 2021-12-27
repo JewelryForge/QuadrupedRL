@@ -54,7 +54,7 @@ class MotorSim(object):
 
         self._mode = kwargs.get('mode', MotorMode.POSITION)
         assert self._mode == MotorMode.POSITION
-        self._observation_history = collections.deque(maxlen=50)
+        self._position_history = collections.deque(maxlen=50)
         self._observe_done = False
 
     @property
@@ -62,21 +62,26 @@ class MotorSim(object):
         return self._mode
 
     def reset(self):
-        self._observation_history.clear()
+        self._position_history.clear()
         self._observe_done = False
 
-    def update_observation(self):
+    def update_observation(self, pos=None, vel=None):
         self._observe_done = True
-        try:
-            observation = np.asarray(self._robot.getJointPositions(noisy=True))
-        except AttributeError:
-            observation = np.asarray(self._robot.joint_states.position)
-        self._observation_history.append(observation)
-        self._pos = observation
-        oh = self._observation_history
-        self._vel = (oh[-1] - oh[-2]) * self._frequency if len(oh) > 1 else 0.0
-        self._acc = (oh[-1] + oh[-3] - 2 * oh[-2]) * self._frequency ** 2 if len(oh) > 2 else 0.0
-        return MotorState(position=self._pos, velocity=self._vel, acceleration=self._acc)
+        if pos is not None:
+            self._pos = pos
+            if vel is not None:
+                self._vel = vel
+                return
+        else:
+            try:
+                self._pos = np.asarray(self._robot.getJointPositions(noisy=True))
+            except AttributeError:
+                self._pos = np.asarray(self._robot.joint_states.position)
+        self._position_history.append(self._pos)
+        ph = self._position_history
+        self._vel = (ph[-1] - ph[-2]) * self._frequency if len(ph) > 1 else 0.0
+        # self._acc = (ph[-1] + ph[-3] - 2 * ph[-2]) * self._frequency ** 2 if len(ph) > 2 else 0.0
+        # return MotorState(position=self._pos, velocity=self._vel, acceleration=self._acc)
 
     def apply_command(self, command, *args):
         if not self._observe_done:
@@ -90,6 +95,8 @@ class MotorSim(object):
     def _set_position(self, des_pos):
         if hasattr(self, '_pos_limits_upper'):
             des_pos = np.clip(des_pos, self._pos_limits_lower, self._pos_limits_upper)
+        # print('Force:', (des_pos - self._pos)[-1], (self._kp * (des_pos - self._pos))[-1], (self._kd * self._vel)[-1],
+        #       (self._kp * (des_pos - self._pos) - self._kd * self._vel)[-1])
         return self._set_torque(self._kp * (des_pos - self._pos) - self._kd * self._vel)
 
     def _set_torque(self, des_torque):

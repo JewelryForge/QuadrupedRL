@@ -10,7 +10,7 @@ from pybullet_utils import bullet_client
 from burl.rl.state import ExtendedObservation, Action
 from burl.rl.task import BasicTask
 from burl.sim.motor import MotorSim
-from burl.sim.quadruped import A1, Quadruped
+from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.terrain import makeTerrain
 from burl.sim.tg import LocomotionStateMachine
 from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
@@ -72,9 +72,9 @@ class QuadrupedEnv(object):
 
     def initObservation(self):
         self.updateObservation()
-        # print(self.assembleObservation(False).__dict__)
-        return (self.assembleObservation(False).standard(),
-                self.assembleObservation(True).standard())
+        # print(self.makeObservation(False).__dict__)
+        return (self.makeObservation(False).standard(),
+                self.makeObservation(True).standard())
 
     def _initSimulation(self):
         pass
@@ -153,7 +153,7 @@ class QuadrupedEnv(object):
             for idc, pos in zip(self._terrain_indicators, positions):
                 self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
-    def assembleObservation(self, if_noisy=False):
+    def makeObservation(self, if_noisy=False):
         eo = ExtendedObservation()
         r = self._robot
         eo.command = self._task.cmd
@@ -221,11 +221,11 @@ class QuadrupedEnv(object):
             info['difficulty'] = self._terrain.difficulty
         # log_debug(f'Step time: {time.time() - start}')
         # print(self.assembleObservation(False).__dict__)
-        # print(self.assembleObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
-        #       self.assembleObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
-        #       self.assembleObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
-        return (self.assembleObservation(False).standard(),
-                self.assembleObservation(True).standard(),
+        print(self.makeObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
+              self.makeObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
+              self.makeObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
+        return (self.makeObservation(False).standard(),
+                self.makeObservation(True).standard(),
                 mean_reward,
                 is_failed or time_out,
                 info)
@@ -244,8 +244,8 @@ class QuadrupedEnv(object):
         self._initSimulation()
         self._robot.updateObservation()
         # print(self.assembleObservation(False).__dict__)
-        return (self.assembleObservation(False).standard(),
-                self.assembleObservation(True).standard())
+        return (self.makeObservation(False).standard(),
+                self.makeObservation(True).standard())
 
     def close(self):
         self._env.disconnect()
@@ -297,13 +297,13 @@ class QuadrupedEnv(object):
 
 
 class TGEnv(QuadrupedEnv):
-    def __init__(self, **kwargs):
-        super(TGEnv, self).__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(TGEnv, self).__init__(*args, **kwargs)
         self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency)
         # self._filter = self._stm.flags
 
-    def assembleObservation(self, if_noisy=False):
-        eo: ExtendedObservation = super().assembleObservation(if_noisy)
+    def makeObservation(self, if_noisy=False):
+        eo: ExtendedObservation = super().makeObservation(if_noisy)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
         return eo
@@ -368,18 +368,18 @@ if __name__ == '__main__':
     make_motor = make_cls(MotorSim)
     tg = False
     if tg:
-        env = TGEnv()
+        env = TGEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
             act = Action()
-            env.robot.addDisturbanceOnBase((0, 0, 300))
+            # env.robot.addDisturbanceOnBase((0, 0, 300))
             env.step(act)
             # time.sleep(0.05)
             # if i % 500 == 0:
             #     env.reset()
     else:
-        env = QuadrupedEnv()
+        env = QuadrupedEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
-            env.robot.addDisturbanceOnBase((200, 0, 400))
+            env.robot.addDisturbanceOnBase((0, 0, 100))
             env.step(env.robot.STANCE_POSTURE)

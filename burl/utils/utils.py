@@ -24,8 +24,9 @@ def vec_cross(X1, X2):
     return np.array((y1 * z2 - y2 * z1, z1 * x2 - z2 * x1, x1 * y2 - x2 * y1))
 
 
-def tuple_compact_string(_tuple):
-    return '(' + ' '.join(f'{f:.1f}' for f in _tuple) + ')'
+def tuple_compact_string(_tuple, precision=1):
+    fmt = f'.{precision}f'
+    return '(' + ' '.join(f'{f:{fmt}}' for f in _tuple) + ')'
 
 
 class make_cls(object):
@@ -84,30 +85,12 @@ class JointInfo(object):
     parent_frame_orn = property(lambda self: self._info[15])
     parent_idx = property(lambda self: self._info[16])
 
-    def __str__(self):
-        import pybullet as p
-        analysis = []
-        joint_types = {p.JOINT_REVOLUTE: 'revolute', p.JOINT_PRISMATIC: 'prismatic', p.JOINT_SPHERICAL: 'spherical',
-                       p.JOINT_PLANAR: 'planar', p.JOINT_FIXED: 'fixed'}
-        analysis.append(f'{self.idx}_{self.name}: {joint_types[self.type]}')
-        is_fixed = self.type == p.JOINT_FIXED
-        if not is_fixed:
-            # analysis.append(f'q{joint_info[3]} u{joint_info[4]}')
-            analysis.append(f'damp {self.damping} fric {self.friction}')
-            analysis.append(f'[{self.limits[0]:.2f}, {self.limits[1]:.2f}]')
-        analysis.append(self.link_name)
-        if not is_fixed:
-            axis_dict = {(1., 0., 0.): 'X', (0., 1., 0.): 'Y', (0., 0., 1.): 'Z',
-                         (-1., 0., 0.): '-X', (0., -1., 0.): '-Y', (0., 0., -1.): '-Z', }
-            if self.axis in axis_dict:
-                analysis.append(f'axis {axis_dict[self.axis]}')
-            else:
-                analysis.append(f'axis{tuple_compact_string(self.axis)}')
-        analysis.append(f'pos{tuple_compact_string(self.parent_frame_pos)}')
-        analysis.append(f'orn{tuple_compact_string(self.parent_frame_orn)}')
-        analysis.append(f'parent {self.parent_idx}')
+    import pybullet as p
+    joint_types = {p.JOINT_REVOLUTE: 'rev', p.JOINT_PRISMATIC: 'pri', p.JOINT_SPHERICAL: 'sph',
+                   p.JOINT_PLANAR: 'pla', p.JOINT_FIXED: 'fix'}
 
-        return ', '.join(analysis)
+    axis_dict = {(1., 0., 0.): '+X', (0., 1., 0.): '+Y', (0., 0., 1.): '+Z',
+                 (-1., 0., 0.): '-X', (0., -1., 0.): '-Y', (0., 0., -1.): '-Z', }
 
 
 def timestamp():
