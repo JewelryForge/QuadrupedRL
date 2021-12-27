@@ -51,8 +51,8 @@ def elu_reshape(coeff):
 
 
 class LinearVelocityReward(Reward):
-    def __init__(self, lower=-0.15, upper=0.45):
-        self.reshape = tanh_reshape(lower, upper)
+    def __init__(self, lower=0.0, upper=0.8):
+        self.reshape = tanh2_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()

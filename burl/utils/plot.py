@@ -20,9 +20,8 @@ def plotTrajectories(axis_range=(-0.3, 0.3, -0.4, -0.1)):
     return plotOnce
 
 
-plotter = plotTrajectories()
-
 if __name__ == '__main__':
+    plotter = plotTrajectories()
     for i in np.linspace(-1, 1, 100):
         plotter([(i, np.sin(i))], [(i, np.cos(i))])
         time.sleep(0.01)

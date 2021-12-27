@@ -22,7 +22,7 @@ class PhysicsParam(object):
         self.foot_spinning_friction = 0.2
         self.foot_restitution = 0.3
         self.joint_angle_range = 1.0
-        self.safe_height_range = (0.2, 0.6)
+        self.safe_height_range = (0.25, 0.6)
 
 
 class SimParam(PhysicsParam):

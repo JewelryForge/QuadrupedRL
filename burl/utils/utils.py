@@ -93,6 +93,24 @@ class JointInfo(object):
                  (-1., 0., 0.): '-X', (0., -1., 0.): '-Y', (0., 0., -1.): '-Z', }
 
 
+class DynamicsInfo(object):
+    def __init__(self, dynamics_info: tuple):
+        self._info = dynamics_info
+
+    mass = property(lambda self: self._info[0])
+    lateral_fric = property(lambda self: self._info[1])
+    inertial = property(lambda self: self._info[2])
+    inertial_pos = property(lambda self: self._info[3])
+    inertial_orn = property(lambda self: self._info[4])
+    restitution = property(lambda self: self._info[5])
+    rolling_fric = property(lambda self: self._info[6])
+    spinning_fric = property(lambda self: self._info[7])
+    damping = property(lambda self: self._info[8])
+    stiffness = property(lambda self: self._info[9])
+    body_type = property(lambda self: self._info[10])
+    collision_margin = property(lambda self: self._info[11])
+
+
 def timestamp():
     return datetime.now().strftime('%b%d_%H-%M-%S')
 

@@ -11,7 +11,7 @@ from pybullet_utils import bullet_client
 
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
-from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg
+from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg, DynamicsInfo
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity
 
 TP_ZERO3 = (0., 0., 0.)
@@ -44,6 +44,7 @@ class Quadruped(object):
     LINK_LENGTHS: tuple
     HIP_OFFSETS: tuple
     STANCE_HEIGHT: float
+    STANCE_FOOT_POSITIONS: tuple[tuple[float]]
     STANCE_POSTURE: tuple
     TORQUE_LIMITS: tuple
     ROBOT_SIZE: tuple
@@ -509,11 +510,10 @@ class Quadruped(object):
         return self.getJointVelHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
 
     def analyseJointInfos(self):
-        from burl.utils.utils import tuple_compact_string as t2s
         print(f"{'id':>2}  {'name':^14} {'type':>4}  {'q u':^5}  {'damp'}  {'fric'}  {'range':^13} "
-              f"{'maxF':>4}  {'maxV':>4}  {'link':^10}  {'AX'}  {'parent'}  {'parent_pos':^16}{'parent_orn':^18}")
-        for i in range(p.getNumJoints(self._quadruped)):
-            info = JointInfo(p.getJointInfo(self._quadruped, i))
+              f"{'maxF':>4}  {'maxV':>4}  {'link':^10}  {'AX'}  {'par'}  {'mass':>5}  {'inertial':^21}")
+        for i in range(self._env.getNumJoints(self._quadruped)):
+            info = JointInfo(self._env.getJointInfo(self._quadruped, i))
             is_fixed = info.type == pybullet.JOINT_FIXED
             print(f'{info.idx:>2d}  {info.name[:14]:^14} {info.joint_types[info.type]:>4}', end='  ')
             print(f"{f'{info.q_idx}':>2} {f'{info.u_idx}':<2} " if not is_fixed else f"{'---':^6}", end=' ')
@@ -527,8 +527,20 @@ class Quadruped(object):
                 axis = info.axis_dict[info.axis] if info.axis in info.axis_dict else 'OT'
             else:
                 axis = '--'
-            print(f"{axis:>2}  {info.parent_idx:>4}  "
-                  f"{t2s(info.parent_frame_pos, 8):>16}  {t2s(info.parent_frame_orn, 8):<19}")
+            print(f"{axis:>2}  {info.parent_idx:>2} ", end='  ')
+
+            def float_e(f):
+                e = 0
+                while f < 1.0:
+                    f *= 10
+                    e += 1
+                if e >= 10:
+                    return f' {f:.0f}e-{e}'
+                return f'{f:.1f}e-{e}'
+
+            dyn = DynamicsInfo(self._env.getDynamicsInfo(self._quadruped, i))
+            print(f"{f'{dyn.mass:.3f}'}  "
+                  f"{float_e(dyn.inertial[0])} {float_e(dyn.inertial[1])} {float_e(dyn.inertial[2])}")
 
     def analyseDynamicsInfos(self):
         for i in range(p.getNumJoints(self._quadruped)):
@@ -548,7 +560,8 @@ class A1(Quadruped):
     HIP_OFFSETS = ((0.183, -0.047, 0.), (0.183, 0.047, 0.),
                    (-0.183, -0.047, 0.), (-0.183, 0.047, 0.))
     STANCE_HEIGHT = 0.3
-    STANCE_POSTURE = (0, 0.723, -1.445) * 4
+    STANCE_FOOT_POSITIONS = ((0., 0., -STANCE_HEIGHT),) * 4
+    STANCE_POSTURE = (0., 0.723, -1.445) * 4
     TORQUE_LIMITS = ((-33.5,) * 12, (33.5,) * 12)
     ROBOT_SIZE = ((-0.3, 0.3), (-0.1, 0.1))
 
@@ -651,8 +664,10 @@ class AlienGo(A1):
     HIP_OFFSETS = ((0.2399, -0.051, 0.), (0.2399, 0.051, 0.),
                    (-0.2399, -0.051, 0), (-0.2399, 0.051, 0.))
     STANCE_HEIGHT = 0.4
-    STANCE_POSTURE = (0., 0.6435, -1.287, 0., 0.6435, -1.287,
-                      0., 0.655, -1.272, 0., 0.655, -1.272)
+    STANCE_FOOT_POSITIONS = ((0., -0.03952, -0.38972), (0., 0.03952, -0.38972),
+                             (-0.00764, -0.03974, -0.39187), (-0.00764, 0.03974, -0.39187))
+    STANCE_POSTURE = (-0.1, 0.6435, -1.287, 0.1, 0.6435, -1.287,
+                      -0.1, 0.655, -1.272, 0.1, 0.655, -1.272)
     TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)
     ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
 
@@ -674,12 +689,16 @@ if __name__ == '__main__':
     q.analyseJointInfos()
     q.analyseDynamicsInfos()
     p.setGravity(0, 0, -9.8)
+    print(q.fk(0, q.STANCE_POSTURE[:3]).translation - q.HIP_OFFSETS[0] + (0., q.LINK_LENGTHS[0], 0.))
+    print(q.fk(1, q.STANCE_POSTURE[3:6]).translation - q.HIP_OFFSETS[1] + (0., -q.LINK_LENGTHS[0], 0.))
+    print(q.fk(2, q.STANCE_POSTURE[6:9]).translation - q.HIP_OFFSETS[2] + (0., q.LINK_LENGTHS[0], 0.))
+    print(q.fk(3, q.STANCE_POSTURE[9:12]).translation - q.HIP_OFFSETS[3] + (0., -q.LINK_LENGTHS[0], 0.))
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)
     for _ in range(100000):
         p.stepSimulation()
         q.updateObservation()
         time.sleep(1. / 240)
         tq = q.applyCommand(q.STANCE_POSTURE)
-        print(q.position, q.rpy)
+        # print(q.position, q.rpy)
         # print(q.ik_absolute(0, (0, 0, -0.4), 'shoulder'))
         # print(q.getHorizontalFrameInBaseFrame())

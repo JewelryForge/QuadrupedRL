@@ -221,9 +221,9 @@ class QuadrupedEnv(object):
             info['difficulty'] = self._terrain.difficulty
         # log_debug(f'Step time: {time.time() - start}')
         # print(self.assembleObservation(False).__dict__)
-        print(self.makeObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
-              self.makeObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
-              self.makeObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
+        # print(self.makeObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
+        #       self.makeObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
+        #       self.makeObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
         return (self.makeObservation(False).standard(),
                 self.makeObservation(True).standard(),
                 mean_reward,
@@ -313,20 +313,18 @@ class TGEnv(QuadrupedEnv):
         # 4 ~ 11 foot position residual
         self._stm.update(action.leg_frequencies)
         # self._filter += self._stm.flags
-        priori = self._stm.get_priori_trajectory() - self.robot.STANCE_HEIGHT
+        priori = self._stm.get_priori_trajectory() + self._robot.STANCE_FOOT_POSITIONS
         # if False:
         #     h2b = self._robot.getHorizontalFrameInBaseFrame(False)  # FIXME: HERE SHOULD BE TRUE
         #     priori_in_base_frame = [h2b @ (0, 0, z) for z in priori]
         #     residuals = action.foot_pos_residuals + np.concatenate(priori_in_base_frame)
         # else:
-        des_pos = action.foot_pos_residuals
-        for i in range(4):
-            des_pos[i * 3 + 2] += priori[i]
+        des_pos = action.foot_pos_residuals.reshape((4, 3)) + priori
         if g_cfg.plot_trajectory:
             self.plot(des_pos)
 
         # NOTICE: HIP IS USED IN PAPER
-        commands = [self._robot.ik(i, des_pos[i * 3: i * 3 + 3], 'shoulder') for i in range(4)]
+        commands = [self._robot.ik(i, des_pos[i], 'shoulder') for i in range(4)]
         # TODO: COMPLETE NOISY OBSERVATION CONVERSIONS
         return super().step(np.concatenate(commands))
 
@@ -335,7 +333,9 @@ class TGEnv(QuadrupedEnv):
         return super().reset()
 
     def plot(self, des_pos):
-        from burl.utils import plotter
+        from burl.utils import plotTrajectories
+        if not hasattr(self, 'plotter'):
+            self.plotter = plotTrajectories()
         if any(self._stm.cycles == 5):
             cmd, real = [], []
             for i in range(4):
@@ -343,8 +343,7 @@ class TGEnv(QuadrupedEnv):
                 cmd.append((x, z))
                 x, y, z = self._robot.getFootPositionInHipFrame(i)
                 real.append((x, z))
-
-            plotter(cmd, real)
+            self.plotter(cmd, real)
 
     def _initSimulation(self):  # for the stability of the beginning
         for _ in range(500):
@@ -366,7 +365,7 @@ if __name__ == '__main__':
     set_logger_level('DEBUG')
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = False
+    tg = True
     if tg:
         env = TGEnv(AlienGo)
         env.initObservation()

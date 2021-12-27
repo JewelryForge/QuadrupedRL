@@ -106,5 +106,4 @@ class MotorSim(object):
 
 
 if __name__ == '__main__':
-    m = MotorSim()
-    print(m.__class__.__name__)
+    pass

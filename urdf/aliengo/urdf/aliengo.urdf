@@ -49,6 +49,11 @@
       </geometry>
       <material name="red"/>
     </visual>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.008465 0.004045 -0.000763"/>
+      <mass value="0.001"/>
+      <inertia ixx="0.00001" ixy="0.0" ixz="0.0" iyy="0.00001" iyz="0.0" izz="0.00001"/>
+    </inertial>
   </link>
   <joint name="floating_base" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
