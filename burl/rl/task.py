@@ -33,15 +33,16 @@ class BasicTask(RewardRegistry):
 
     def sendOrPrint(self):
         from burl.sim import Quadruped, TGEnv
-        from burl.rl.reward import SmallStridePenalty, BodyHeightReward, RollPitchRatePenalty
+        from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
+                                    FootClearanceReward, HipAnglePenalty)
+
         from burl.utils import udp_pub
         cmd = self.cmd
         env: TGEnv = self.env
         rob: Quadruped = self.robot
 
         def wrap(reward_type):
-            r = reward_type()
-            return lambda: r.__call__(self.cmd, env, rob)
+            return reward_type().__call__(cmd, env, rob)
 
         # for s, b in zip(rob.getFootSlipVelocity(), self.buf):
         #     b.append(s)
@@ -57,7 +58,17 @@ class BasicTask(RewardRegistry):
         # strides = [np.linalg.norm(s) for s in rob.getStrides()]
         # if any(s != 0.0 for s in strides):
         #     print(strides, wrap(SmallStridePenalty)())
-        # data = {'hip_joints': tuple(self.robot.getJointPositions()[(0, 3, 6, 9),])}
+        # if any(clearances := rob.getFootClearances()):
+        #     print(clearances, wrap(FootClearanceReward))
+        # print(wrap(HipAnglePenalty))
+        # print(rob.getJointPositions()[(0,3,6,9),])
+        # data = {'joint_pos': tuple(rob.getJointPositions()),
+        #         'commands': tuple(env.getLastCommand().reshape(-1)),
+        #         'joint_vel': tuple(rob.getJointVelocities()),
+        #         'kp_part': tuple(rob._motor._kp_part),
+        #         'kd_part': tuple(rob._motor._kd_part),
+        #         'torque': tuple(rob.getLastAppliedTorques())
+        #         }
         # udp_pub.send(data)
 
     def reset(self):

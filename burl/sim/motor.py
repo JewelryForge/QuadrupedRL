@@ -56,6 +56,7 @@ class MotorSim(object):
         assert self._mode == MotorMode.POSITION
         self._position_history = collections.deque(maxlen=50)
         self._observe_done = False
+        self._kp_part, self._kd_part = 0., 0.
 
     @property
     def mode(self):
@@ -95,8 +96,7 @@ class MotorSim(object):
     def _set_position(self, des_pos):
         if hasattr(self, '_pos_limits_upper'):
             des_pos = np.clip(des_pos, self._pos_limits_lower, self._pos_limits_upper)
-        # print('Force:', (des_pos - self._pos)[-1], (self._kp * (des_pos - self._pos))[-1], (self._kd * self._vel)[-1],
-        #       (self._kp * (des_pos - self._pos) - self._kd * self._vel)[-1])
+        self._kp_part, self._kd_part = (des_pos - self._pos) * self._kp, self._kd * self._vel
         return self._set_torque(self._kp * (des_pos - self._pos) - self._kd * self._vel)
 
     def _set_torque(self, des_torque):

@@ -107,7 +107,7 @@ class ExteroObservation(object):
         (10.,) * 36, (5., 5., 10.) * 4,  # terrain scan & normal
         (2,) * 12,  # contact states
         (0.01, 0.01, 0.02) * 4,  # contact forces
-        (1.,) * 4, (1.,) * 3  # friction & disturbance
+        (1.,) * 4, (0.1,) * 3  # friction & disturbance
     ))
 
     def __init__(self):

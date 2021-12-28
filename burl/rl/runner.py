@@ -42,7 +42,8 @@ class Accountant:
 
 class OnPolicyRunner:
     def __init__(self):
-        make_robot = make_cls(AlienGo)
+        make_robot = make_cls(A1)
+        # make_robot = make_cls(AlienGo)
         make_task = make_cls(BasicTask)
         # make_task = make_cls(RandomCmdTask)
         make_env = make_cls(TGEnv, make_task=make_task, make_robot=make_robot)

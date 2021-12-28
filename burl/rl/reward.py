@@ -143,7 +143,16 @@ class FootSlipPenalty(Reward):
         return -sum(self.reshape(s) for s in slips)
 
 
-class SmallStridePenalty(Reward):
+class HipAnglePenalty(Reward):
+    def __init__(self, upper=0.3):
+        self.reshape = tanh2_reshape(0., upper)
+
+    def __call__(self, cmd, env, robot):
+        hip_angles = robot.getJointPositions()[(0, 3, 6, 9),]
+        return -sum(self.reshape(a) for a in hip_angles) / 4
+
+
+class TrivialStridePenalty(Reward):
     def __init__(self, lower=-0.2, upper=0.4):
         self.reshape = tanh_reshape(lower, upper)
 
@@ -154,7 +163,12 @@ class SmallStridePenalty(Reward):
 
 
 class FootClearanceReward(Reward):
-    pass
+    def __init__(self, upper=0.08):
+        self.reshape = tanh2_reshape(0., upper)
+
+    def __call__(self, cmd, env, robot):
+        foot_clearances = robot.getFootClearances()
+        return sum(self.reshape(c) for c in foot_clearances)
 
 
 class BodyCollisionPenalty(Reward):
@@ -254,8 +268,8 @@ if __name__ == '__main__':
     # registry.register('RedundantAngularPenalty', 0.2)
     registry.report()
 
-    print(tanh_reverse(0.0, 2.0, -0.62))
-    # print(tanh2_reverse(0.24, 0.32, 0.85))
+    print(tanh_reverse(0.0, 2.0, -0.5))
+    print(tanh_reverse(-0.4, 0.8, 0.9))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
     # x = np.linspace(-0.5, 2.5, 1000)

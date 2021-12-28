@@ -1,3 +1,5 @@
+import os
+import sys
 import time
 from datetime import datetime
 
@@ -30,6 +32,10 @@ def tuple_compact_string(_tuple, precision=1):
 
 
 class make_cls(object):
+    """
+    Predefine some init parameters of a class without creating an object.
+    """
+
     def __init__(self, cls, **properties):
         self.cls, self.properties = cls, properties
 
@@ -40,6 +46,15 @@ class make_cls(object):
 
     def __getattr__(self, item):
         return getattr(self.cls, item)
+
+
+def _make_class(cls, **properties):
+    class TemporaryClass(cls):
+        def __init__(*args, **kwargs):
+            properties.update(kwargs)
+            super().__init__(*args, **properties)
+
+    return TemporaryClass
 
 
 class WithTimer:
@@ -130,6 +145,84 @@ def random_sample(indices, batch_size):
     r = len(indices) % batch_size
     if r:
         yield indices[-r:]
+
+
+def find_log(log_dir='log', time=None, epoch=None):
+    folders = sorted(filter(lambda s: not s.startswith('remote'), os.listdir(log_dir)),
+                     key=str2time, reverse=True)
+    if not time:
+        folder = folders[0]
+    else:
+        for f in folders:
+            if ''.join(f.split('_')[1].split('-')).startswith(str(time)):
+                folder = f
+                break
+        else:
+            raise RuntimeError(f'Record with time {time} not found')
+    folder = os.path.join(log_dir, folder)
+    final_epoch = max(int(m.removeprefix('model_').removesuffix('.pt'))
+                      for m in os.listdir(folder) if m.startswith('model'))
+    if epoch:
+        if epoch > final_epoch:
+            raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
+    else:
+        epoch = final_epoch
+    return os.path.join(folder, f'model_{epoch}.pt')
+
+
+def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-debug/log', time=None, epoch=None):
+    remote_logs = os.popen(f'ssh {host} -p {port} ls {log_dir}').read().split('\n')
+    remote_logs.remove('')
+    folders = sorted(remote_logs, key=str2time, reverse=True)
+    if not time:
+        folder = folders[0]
+    else:
+        for f in folders:
+            if ''.join(f.split('_')[1].split('-')).startswith(str(time)):
+                folder = f
+                break
+        else:
+            raise RuntimeError(f'Record with time {time} not found, all {folders}')
+    models = os.popen(f'ssh {host} -p {port} ls {os.path.join(log_dir, folder)}').read().split('\n')
+    final_epoch = max(int(m.removeprefix('model_').removesuffix('.pt'))
+                      for m in models if m.startswith('model'))
+    if epoch:
+        if epoch > final_epoch:
+            raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
+    else:
+        epoch = final_epoch
+    model_name = f'model_{epoch}.pt'
+    remote_log = os.path.join(log_dir, folder, model_name)
+    local_log_dir = os.path.join('log', 'remote-' + folder)
+    if not os.path.exists(os.path.join(local_log_dir, model_name)):
+        os.makedirs(local_log_dir, exist_ok=True)
+        if os.system(f'scp -P {port} {host}:{remote_log} {local_log_dir}'):
+            raise RuntimeError('scp failed')
+    return os.path.join(local_log_dir, model_name)
+
+
+def parse_args(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    args, kwargs = iter(argv), {}
+    while True:
+        try:
+            name = next(args)
+        except StopIteration:
+            break
+        assert name.startswith('--'), ValueError(f"{name} doesn't start with --")
+        name = name.removeprefix('--')
+        if '=' in name:
+            name, value = name.split('=')
+        else:
+            try:
+                value = next(args)
+                assert not value.startswith('--')
+            except (StopIteration, AssertionError):
+                raise RuntimeError(f"Parameter '{name}' has no corresponding value")
+        name = name.replace('-', '_')
+        kwargs[name] = value
+    return kwargs
 
 
 if __name__ == '__main__':

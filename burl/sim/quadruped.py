@@ -23,14 +23,14 @@ class Quadruped(object):
     A class for observing and controlling a quadruped in pybullet.
 
     For specific robot, the following attribute should be specified according to the urdf file.
-    This class is not responsible for pybullet.stepSimulation, so stepSimulation yourself.
+    This class contains no pybullet.stepSimulation.
     Before a simulation cycle, run updateObservation() to set initial states.
     A general process is: applyCommand -> stepSimulation -> updateObservation.
     Some attribute like position represents some current real states; run methods like getJointHistory for history.
     Method updateObservation automatically saves real states and a noisy version with latency.
     Expect some commonly used attribute like position and orientation,
     it's suggested to use method with prefix 'get' to get observations.
-    A 'get' method will give a real observation, unless there's a 'noisy' option and 'noisy=True' is specified.
+    A 'get' method will give an accurate value, unless there's a 'noisy' option and 'noisy=True' is specified.
     """
 
     INIT_POSITION: tuple
@@ -42,21 +42,19 @@ class Quadruped(object):
     JOINT_SUFFIX: tuple[str]
     URDF_FILE: str
     LINK_LENGTHS: tuple
-    HIP_OFFSETS: tuple
-    STANCE_HEIGHT: float
+    HIP_OFFSETS: tuple[tuple[float]]  # 4 * 3, hip joint coordinates in base frame
+    STANCE_HEIGHT: float  # base height to foot joints when standing
     STANCE_FOOT_POSITIONS: tuple[tuple[float]]
     STANCE_POSTURE: tuple
+    FOOT_RADIUS: float
     TORQUE_LIMITS: tuple
     ROBOT_SIZE: tuple
 
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
-        # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-                                           kp=80, kd=(1.0, 2.0, 2.0) * 4)
-        # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-        #                                    kp=80, kd=(0.5, 1.0, 1.0) * 4)
+                                           kp=g_cfg.kp, kd=g_cfg.kd)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 
@@ -84,8 +82,9 @@ class Quadruped(object):
         self._base_twist_in_base_frame: Twist = None
         self._rpy: Rpy = None
         self._last_torque: np.ndarray = np.zeros(12)
-        self._disturbance: np.ndarray = np.zeros(3)
         self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
+        self._max_foot_heights: np.ndarray = np.zeros(4)
+        self._foot_clearances: np.ndarray = np.zeros(4)
         self._strides = [(0., 0.)] * 4
         self._slips = [(0., 0.)] * 4
         self._observation: ObservationRaw = None
@@ -220,7 +219,7 @@ class Quadruped(object):
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
         self._motor.update_observation()
-        self._updateStridesAndSlipStates()
+        self._updateStepInfos()
         return self._observation, observation_noisy
 
     def ik(self, leg, pos, frame='base'):
@@ -252,11 +251,6 @@ class Quadruped(object):
 
     def fk(self, leg, angles) -> Odometry:
         raise NotImplementedError
-
-    def addDisturbanceOnBase(self, force):
-        self._disturbance = np.asarray(force)
-        self._env.applyExternalForce(self._quadruped, 0, force, self._base_pose.position,
-                                     flags=pybullet.WORLD_FRAME)
 
     def _rotateFromWorld(self, vector_world, reference):
         _, reference_inv = self._env.invertTransform(TP_ZERO3, reference)
@@ -292,26 +286,25 @@ class Quadruped(object):
         foot_forces = [contact_dict.get(f, TP_ZERO3) for f in self._foot_ids]
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
-    def _updateStridesAndSlipStates(self):
-        for i, c in enumerate(self.getFootContactStates()):
-            if c:
-                # if i == 0:
-                #     sts = [self.getObservationHistoryFromIndex(-i).contact_states[3] for i in range(1, 10)]
-                #     f = [np.linalg.norm(self.getObservationHistoryFromIndex(-i).foot_states.forces[0]) for i in
-                #          range(1, 10)]
-                #     print(np.array([sts, f]), sep='\n')
-                foot_position = self.getFootPositionInWorldFrame(i)
+    def _updateStepInfos(self):
+        for i, contact in enumerate(self.getFootContactStates()):
+            foot_pos_world = self.getFootPositionInWorldFrame(i)
+            if contact:
                 if self._last_stance_states[i]:
                     t, pos = self._last_stance_states[i]
                     if self._time - t >= 0.05:
-                        self._strides[i] = (foot_position - pos)[:2]
+                        self._strides[i] = (foot_pos_world - pos)[:2]
                         self._slips[i] = (0., 0.)
-                        # if i == 0:
-                        #     print(self._time, t, self._strides[i], end='\n\n')
+                        self._foot_clearances[i] = self._max_foot_heights[i] - pos[2]
                     else:
-                        self._slips[i] = (foot_position - pos)[:2]
+                        self._slips[i] = (foot_pos_world - pos)[:2]
                         self._strides[i] = (0., 0.)
-                self._last_stance_states[i] = (self._time, foot_position)
+                        self._foot_clearances[i] = 0.
+                self._last_stance_states[i] = (self._time, foot_pos_world)
+            else:
+                self._strides[i] = (0., 0.)
+                self._foot_clearances[i] = 0.
+                self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
 
     def _estimateObservation(self):
         # TODO: ADD NOISE
@@ -446,6 +439,9 @@ class Quadruped(object):
     def getStrides(self):
         return np.array(self._strides)
 
+    def getFootClearances(self):
+        return self._foot_clearances
+
     def getCostOfTransport(self):
         mgv = self._mass * 9.8 * np.linalg.norm(self._base_twist.linear)
         work = sum(filter(lambda i: i > 0, self._last_torque * self.getJointVelocities()))
@@ -464,9 +460,6 @@ class Quadruped(object):
 
     def getLastAppliedTorques(self):
         return self._last_torque
-
-    def getBaseDisturbance(self):
-        return self._disturbance
 
     def getCmdHistoryFromIndex(self, idx):
         len_requirement = -idx if idx < 0 else idx + 1
@@ -560,6 +553,7 @@ class A1(Quadruped):
     HIP_OFFSETS = ((0.183, -0.047, 0.), (0.183, 0.047, 0.),
                    (-0.183, -0.047, 0.), (-0.183, 0.047, 0.))
     STANCE_HEIGHT = 0.3
+    FOOT_RADIUS = 0.02
     STANCE_FOOT_POSITIONS = ((0., 0., -STANCE_HEIGHT),) * 4
     STANCE_POSTURE = (0., 0.723, -1.445) * 4
     TORQUE_LIMITS = ((-33.5,) * 12, (33.5,) * 12)

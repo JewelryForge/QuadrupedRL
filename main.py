@@ -3,28 +3,12 @@ import sys
 sys.path.append('.')
 from burl.rl.runner import OnPolicyRunner
 from burl.rl.task import BasicTask
-from burl.utils import g_cfg, log_warn, init_logger
+from burl.utils import g_cfg, log_warn, init_logger, parse_args
 import wandb
 
 
 def update_cfg_from_args():
-    args = iter(sys.argv[1:])
-    while True:
-        try:
-            name = next(args)
-        except StopIteration:
-            break
-        assert name.startswith('--')
-        name = name.removeprefix('--')
-        if '=' in name:
-            name, value = name.split('=')
-        else:
-            try:
-                value = next(args)
-                assert not value.startswith('--')
-            except (StopIteration, AssertionError):
-                raise RuntimeError(f"Parameter named '{name}' has no corresponding value")
-        name = name.replace('-', '_')
+    for name, value in parse_args().items():
         if not hasattr(g_cfg, name):
             print(f"g_cfg has no attribute named '{name}'")
         setattr(g_cfg, name, value)
