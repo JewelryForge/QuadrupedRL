@@ -1,3 +1,4 @@
+import math
 import time
 from collections import deque
 from itertools import chain
@@ -53,6 +54,7 @@ class QuadrupedEnv(object):
         self._est_Y = None
         self._est_Z = None
         self._est_height = 0.0
+        self._external_force = np.array((0., 0., 0.))
 
     @property
     def client(self):
@@ -71,16 +73,12 @@ class QuadrupedEnv(object):
         return self._task
 
     def initObservation(self):
-        self.updateObservation()
-        # print(self.makeObservation(False).__dict__)
+        self._robot.updateObservation()
         return (self.makeObservation(False).standard(),
                 self.makeObservation(True).standard())
 
     def _initSimulation(self):
         pass
-
-    def updateObservation(self):
-        return self._robot.updateObservation()
 
     def _loadEgl(self):
         import pkgutil
@@ -153,7 +151,7 @@ class QuadrupedEnv(object):
             for idc, pos in zip(self._terrain_indicators, positions):
                 self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
-    def makeObservation(self, if_noisy=False):
+    def makeObservation(self, if_noisy=False) -> ExtendedObservation:
         eo = ExtendedObservation()
         r = self._robot
         eo.command = self._task.cmd
@@ -175,7 +173,7 @@ class QuadrupedEnv(object):
         eo.contact_states = r.getContactStates()[1:]
         eo.foot_contact_forces = r.getFootContactForces()
         eo.foot_friction_coeffs = [self.getTerrainFrictionCoeff(x, y) for x, y in foot_xy]
-        eo.external_disturbance = r.getBaseDisturbance()
+        eo.external_disturbance = self._external_force
         return eo
 
     def _estimateTerrain(self):
@@ -200,9 +198,12 @@ class QuadrupedEnv(object):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
             if update_execution:
                 torques = self._robot.applyCommand(action)
-            self._sim_step_counter += 1
+            if g_cfg.add_disturbance:
+                self._addRandomDisturbanceOnRobot()
             self._env.stepSimulation()
+            self._sim_step_counter += 1
             self._estimateTerrain()
+            # print(np.array([self._robot.getFootPositionInWorldFrame(i)[2] for i in range(4)]) - 0.02)
             rewards.append(self._task.calculateReward())
             for n, r in self._task.getRewardDetails().items():
                 reward_details[n] = reward_details.get(n, 0) + r
@@ -220,7 +221,7 @@ class QuadrupedEnv(object):
         if hasattr(self._terrain, 'difficulty'):
             info['difficulty'] = self._terrain.difficulty
         # log_debug(f'Step time: {time.time() - start}')
-        # print(self.assembleObservation(False).__dict__)
+        # print(self.makeObservation(False).__dict__)
         # print(self.makeObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
         #       self.makeObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
         #       self.makeObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
@@ -229,6 +230,26 @@ class QuadrupedEnv(object):
                 mean_reward,
                 is_failed or time_out,
                 info)
+
+    def _addRandomDisturbanceOnRobot(self):
+        if self._sim_step_counter % g_cfg.disturbance_interval_steps == 0:
+            self._applied_link_id = 0
+            # self._applied_link_id = base_link_ids[np.random.randint(0, len(base_link_ids))]
+            horizontal_force_magnitude = np.random.uniform(*g_cfg.horizontal_force_bounds)
+            theta = np.random.uniform(0, 2 * math.pi)
+            vertical_force_magnitude = np.random.uniform(*g_cfg.vertical_force_bounds)
+            self._external_force = np.array((
+                horizontal_force_magnitude * np.cos(theta),
+                horizontal_force_magnitude * np.sin(theta),
+                vertical_force_magnitude * np.random.choice((-1, 1))
+            ))
+            # print('Apply:', self._external_force)
+
+        self._env.applyExternalForce(objectUniqueId=self._robot.id,
+                                     linkIndex=self._applied_link_id,
+                                     forceObj=self._external_force,
+                                     posObj=(0.0, 0.0, 0.0),
+                                     flags=pybullet.LINK_FRAME)
 
     def reset(self):
         # completely_reset = self._task.curriculumUpdate(self._sim_step_counter)
@@ -267,13 +288,17 @@ class QuadrupedEnv(object):
     def getTerrainScan(self, x, y, yaw):
         return [p[2] for p in self.getAbundantTerrainInfo(x, y, yaw)]
 
-    def getTerrainHeight(self, x, y):
+    def getTerrainHeight(self, x, y) -> float:
         return self._terrain.getHeight(x, y)
 
-    def getSafetyHeightOfRobot(self):
+    def getSafetyHeightOfRobot(self) -> float:
         return self._robot.position[2] - self._est_height
 
-    def getSafetyRpyOfRobot(self):
+    def getSafetyFootHeightsOfRobot(self) -> np.ndarray:
+        foot_pos = [self._robot.getFootPositionInWorldFrame(i) for i in range(4)]
+        return np.array([z - self.getTerrainHeight(x, y) - 0.02 for x, y, z in foot_pos])
+
+    def getSafetyRpyOfRobot(self) -> Rpy:
         X, Y, Z = np.array(self._est_X), np.array(self._est_Y), np.array(self._est_Z)
         # Use terrain points to fit a plane
         A = np.zeros((3, 3))
@@ -289,10 +314,10 @@ class QuadrupedEnv(object):
         # (trn_X, trn_Y, trn_Z) is the transpose of rotation matrix, so there's no need to transpose again
         return Rpy.from_rotation(np.array((trn_X, trn_Y, trn_Z)) @ rot_robot)
 
-    def getTerrainNormal(self, x, y):
+    def getTerrainNormal(self, x, y) -> np.ndarray:
         return self._terrain.getNormal(x, y)
 
-    def getTerrainFrictionCoeff(self, x, y):
+    def getTerrainFrictionCoeff(self, x, y) -> float:
         return 0.0
 
 
@@ -302,7 +327,7 @@ class TGEnv(QuadrupedEnv):
         self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency)
         # self._filter = self._stm.flags
 
-    def makeObservation(self, if_noisy=False):
+    def makeObservation(self, if_noisy=False) -> ExtendedObservation:
         eo: ExtendedObservation = super().makeObservation(if_noisy)
         eo.ftg_frequencies = self._stm.frequency
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
@@ -360,25 +385,27 @@ if __name__ == '__main__':
     g_cfg.on_rack = False
     g_cfg.rendering = True
     g_cfg.trn_type = 'plain'
-    g_cfg.trn_roughness = 0.1
+    g_cfg.add_disturbance = False
+    g_cfg.test_mode = True
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=2, linewidth=1000)
     make_motor = make_cls(MotorSim)
     tg = True
     if tg:
-        env = TGEnv(AlienGo)
+        env = TGEnv(A1)
         env.initObservation()
         for i in range(1, 100000):
             act = Action()
+            # print(np.array(env.getSafetyFootHeightsOfRobot()))
             # env.robot.addDisturbanceOnBase((0, 0, 300))
             env.step(act)
             # time.sleep(0.05)
             # if i % 500 == 0:
             #     env.reset()
     else:
-        env = QuadrupedEnv(AlienGo)
+        env = QuadrupedEnv(A1)
         env.initObservation()
         for i in range(1, 100000):
-            env.robot.addDisturbanceOnBase((0, 0, 100))
             env.step(env.robot.STANCE_POSTURE)
+            print(env.robot.rpy)

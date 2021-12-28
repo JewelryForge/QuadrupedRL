@@ -51,13 +51,15 @@ def elu_reshape(coeff):
 
 
 class LinearVelocityReward(Reward):
-    def __init__(self, lower=0.0, upper=0.8):
-        self.reshape = tanh2_reshape(lower, upper)
+    def __init__(self, lower=-0.4, upper=0.8):
+        self.reshape = tanh_reshape(lower, upper)
+        self.offset = self.reshape(0.0)
+        self.coeff = 1. / (1. - self.offset)
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()
         projected_velocity = np.dot(cmd[:2], linear[:2])
-        return self.reshape(projected_velocity)
+        return (self.reshape(projected_velocity) - self.offset) * self.coeff
 
 
 class EluLinearVelocityReward(Reward):
@@ -152,7 +154,12 @@ class SmallStridePenalty(Reward):
 
 
 class FootClearanceReward(Reward):
-    pass
+    def __init__(self, upper=0.08):
+        self.reshape = tanh2_reshape(0., upper)
+
+    def __call__(self, cmd, env, robot):
+        foot_clearances = env.getSafetyFootHeightsOfRobot()
+        return sum(self.reshape(c) for c in foot_clearances) / 4
 
 
 class BodyCollisionPenalty(Reward):

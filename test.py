@@ -5,7 +5,7 @@ sys.path.append('.')
 import torch
 import os
 
-from burl.sim import A1, TGEnv, EnvContainer
+from burl.sim import AlienGo, A1, TGEnv, EnvContainer
 from burl.utils import make_cls, g_cfg, log_info, set_logger_level, str2time, to_dev, init_logger
 from burl.alg.ac import ActorCritic, Actor, Critic
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
@@ -106,10 +106,11 @@ if __name__ == '__main__':
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.test_mode = True
+    g_cfg.add_disturbance = True
     g_cfg.tg_init = 'symmetric'
     init_logger()
     set_logger_level('debug')
-    remote = True
+    remote = False
     if remote:
         # 2240 5800
         model = find_log_remote(time=2131, epoch=None, log_dir='teacher-student-debug/log')

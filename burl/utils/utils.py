@@ -30,6 +30,10 @@ def tuple_compact_string(_tuple, precision=1):
 
 
 class make_cls(object):
+    """
+    Predefine some init parameters of a class without creating an object.
+    """
+
     def __init__(self, cls, **properties):
         self.cls, self.properties = cls, properties
 
@@ -40,6 +44,15 @@ class make_cls(object):
 
     def __getattr__(self, item):
         return getattr(self.cls, item)
+
+
+def _make_class(cls, **properties):
+    class TemporaryClass(cls):
+        def __init__(*args, **kwargs):
+            properties.update(kwargs)
+            super().__init__(*args, **properties)
+
+    return TemporaryClass
 
 
 class WithTimer:

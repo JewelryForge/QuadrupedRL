@@ -23,14 +23,14 @@ class Quadruped(object):
     A class for observing and controlling a quadruped in pybullet.
 
     For specific robot, the following attribute should be specified according to the urdf file.
-    This class is not responsible for pybullet.stepSimulation, so stepSimulation yourself.
+    This class contains no pybullet.stepSimulation.
     Before a simulation cycle, run updateObservation() to set initial states.
     A general process is: applyCommand -> stepSimulation -> updateObservation.
     Some attribute like position represents some current real states; run methods like getJointHistory for history.
     Method updateObservation automatically saves real states and a noisy version with latency.
     Expect some commonly used attribute like position and orientation,
     it's suggested to use method with prefix 'get' to get observations.
-    A 'get' method will give a real observation, unless there's a 'noisy' option and 'noisy=True' is specified.
+    A 'get' method will give an accurate value, unless there's a 'noisy' option and 'noisy=True' is specified.
     """
 
     INIT_POSITION: tuple
@@ -52,11 +52,8 @@ class Quadruped(object):
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
-        # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency)
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-                                           kp=80, kd=(1.0, 2.0, 2.0) * 4)
-        # self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-        #                                    kp=80, kd=(0.5, 1.0, 1.0) * 4)
+                                           kp=g_cfg.kp, kd=g_cfg.kd)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 
@@ -84,7 +81,6 @@ class Quadruped(object):
         self._base_twist_in_base_frame: Twist = None
         self._rpy: Rpy = None
         self._last_torque: np.ndarray = np.zeros(12)
-        self._disturbance: np.ndarray = np.zeros(3)
         self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
         self._strides = [(0., 0.)] * 4
         self._slips = [(0., 0.)] * 4
@@ -252,11 +248,6 @@ class Quadruped(object):
 
     def fk(self, leg, angles) -> Odometry:
         raise NotImplementedError
-
-    def addDisturbanceOnBase(self, force):
-        self._disturbance = np.asarray(force)
-        self._env.applyExternalForce(self._quadruped, 0, force, self._base_pose.position,
-                                     flags=pybullet.WORLD_FRAME)
 
     def _rotateFromWorld(self, vector_world, reference):
         _, reference_inv = self._env.invertTransform(TP_ZERO3, reference)
@@ -464,9 +455,6 @@ class Quadruped(object):
 
     def getLastAppliedTorques(self):
         return self._last_torque
-
-    def getBaseDisturbance(self):
-        return self._disturbance
 
     def getCmdHistoryFromIndex(self, idx):
         len_requirement = -idx if idx < 0 else idx + 1

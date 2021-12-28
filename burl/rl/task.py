@@ -33,15 +33,14 @@ class BasicTask(RewardRegistry):
 
     def sendOrPrint(self):
         from burl.sim import Quadruped, TGEnv
-        from burl.rl.reward import SmallStridePenalty, BodyHeightReward, RollPitchRatePenalty
+        from burl.rl.reward import SmallStridePenalty, BodyHeightReward, RollPitchRatePenalty, FootClearanceReward
         from burl.utils import udp_pub
         cmd = self.cmd
         env: TGEnv = self.env
         rob: Quadruped = self.robot
 
         def wrap(reward_type):
-            r = reward_type()
-            return lambda: r.__call__(self.cmd, env, rob)
+            return reward_type().__call__(cmd, env, rob)
 
         # for s, b in zip(rob.getFootSlipVelocity(), self.buf):
         #     b.append(s)
@@ -56,7 +55,9 @@ class BasicTask(RewardRegistry):
         # print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward)())
         # strides = [np.linalg.norm(s) for s in rob.getStrides()]
         # if any(s != 0.0 for s in strides):
+        # if strides[0]:
         #     print(strides, wrap(SmallStridePenalty)())
+        print(wrap(FootClearanceReward))
         # data = {'hip_joints': tuple(self.robot.getJointPositions()[(0, 3, 6, 9),])}
         # udp_pub.send(data)
 

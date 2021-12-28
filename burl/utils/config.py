@@ -10,6 +10,7 @@ class Options(object):
         self.on_rack = False
         self.test_mode = False
         self.use_wandb = True
+        self.add_disturbance = True
         self.trn_type = 'plain'
 
 
@@ -23,6 +24,8 @@ class PhysicsParam(object):
         self.foot_restitution = 0.3
         self.joint_angle_range = 1.0
         self.safe_height_range = (0.25, 0.6)
+        self.kp = 80
+        self.kd = (1.0, 2.0, 2.0) * 4
 
 
 class SimParam(PhysicsParam):
@@ -87,14 +90,14 @@ class RuntimeParam(object):
         self.validation = False
         self.rewards_weights = (
             # (EluLinearVelocityReward(), 0.1),
-            ('LinearVelocityReward', 0.1),
-            ('YawRateReward', 0.08),
+            ('LinearVelocityReward', 0.06),
+            ('YawRateReward', 0.06),
             ('BodyHeightReward', 0.03),
             ('RedundantLinearPenalty', 0.04),
             ('RollPitchRatePenalty', 0.04),
             ('BodyPosturePenalty', 0.04),
             ('FootSlipPenalty', 0.04),
-            ('SmallStridePenalty', 0.08),
+            ('SmallStridePenalty', 0.06),
             # (TargetMutationPenalty(), 0.02),
             ('BodyCollisionPenalty', 0.04),
             ('CostOfTransportReward', 0.04)
@@ -120,7 +123,14 @@ class TerrainCurriculumParam(object):
         self.distance_threshold = (2.5, 5.0)
 
 
-class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam,
+class DisturbanceParam(object):
+    def __init__(self):
+        self.disturbance_interval_steps = 400
+        self.horizontal_force_bounds = (0, 20)
+        self.vertical_force_bounds = (0, 20)
+
+
+class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, DisturbanceParam,
                 TerrainParam, TerrainCurriculumParam, RuntimeParam):
     def __init__(self):
         Options.__init__(self)
@@ -128,6 +138,7 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam,
         RenderParam.__init__(self)
         TrainParam.__init__(self)
         PPOParam.__init__(self)
+        DisturbanceParam.__init__(self)
         TerrainParam.__init__(self)
         TerrainCurriculumParam.__init__(self)
         RuntimeParam.__init__(self)
