@@ -4,17 +4,16 @@ sys.path.append('.')
 
 import torch
 
-from burl.sim import A1, TGEnv, EnvContainer
+from burl.sim import A1, AlienGo, TGEnv, EnvContainer
 from burl.utils import make_cls, g_cfg, log_info, set_logger_level, to_dev, init_logger, find_log, find_log_remote
 from burl.alg.ac import ActorCritic, Actor, Critic
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 
 
 class Player:
-    def __init__(self, model_dir):
+    def __init__(self, model_dir, make_robot=A1):
         g_cfg.rendering = True
         g_cfg.sleeping_enabled = True
-        make_robot = A1
         make_env = make_cls(TGEnv, make_robot=make_robot)
 
         self.env = EnvContainer(make_env, 1)
@@ -42,7 +41,7 @@ class Player:
 
 
 def main(model_dir):
-    player = Player(model_dir)
+    player = Player(model_dir, A1)
     player.play()
 
 
@@ -59,7 +58,7 @@ if __name__ == '__main__':
     remote = False
     if remote:
         # 2240 5800
-        model = find_log_remote(time=2231, epoch=None, log_dir='teacher-student-aliengo/log')
+        model = find_log_remote(time=None, epoch=None, log_dir='teacher-student/log')
         # model = find_log_remote(time=2240, epoch=4800, log_dir='python_ws/ts-dev/log',
         #                         host='jewelry@10.192.119.171', port=22)
         # model = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',

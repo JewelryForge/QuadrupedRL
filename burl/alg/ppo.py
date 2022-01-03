@@ -145,7 +145,7 @@ class PPO(object):
                                            weight_decay=1e-2)
         if g_cfg.schedule == 'linearLR':
             self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
-                                                               total_iters=2000)
+                                                               total_iters=5000)
         self.transition = RolloutStorage.Transition()
         self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (ExtendedObservation.dim,),
                                       (ExtendedObservation.dim,), (Action.dim,))

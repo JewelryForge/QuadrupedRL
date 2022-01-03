@@ -11,11 +11,9 @@ def plotTrajectories(axis_range=(-0.3, 0.3, -0.4, -0.1)):
     for ax in axes:
         ax.axis(axis_range)
 
-    def plotOnce(dots_r, dots_b):
-        for ax, dot_r, dot_b in zip(axes, dots_r, dots_b):
-            ax.scatter(*dot_r, 10, c='r')
-            ax.scatter(*dot_b, 10, c='b')
-            plt.pause(1e-10)
+    def plotOnce(subgraph_id, dot, color):
+        axes[subgraph_id].scatter(*dot, 10, c=color)
+        plt.pause(1e-10)
 
     return plotOnce
 

@@ -25,7 +25,7 @@ class Terrain(object):
     def getNormal(self, x, y):
         raise NotImplementedError
 
-    def getMaxHeightInRange(self, x_range, y_range):
+    def getPeakInRegion(self, x_range, y_range):
         raise NotImplementedError
 
 
@@ -41,7 +41,7 @@ class PlainTerrain(Terrain):
     def getNormal(self, x, y):
         return np.array((0, 0, 1))
 
-    def getMaxHeightInRange(self, x_range, y_range):
+    def getPeakInRegion(self, x_range, y_range):
         return 0.0, 0.0, 0.0
 
 
@@ -102,7 +102,7 @@ class HeightFieldTerrain(Terrain):
         v3 = x_rnd + self.x_rsl, y_rnd, self.height_field[y_idx, x_idx + 1]
         return np.array(v1), np.array(v2), np.array(v3)
 
-    def getMaxHeightInRange(self, x_range, y_range):
+    def getPeakInRegion(self, x_range, y_range):
         (x_lower, x_upper), (y_lower, y_upper) = x_range, y_range
         x_lower_idx, x_upper_idx = self.xCoord2Idx(x_lower), self.xCoord2Idx(x_upper) + 1
         y_lower_idx, y_upper_idx = self.yCoord2Idx(y_lower), self.yCoord2Idx(y_upper) + 1
@@ -242,7 +242,7 @@ if __name__ == '__main__':
             pybullet.createMultiBody(baseVisualShapeIndex=cylinder_shape,
                                      basePosition=(x, y, h),
                                      baseOrientation=(Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T)))
-    cor = t.getMaxHeightInRange((-0.5, 0.5), (-0.5, 0.5))
+    cor = t.getPeakInRegion((-0.5, 0.5), (-0.5, 0.5))
     pybullet.createMultiBody(baseVisualShapeIndex=box_shape,
                              basePosition=cor, baseOrientation=(0, 0, 0, 1))
     for _ in range(100000):

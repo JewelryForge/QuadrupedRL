@@ -2,78 +2,7 @@ import random
 
 import numpy as np
 
-from burl.utils import normalize, g_cfg
-
-
-class LocomotionStateMachine(object):
-    INIT_ANGLES = (0.0, -np.pi, -np.pi, 0.0)
-
-    def __init__(self, time_step, **kwargs):
-        # We set the base frequency f0 to zero when the zero command is given for 0.5s,
-        # which stops FTGs, and the robot stands still on the terrain.
-        # f0 is set to 1.25 Hz when the direction command is given
-        # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
-        # The state machine is included in the training environment.
-        self._time_step = time_step
-        self._init_phases()
-        self._frequency = np.ones(4) * self.base_frequency
-        self._lower_frequency = kwargs.get('lower_frequency', 0.5)
-        self._upper_frequency = kwargs.get('upper_frequency', 3.0)
-        # self._tg = designed_tg()
-        self._tg = end_trajectory_generator()
-        self._cycles = np.zeros(4)
-
-    @staticmethod
-    def symmetric(phases):
-        fr, fl, rr, rl = phases
-        return fl, fr, rl, rr
-
-    def _init_phases(self):
-        if g_cfg.tg_init == 'fixed':
-            self._phases = np.array(self.INIT_ANGLES)
-        elif g_cfg.tg_init == 'symmetric':
-            self._phases = np.array(random.choice((self.INIT_ANGLES, self.symmetric(self.INIT_ANGLES))))
-        elif g_cfg.tg_init == 'random':
-            self._phases = normalize(np.random.random(4) * 2 * np.pi)
-        else:
-            raise RuntimeError(f'Unknown TG Init Mode {g_cfg.tg_init}')
-
-    @property
-    def base_frequency(self):
-        return 2.0  # TODO: COMPLETE THE STATE MACHINE
-
-    @property
-    def phases(self):
-        return self._phases
-
-    @property
-    def frequency(self):
-        return self._frequency
-
-    @property
-    def cycles(self):
-        return self._cycles
-
-    def reset(self):
-        self._init_phases()
-        self._frequency = np.ones(4) * self.base_frequency
-        self._cycles = np.zeros(4)
-
-    def update(self, frequency_offsets):
-        frequency_offsets = np.asarray(frequency_offsets)
-        self._frequency = self.base_frequency + frequency_offsets
-        self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
-        _phases = self._phases.copy()
-        self._phases += self._frequency * self._time_step * 2 * np.pi
-        flags = np.logical_and(normalize(_phases - self.INIT_ANGLES) < 0,
-                               normalize(self._phases - self.INIT_ANGLES) >= 0)
-        self._cycles[flags.nonzero(),] += 1
-        self._phases = normalize(self._phases)
-        return self._phases
-
-    def get_priori_trajectory(self):
-        # k: [-2, 2)
-        return np.array([(0., 0., self._tg(phi / np.pi * 2)) for phi in self._phases])
+from burl.utils import ang_norm, g_cfg
 
 
 def joint_trajectory_generator():
@@ -87,20 +16,35 @@ def power(x, exp):
         _x *= x
 
 
-def end_trajectory_generator(h=0.08):  # 0.2 in paper
+def vertical_tg(h=0.08):  # 0.2 in paper
     coeff1 = np.array((0., 0., 3., -2.)) * h
     coeff2 = np.array((-4., 12., -9., 2.)) * h
 
     def _tg(k):
-        if k < 0:
-            return 0.0
-            # return -_tg(-k) * 0.2
+        if k <= 0 or k >= 2:
+            return np.zeros(3)
         k_pow = list(power(k, 3))
         if 0 < k <= 1:
-            return coeff1 @ k_pow
+            return np.array((0., 0., coeff1 @ k_pow))
         if 1 < k < 2:
-            return coeff2 @ k_pow
-        return 0
+            return np.array((0., 0., coeff2 @ k_pow))
+
+    return _tg
+
+
+def vertical_and_lateral_tg(h=0.12, coeff=0.2):
+    coeff1 = np.array((0., 0., 3., -2.)) * h
+    coeff2 = np.array((-4., 12., -9., 2.)) * h
+
+    def _tg(k):
+        if k <= 0 or k >= 2:
+            return -_tg(-k) * 0.2
+        k_pow = list(power(k, 3))
+        if 0 < k <= 1:
+            z = coeff1 @ k_pow
+        if 1 < k < 2:
+            z = coeff2 @ k_pow
+        return np.array(z * coeff, 0., z)
 
     return _tg
 
@@ -143,6 +87,76 @@ def designed_tg(c=0.3, h=0.1):
         return _poly5th(k, coeffs[min(num_sections - 1, int(k + 2))])
 
     return _tg
+
+
+class LocomotionStateMachine(object):
+    INIT_ANGLES = (0.0, -np.pi, -np.pi, 0.0)
+
+    def __init__(self, time_step, make_tg=vertical_tg, lower_frequency=0.5, upper_frequency=3.0):
+        # We set the base frequency f0 to zero when the zero command is given for 0.5s,
+        # which stops FTGs, and the robot stands still on the terrain.
+        # f0 is set to 1.25 Hz when the direction command is given
+        # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
+        # The state machine is included in the training environment.
+        self._time_step = time_step
+        self._init_phases()
+        self._frequency = np.ones(4) * self.base_frequency
+        self._lower_frequency, self._upper_frequency = lower_frequency, upper_frequency
+        # self._tg = designed_tg()
+        self._tg = make_tg()
+        self._cycles = np.zeros(4)
+
+    @staticmethod
+    def symmetric(phases):
+        fr, fl, rr, rl = phases
+        return fl, fr, rl, rr
+
+    def _init_phases(self):
+        if g_cfg.tg_init == 'fixed':
+            self._phases = np.array(self.INIT_ANGLES)
+        elif g_cfg.tg_init == 'symmetric':
+            self._phases = np.array(random.choice((self.INIT_ANGLES, self.symmetric(self.INIT_ANGLES))))
+        elif g_cfg.tg_init == 'random':
+            self._phases = ang_norm(np.random.random(4) * 2 * np.pi)
+        else:
+            raise RuntimeError(f'Unknown TG Init Mode {g_cfg.tg_init}')
+
+    @property
+    def base_frequency(self):
+        return 2.0  # TODO: COMPLETE THE STATE MACHINE
+
+    @property
+    def phases(self):
+        return self._phases
+
+    @property
+    def frequency(self):
+        return self._frequency
+
+    @property
+    def cycles(self):
+        return self._cycles
+
+    def reset(self):
+        self._init_phases()
+        self._frequency = np.ones(4) * self.base_frequency
+        self._cycles = np.zeros(4)
+
+    def update(self, frequency_offsets):
+        frequency_offsets = np.asarray(frequency_offsets)
+        self._frequency = self.base_frequency + frequency_offsets
+        self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
+        _phases = self._phases.copy()
+        self._phases += self._frequency * self._time_step * 2 * np.pi
+        flags = np.logical_and(ang_norm(_phases - self.INIT_ANGLES) < 0,
+                               ang_norm(self._phases - self.INIT_ANGLES) >= 0)
+        self._cycles[flags.nonzero(),] += 1
+        self._phases = ang_norm(self._phases)
+        return self._phases
+
+    def get_priori_trajectory(self):
+        # k: [-2, 2)
+        return np.array([self._tg(phi / np.pi * 2) for phi in self._phases])
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import time
@@ -9,7 +10,7 @@ M_PI = np.pi
 M_2_PI = 2 * M_PI
 
 
-def normalize(x):  # [-pi, pi)
+def ang_norm(x):  # [-pi, pi)
     return x - ((x + M_PI) // M_2_PI) * M_2_PI
 
 
@@ -17,13 +18,24 @@ def unit(x) -> np.ndarray:
     return np.asarray(x) / np.linalg.norm(x)
 
 
-def vec_cross(X1, X2):
+def included_angle(vec1, vec2) -> float:
+    return math.acos(np.dot(unit(vec1), unit(vec2)))
+
+
+def sign(x: float) -> int:
+    return 1 if x > 0 else -1 if x < 0 else 0
+
+
+def vec_cross(vec3_1, vec3_2) -> np.ndarray:
     """
     A much faster alternative for np.cross.
     """
-    x1, y1, z1 = X1
-    x2, y2, z2 = X2
+    (x1, y1, z1), (x2, y2, z2) = vec3_1, vec3_2
     return np.array((y1 * z2 - y2 * z1, z1 * x2 - z2 * x1, x1 * y2 - x2 * y1))
+
+
+def truncate(value, lower, upper):
+    return upper if value > upper else lower if value < lower else value
 
 
 def tuple_compact_string(_tuple, precision=1):
@@ -55,6 +67,14 @@ def _make_class(cls, **properties):
             super().__init__(*args, **properties)
 
     return TemporaryClass
+
+
+def get_const_variables(cls):
+    var = {}
+    for key, item in cls.__dict__:
+        if key.isupper():
+            var[key] = item
+    return var
 
 
 class WithTimer:
@@ -134,7 +154,7 @@ def str2time(time_str):
     try:
         return datetime.strptime(time_str, '%b%d_%H-%M-%S')
     except ValueError:
-        return datetime(2000, 1, 1)
+        return datetime(1900, 1, 1)
 
 
 def random_sample(indices, batch_size):
@@ -148,14 +168,12 @@ def random_sample(indices, batch_size):
 
 
 def find_log(log_dir='log', time=None, epoch=None):
-    folders = sorted(filter(lambda s: not s.startswith('remote'), os.listdir(log_dir)),
-                     key=str2time, reverse=True)
+    folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
     if not time:
         folder = folders[0]
     else:
-        for f in folders:
-            if ''.join(f.split('_')[1].split('-')).startswith(str(time)):
-                folder = f
+        for folder in folders:
+            if ''.join(folder.split('_')[1].split('-')).startswith(str(time)):
                 break
         else:
             raise RuntimeError(f'Record with time {time} not found')
@@ -177,9 +195,8 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-de
     if not time:
         folder = folders[0]
     else:
-        for f in folders:
-            if ''.join(f.split('_')[1].split('-')).startswith(str(time)):
-                folder = f
+        for folder in folders:
+            if ''.join(folder.split('_')[1].split('-')).startswith(str(time)):
                 break
         else:
             raise RuntimeError(f'Record with time {time} not found, all {folders}')
@@ -226,4 +243,4 @@ def parse_args(argv=None):
 
 
 if __name__ == '__main__':
-    print(normalize(np.array((0.0, 1.0, 1.0, 0.0)) * np.pi))
+    print(truncate(-0.6, -1, 1))

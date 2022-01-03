@@ -79,15 +79,13 @@ class BasicTask(RewardRegistry):
     #     return self._terrain.register(episode_len, distance)
 
     def isFailed(self):  # TODO: CHANGE TIME_OUT TO NORMALLY FINISH
-        rob, env = self.robot, self._env
-        r, _, _ = rob.rpy
-        safety_h = env.getSafetyHeightOfRobot()
-        h_lb, h_ub = g_cfg.safe_height_range
-        if ((safety_h < h_lb or safety_h > h_ub) or
-                (r < -np.pi / 3 or r > np.pi / 3) or
-                rob.getBaseContactState()):
+        r, _, _ = self._robot.rpy
+        safety_h = self._env.getSafetyHeightOfRobot()
+        h_lb, h_ub = self._robot.STANCE_HEIGHT * 0.5, self._robot.STANCE_HEIGHT * 1.5
+        if (safety_h < h_lb or safety_h > h_ub or r < -np.pi / 3 or r > np.pi / 3 or
+                self._robot.getBaseContactState()):
             return True
-        joint_diff = rob.getJointPositions() - rob.STANCE_POSTURE
+        joint_diff = self._robot.getJointPositions() - self._robot.STANCE_POSTURE
         if any(joint_diff > g_cfg.joint_angle_range) or any(joint_diff < -g_cfg.joint_angle_range):
             return True
         return False

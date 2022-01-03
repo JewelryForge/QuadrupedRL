@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os.path
 from collections import deque
 from typing import Deque
@@ -11,8 +12,9 @@ from pybullet_utils import bullet_client
 
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
-from burl.utils import normalize, unit, JointInfo, make_cls, g_cfg, DynamicsInfo
+from burl.utils import ang_norm, unit, JointInfo, make_cls, g_cfg, DynamicsInfo, vec_cross
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity
+from burl.utils.utils import sign, truncate, included_angle
 
 TP_ZERO3 = (0., 0., 0.)
 TP_Q0 = (0., 0., 0., 1.)
@@ -49,12 +51,19 @@ class Quadruped(object):
     FOOT_RADIUS: float
     TORQUE_LIMITS: tuple
     ROBOT_SIZE: tuple
+    P_PARAMS: float | tuple
+    D_PARAMS: float | tuple
+
+    WORLD_FRAME = -1
+    BASE_FRAME = 0
+    HIP_FRAME = 1
+    SHOULDER_FRAME = 2
 
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-                                           kp=g_cfg.kp, kd=g_cfg.kd)
+                                           kp=self.P_PARAMS, kd=self.D_PARAMS)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 
@@ -222,32 +231,35 @@ class Quadruped(object):
         self._updateStepInfos()
         return self._observation, observation_noisy
 
-    def ik(self, leg, pos, frame='base'):
+    def ik(self, leg, pos, frame=BASE_FRAME):
         """
         Calculate the inverse kinematic of certain leg by calling pybullet.calculateInverseKinematics.
         :param leg: The number of leg, ranging from [0, 4).
         :param pos: Desired end-effect position in specified frame.
-        :param frame: The frame where position expressed in. Default 'base'; 'hip' and 'shoulder' supported.
+        :param frame: The frame where position expressed in. Default BASE_FRAME; HIP_FRAME and SHOULDER_FRAME supported.
         :return: Joint angles of corresponding leg.
         """
         pos = np.asarray(pos)
-        if frame == 'base':
+        if frame == Quadruped.BASE_FRAME:
             pass
-        elif frame == 'hip':
+        elif frame == Quadruped.HIP_FRAME:
             pos += self.HIP_OFFSETS[leg]
-        elif frame == 'shoulder':
-            shoulder_length = self.LINK_LENGTHS[0]
+        elif frame == Quadruped.SHOULDER_FRAME:
+            shoulder_len = self.LINK_LENGTHS[0]
             if self.LEG_NAMES[leg].endswith('R'):
-                shoulder_length *= -1
-            pos = pos + self.HIP_OFFSETS[leg] + (0, shoulder_length, 0)
+                shoulder_len *= -1
+            pos = pos + self.HIP_OFFSETS[leg] + (0, shoulder_len, 0)
         else:
-            raise RuntimeError(f'Unknown Frame named {frame}')
+            raise RuntimeError(f'Unknown Frame {frame}')
 
         pos_world, _ = self._env.multiplyTransforms(self.position, self.orientation, pos, TP_Q0)
         all_joint_angles = self._env.calculateInverseKinematics(
             self._quadruped, self._foot_ids[leg], pos_world, solver=0)
 
         return np.array(all_joint_angles[leg * 3: leg * 3 + 3])
+
+    def ik_analytic(self, leg, pos, frame=BASE_FRAME):
+        raise NotImplementedError
 
     def fk(self, leg, angles) -> Odometry:
         raise NotImplementedError
@@ -558,47 +570,50 @@ class A1(Quadruped):
     STANCE_POSTURE = (0., 0.723, -1.445) * 4
     TORQUE_LIMITS = ((-33.5,) * 12, (33.5,) * 12)
     ROBOT_SIZE = ((-0.3, 0.3), (-0.1, 0.1))
+    P_PARAMS = 80.
+    D_PARAMS = (1., 2., 2.) * 4
 
-    def ik_absolute(self, leg: int | str, pos, frame='base'):
+    def ik_analytic(self, leg: int | str, pos, frame=Quadruped.BASE_FRAME):
         """
-        Calculate the accurate inverse dynamics by the geometry. May fail if a solution doesn't exist.
+        Calculate inverse dynamics analytically.
         """
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
-        shoulder_length, thigh_length, shank_length = self.LINK_LENGTHS
+        shoulder_len, thigh_len, shank_len = self.LINK_LENGTHS
         if self.LEG_NAMES[leg].endswith('R'):
-            shoulder_length *= -1
+            shoulder_len *= -1
 
         def _ik_hip_frame(_pos):
             dx, dy, dz = _pos
             distance = np.linalg.norm(_pos)
-            hip_angle_bias = np.arctan2(dy, dz)
-            _sum = np.arcsin(distance * shoulder_length / np.hypot(dy, dz) / distance)
-            opt1, opt2 = normalize(_sum - hip_angle_bias), normalize(np.pi - _sum - hip_angle_bias)
-            hip_angle = opt1 if abs(opt1) < abs(opt2) else opt2
-            shoulder_vector = np.array((0, np.cos(hip_angle), np.sin(hip_angle))) * shoulder_length
+            hip_angle_bias = math.atan2(dy, dz)
+            _sin = distance * shoulder_len / math.hypot(dy, dz) / distance
+            _sum = math.asin(truncate(_sin, -1., 1.))
+            hip_angle = min(ang_norm(_sum - hip_angle_bias), ang_norm(np.pi - _sum - hip_angle_bias), key=abs)
+            shoulder_vector = np.array((0, math.cos(hip_angle), math.sin(hip_angle))) * shoulder_len
             foot_position_shoulder = _pos - shoulder_vector
-            foot_distance_shoulder = np.linalg.norm(foot_position_shoulder)
-            thigh_length_2, shank_length_2, foot_distance_shoulder_2 = \
-                thigh_length ** 2, shank_length ** 2, foot_distance_shoulder ** 2
-            angle_shank = np.arccos((thigh_length_2 + shank_length_2 - foot_distance_shoulder_2)
-                                    / (2 * thigh_length * shank_length)) - np.pi
-            angle_thigh = np.arccos((thigh_length_2 + foot_distance_shoulder_2 - shank_length_2)
-                                    / (2 * thigh_length * foot_distance_shoulder))
-            normal = np.cross(shoulder_vector, np.cross((0, 0, -1), shoulder_vector))
-            angle_thigh -= np.arccos(np.dot(unit(normal), unit(foot_position_shoulder))) * np.sign(dx)
-            return hip_angle, normalize(angle_thigh), normalize(angle_shank)
+            dist_foot_shoulder = np.linalg.norm(foot_position_shoulder)
+            thigh_len_2, shank_len_2, dist_foot_shoulder_2 = \
+                thigh_len ** 2, shank_len ** 2, dist_foot_shoulder ** 2
+            _cos = (thigh_len_2 + shank_len_2 - dist_foot_shoulder_2) / (2 * thigh_len * shank_len)
+            angle_shank = math.acos(truncate(_cos, -1., 1.)) - np.pi
+
+            _cos = (thigh_len_2 + dist_foot_shoulder_2 - shank_len_2) / (2 * thigh_len * dist_foot_shoulder)
+            angle_thigh = math.acos(truncate(_cos, -1., 1.))
+            normal = vec_cross(shoulder_vector, vec_cross((0, 0, -1), shoulder_vector))
+            angle_thigh -= included_angle(normal, foot_position_shoulder) * sign(dx)
+            return hip_angle, ang_norm(angle_thigh), ang_norm(angle_shank)
 
         pos = np.asarray(pos)
-        if frame == 'world':  # FIXME: COORDINATE TRANSFORMATION SEEMS TO BE WRONG
+        if frame == Quadruped.WORLD_FRAME:  # FIXME: COORDINATE TRANSFORMATION SEEMS TO BE WRONG
             return _ik_hip_frame(self._rotateFromWorldToBase(pos) - self.HIP_OFFSETS[leg])
-        if frame == 'base':
+        if frame == Quadruped.BASE_FRAME:
             return _ik_hip_frame(pos - self.HIP_OFFSETS[leg])
-        if frame == 'hip':
+        if frame == Quadruped.HIP_FRAME:
             return _ik_hip_frame(pos)
-        if frame == 'shoulder':
-            return _ik_hip_frame(pos + (0, shoulder_length, 0))
-        raise RuntimeError(f'Unknown Frame named {frame}')
+        if frame == Quadruped.SHOULDER_FRAME:
+            return _ik_hip_frame(pos + (0, shoulder_len, 0))
+        raise RuntimeError(f'Unknown Frame {frame}')
 
     def fk(self, leg: int, angles) -> Odometry:
         def _mdh_matrix(alpha, a, d, theta):
@@ -612,18 +627,18 @@ class A1(Quadruped):
         if self.LEG_NAMES[leg].endswith('L'):
             shoulder_length *= -1
         a1, a2, a3 = angles
-        transformation = Odometry(((0, 0, 1),
-                                   (-1, 0, 0),
-                                   (0, -1, 0)),
-                                  self.HIP_OFFSETS[leg]) @ \
-                         _mdh_matrix(0, 0, 0, a1) @ \
-                         _mdh_matrix(0, shoulder_length, 0, np.pi / 2) @ \
-                         _mdh_matrix(-np.pi / 2, 0, 0, a2) @ \
-                         _mdh_matrix(0, thigh_length, 0, a3) @ \
-                         _mdh_matrix(0, shank_length, 0, 0) @ \
-                         Odometry(((0, 0, -1),
-                                   (-1, 0, 0),
-                                   (0, 1, 0)))
+        transformation = (Odometry(((0, 0, 1),
+                                    (-1, 0, 0),
+                                    (0, -1, 0)),
+                                   self.HIP_OFFSETS[leg]) @
+                          _mdh_matrix(0, 0, 0, a1) @
+                          _mdh_matrix(0, shoulder_length, 0, np.pi / 2) @
+                          _mdh_matrix(-np.pi / 2, 0, 0, a2) @
+                          _mdh_matrix(0, thigh_length, 0, a3) @
+                          _mdh_matrix(0, shank_length, 0, 0) @
+                          Odometry(((0, 0, -1),
+                                    (-1, 0, 0),
+                                    (0, 1, 0))))
         return transformation
 
     def _getContactStates(self):
@@ -658,12 +673,12 @@ class AlienGo(A1):
     HIP_OFFSETS = ((0.2399, -0.051, 0.), (0.2399, 0.051, 0.),
                    (-0.2399, -0.051, 0), (-0.2399, 0.051, 0.))
     STANCE_HEIGHT = 0.4
-    STANCE_FOOT_POSITIONS = ((0., -0.03952, -0.38972), (0., 0.03952, -0.38972),
-                             (-0.00764, -0.03974, -0.39187), (-0.00764, 0.03974, -0.39187))
-    STANCE_POSTURE = (-0.1, 0.6435, -1.287, 0.1, 0.6435, -1.287,
-                      -0.1, 0.655, -1.272, 0.1, 0.655, -1.272)
+    STANCE_FOOT_POSITIONS = ((0., 0., -0.4),) * 4
+    STANCE_POSTURE = (0., 0.6435, -1.287) * 4
     TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)
     ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
+    P_PARAMS = 160.
+    D_PARAMS = (2., 4., 4.) * 4
 
 
 if __name__ == '__main__':
@@ -681,12 +696,12 @@ if __name__ == '__main__':
     # robot = p.loadURDF(A1.URDF_FILE, A1.INIT_POSITION, A1.INIT_ORIENTATION)
     # q.reset(reload=True)
     q.analyseJointInfos()
-    q.analyseDynamicsInfos()
     p.setGravity(0, 0, -9.8)
-    print(q.fk(0, q.STANCE_POSTURE[:3]).translation - q.HIP_OFFSETS[0] + (0., q.LINK_LENGTHS[0], 0.))
-    print(q.fk(1, q.STANCE_POSTURE[3:6]).translation - q.HIP_OFFSETS[1] + (0., -q.LINK_LENGTHS[0], 0.))
-    print(q.fk(2, q.STANCE_POSTURE[6:9]).translation - q.HIP_OFFSETS[2] + (0., q.LINK_LENGTHS[0], 0.))
-    print(q.fk(3, q.STANCE_POSTURE[9:12]).translation - q.HIP_OFFSETS[3] + (0., -q.LINK_LENGTHS[0], 0.))
+    # print(q.fk(0, q.STANCE_POSTURE[:3]).translation - q.HIP_OFFSETS[0] + (0., q.LINK_LENGTHS[0], 0.))
+    # print(q.fk(1, q.STANCE_POSTURE[3:6]).translation - q.HIP_OFFSETS[1] + (0., -q.LINK_LENGTHS[0], 0.))
+    # print(q.fk(2, q.STANCE_POSTURE[6:9]).translation - q.HIP_OFFSETS[2] + (0., q.LINK_LENGTHS[0], 0.))
+    # print(q.fk(3, q.STANCE_POSTURE[9:12]).translation - q.HIP_OFFSETS[3] + (0., -q.LINK_LENGTHS[0], 0.))
+
     # c = p.loadURDF("cube.urdf", globalScaling=0.1)
     for _ in range(100000):
         p.stepSimulation()

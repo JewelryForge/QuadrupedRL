@@ -13,7 +13,7 @@ from burl.rl.task import BasicTask
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.terrain import makeTerrain
-from burl.sim.tg import LocomotionStateMachine
+from burl.sim.tg import LocomotionStateMachine, vertical_tg
 from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
 from burl.utils.transforms import Rpy, Rotation
 
@@ -32,7 +32,7 @@ class QuadrupedEnv(object):
         if self._gui:
             self._prepareRendering()
         self._terrain = makeTerrain(self._env)
-        self._robot: Quadruped = make_robot(self._env, self._terrain.getMaxHeightInRange(*make_robot.ROBOT_SIZE)[2])
+        self._robot: Quadruped = make_robot(self._env, self._terrain.getPeakInRegion(*make_robot.ROBOT_SIZE)[2])
         self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
@@ -42,9 +42,9 @@ class QuadrupedEnv(object):
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
         log_debug(f'Action Repeats for {self._num_action_repeats} time(s)')
         log_debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
+        self._resetStates()
         if self._gui:
             self._initRendering()
-        self._resetStates()
         self._action_buffer = deque(maxlen=10)
 
     def _resetStates(self):
@@ -108,6 +108,8 @@ class QuadrupedEnv(object):
             self._contact_obj_ids = []
             self._terrain_indicators = [self._env.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
                                         for _ in range(36)]
+            self._force_indicator = -1
+            self._external_force_buffer = self._external_force
 
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
@@ -145,6 +147,16 @@ class QuadrupedEnv(object):
                     obj = self._env.createMultiBody(baseVisualShapeIndex=self._contact_visual_shape,
                                                     basePosition=pos)
                     self._contact_obj_ids.append(obj)
+            if self._external_force_buffer is not self._external_force:
+                _force_indicator = self._env.addUserDebugLine(
+                    lineFromXYZ=(0., 0., 0.), lineToXYZ=self._external_force / 50, lineColorRGB=(1., 0., 0.),
+                    lineWidth=5, lifeTime=0,
+                    parentObjectUniqueId=self._robot.id,
+                    replaceItemUniqueId=self._force_indicator)
+                if self._force_indicator != -1 and _force_indicator != self._force_indicator:
+                    self._env.removeUserDebugItem(self._force_indicator)
+                self._force_indicator = _force_indicator
+                self._external_force_buffer = self._external_force
 
             positions = chain(*[self.getAbundantTerrainInfo(x, y, self._robot.rpy.y)
                                 for x, y in self._robot.getFootXYsInWorldFrame()])
@@ -259,7 +271,7 @@ class QuadrupedEnv(object):
             self._env.resetSimulation()
             self._setPhysicsParameters()
             self._terrain.reset()
-        self._robot.reset(self._terrain.getMaxHeightInRange(*self._robot.ROBOT_SIZE)[2],
+        self._robot.reset(self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE)[2],
                           reload=completely_reset)
         self._initSimulation()
         self._robot.updateObservation()
@@ -321,9 +333,13 @@ class QuadrupedEnv(object):
 
 
 class TGEnv(QuadrupedEnv):
+    tg_types = {'A1': make_cls(vertical_tg, h=0.08),
+                'AlienGo': make_cls(vertical_tg, h=0.12)}
+
     def __init__(self, *args, **kwargs):
         super(TGEnv, self).__init__(*args, **kwargs)
-        self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency)
+        self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency,
+                                           make_tg=self.tg_types[self._robot.__class__.__name__])
         self._commands = None
         # self._filter = self._stm.flags
 
@@ -349,7 +365,8 @@ class TGEnv(QuadrupedEnv):
             self.plotFootTrajectories(des_pos)
 
         # NOTICE: HIP IS USED IN PAPER
-        self._commands = np.concatenate([self._robot.ik(i, pos, 'shoulder') for i, pos in enumerate(des_pos)])
+        self._commands = np.concatenate([self._robot.ik(i, pos, Quadruped.SHOULDER_FRAME)
+                                         for i, pos in enumerate(des_pos)])
         # TODO: COMPLETE NOISY OBSERVATION CONVERSIONS
         return super().step(self._commands)
 
@@ -364,14 +381,12 @@ class TGEnv(QuadrupedEnv):
         from burl.utils import plotTrajectories
         if not hasattr(self, '_plotter'):
             self._plotter = plotTrajectories()
-        if any(self._stm.cycles == 5):
-            cmd, real = [], []
-            for i in range(4):
-                x, y, z = des_pos[i * 3: i * 3 + 3]
-                cmd.append((x, z))
+        for i, flag in enumerate(self._stm.cycles == 5):
+            if flag:
+                x, y, z = des_pos[i]
+                self._plotter(i, (x, z), 'r')
                 x, y, z = self._robot.getFootPositionInHipFrame(i)
-                real.append((x, z))
-            self._plotter(cmd, real)
+                self._plotter(i, (x, z), 'b')
 
     def _initSimulation(self):  # for the stability of the beginning
         for _ in range(500):
@@ -385,7 +400,7 @@ if __name__ == '__main__':
 
     g_cfg.moving_camera = False
     g_cfg.sleeping_enabled = True
-    g_cfg.on_rack = True
+    g_cfg.on_rack = False
     g_cfg.rendering = True
     g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
@@ -407,7 +422,7 @@ if __name__ == '__main__':
             # if i % 500 == 0:
             #     env.reset()
     else:
-        env = QuadrupedEnv(A1)
+        env = QuadrupedEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
             env.step(env.robot.STANCE_POSTURE)

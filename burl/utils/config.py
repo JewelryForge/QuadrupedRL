@@ -12,6 +12,8 @@ class Options(object):
         self.use_wandb = True
         self.add_disturbance = True
         self.trn_type = 'plain'
+        self.tg_init = 'fixed'
+        self.schedule = 'fixed'
 
 
 class PhysicsParam(object):
@@ -23,9 +25,6 @@ class PhysicsParam(object):
         self.foot_spinning_friction = 0.2
         self.foot_restitution = 0.3
         self.joint_angle_range = 1.0
-        self.safe_height_range = (0.25, 0.6)
-        self.kp = 80
-        self.kd = (1.0, 2.0, 2.0) * 4
 
 
 class SimParam(PhysicsParam):
@@ -36,7 +35,6 @@ class SimParam(PhysicsParam):
         self.sim_frequency = 400.
         self.execution_frequency = 400.
         self.max_sim_iterations = 8000  # 20s
-        self.tg_init = 'fixed'
 
 
 class RenderParam(object):
@@ -62,7 +60,6 @@ class PPOParam(object):
         self.learning_rate = 1e-4
         self.max_grad_norm = 1.0
         self.use_clipped_value_loss = True
-        self.schedule = 'fixed'
         self.desired_kl = 0.01
 
 

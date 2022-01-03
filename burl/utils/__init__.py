@@ -1,4 +1,4 @@
-from burl.utils.utils import (normalize, unit, vec_cross, random_sample,
+from burl.utils.utils import (ang_norm, unit, vec_cross, random_sample,
                               timestamp, str2time, WithTimer,
                               make_cls, JointInfo, DynamicsInfo,
                               find_log, find_log_remote, parse_args)

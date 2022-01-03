@@ -9,9 +9,6 @@ class ArrayAttr(object):
         super().__setattr__(key, np.asarray(value, dtype=float))
 
 
-freq_scale = np.pi / 200
-
-
 class ProprioceptiveObservation(ArrayAttr):
     dim = 60
 
@@ -30,7 +27,7 @@ class ProprioceptiveObservation(ArrayAttr):
         zero(3), (0., 0., 0.998),  # command & gravity_vector
         zero(6), (0, 0.723, -1.445) * 4,  # base twist & joint pos
         zero(12), zero(12),  # joint vel &  joint_prev_pos_err
-        zero(8), (1.5,) * 4  # ftg phases & frequencies
+        zero(8), (2.0,) * 4  # ftg phases & frequencies
     ))
 
     scale = np.concatenate((
@@ -38,7 +35,7 @@ class ProprioceptiveObservation(ArrayAttr):
         (2.,) * 6, (2.0,) * 12,  # base twist & joint pos
         # FIXME: why joint_prev_pos_err so large
         (0.5, 0.4, 0.3) * 4, (6.5, 4.5, 3.5) * 4,  # joint vel &  joint_prev_pos_err
-        (1.5,) * 8, (2.0 / freq_scale,) * 4  # ftg phases & frequencies; latter 400/pi in paper, why?
+        (1.5,) * 8, (100.,) * 4  # ftg phases & frequencies
     ))
 
     def to_array(self):
@@ -64,13 +61,13 @@ class ProprioObservation(ProprioceptiveObservation):
         self.joint_vel_his = zero(24)
         self.joint_pos_target = zero(12)
         self.joint_prev_pos_target = zero(12)
-        self.base_frequency = np.array((1.25,))
+        self.base_frequency = np.array((0.,))
 
     offset = np.concatenate((
         ProprioceptiveObservation.offset,
         zero(24), zero(24),  # joint_pos_err_his & joint_vel_his
         (0, 0.723, -1.445) * 8,  # joint_pos_target * 2
-        (1.25,)  # base_frequency
+        (2.,)  # base_frequency
     ))
 
     scale = np.concatenate((
@@ -93,8 +90,6 @@ class ProprioObservation(ProprioceptiveObservation):
 
 class ExteroObservation(object):
     dim = 79
-    TERRAIN_CLIP = 0.25
-    FORCE_CLIP = np.array((25, 25, 50) * 4)
 
     offset = np.concatenate((
         (0.02,) * 36, (0., 0., 0.98) * 4,  # terrain scan & normal
@@ -120,10 +115,10 @@ class ExteroObservation(object):
 
     def to_array(self):
         return np.concatenate((
-            np.clip(self.terrain_scan, -self.TERRAIN_CLIP, self.TERRAIN_CLIP),
+            self.terrain_scan,
             self.terrain_normal,
             self.contact_states,
-            np.clip(self.foot_contact_forces, -self.FORCE_CLIP, self.FORCE_CLIP),
+            self.foot_contact_forces,
             self.foot_friction_coeffs,
             self.external_disturbance
         ))
@@ -155,7 +150,7 @@ class Action:
 
     offset = np.zeros(16)
     scale = np.concatenate((
-        (0.5 * freq_scale,) * 4, (0.1, 0.1, 0.025) * 4
+        (0.01,) * 4, (0.1, 0.1, 0.025) * 4
     ))
 
     @classmethod
