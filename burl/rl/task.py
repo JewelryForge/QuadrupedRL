@@ -34,7 +34,7 @@ class BasicTask(RewardRegistry):
     def sendOrPrint(self):
         from burl.sim import Quadruped, TGEnv
         from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
-                                    FootClearanceReward, HipAnglePenalty)
+                                    FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty)
 
         from burl.utils import udp_pub
         cmd = self.cmd
@@ -50,7 +50,9 @@ class BasicTask(RewardRegistry):
         # print(rob.getCostOfTransport())
 
         # r_rate, p_rate, _ = rob.getBaseRpyRate()
-        # print(r_rate, p_rate, wrap(RollPitchRatePenalty)())
+        # print(r_rate, p_rate, wrap(RollPitchRatePenalty))
+        # r, p, _ = rob.rpy
+        # print(r, p, wrap(BodyPosturePenalty))
         # linear = rob.getBaseLinearVelocityInBaseFrame()
         # projected_velocity = np.dot(cmd[:2], linear[:2])
         # print(projected_velocity)
@@ -62,14 +64,19 @@ class BasicTask(RewardRegistry):
         #     print(clearances, wrap(FootClearanceReward))
         # print(wrap(HipAnglePenalty))
         # print(rob.getJointPositions()[(0,3,6,9),])
-        # data = {'joint_pos': tuple(rob.getJointPositions()),
-        #         'commands': tuple(env.getLastCommand().reshape(-1)),
-        #         'joint_vel': tuple(rob.getJointVelocities()),
-        #         'kp_part': tuple(rob._motor._kp_part),
-        #         'kd_part': tuple(rob._motor._kd_part),
-        #         'torque': tuple(rob.getLastAppliedTorques())
-        #         }
+        data = {'joint_pos': tuple(rob.getJointPositions()),
+                'commands': tuple(env.getLastCommand().reshape(-1)),
+                'joint_vel': tuple(rob.getJointVelocities()),
+                'kp_part': tuple(rob._motor._kp_part),
+                'kd_part': tuple(rob._motor._kd_part),
+                'torque': tuple(rob.getLastAppliedTorques()),
+                'contact': tuple(rob.getContactStates())
+                }
+        udp_pub.send(data)
+        # print(rob.getBaseLinearVelocity()[2])
+        # data = {'z': rob.position[2]}
         # udp_pub.send(data)
+        # print(wrap(BodyCollisionPenalty))
 
     def reset(self):
         pass

@@ -18,10 +18,6 @@ def unit(x) -> np.ndarray:
     return np.asarray(x) / np.linalg.norm(x)
 
 
-def included_angle(vec1, vec2) -> float:
-    return math.acos(np.dot(unit(vec1), unit(vec2)))
-
-
 def sign(x: float) -> int:
     return 1 if x > 0 else -1 if x < 0 else 0
 
@@ -34,8 +30,20 @@ def vec_cross(vec3_1, vec3_2) -> np.ndarray:
     return np.array((y1 * z2 - y2 * z1, z1 * x2 - z2 * x1, x1 * y2 - x2 * y1))
 
 
-def truncate(value, lower, upper):
+def truncate(value: float, lower: float, upper: float) -> float:
     return upper if value > upper else lower if value < lower else value
+
+
+def safe_asin(value):
+    return math.asin(truncate(value, -1., 1.))
+
+
+def safe_acos(value):
+    return math.acos(truncate(value, -1., 1.))
+
+
+def included_angle(vec1, vec2) -> float:
+    return safe_acos(np.dot(unit(vec1), unit(vec2)))
 
 
 def tuple_compact_string(_tuple, precision=1):

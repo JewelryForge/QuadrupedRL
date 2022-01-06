@@ -12,9 +12,9 @@ from pybullet_utils import bullet_client
 
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
-from burl.utils import ang_norm, unit, JointInfo, make_cls, g_cfg, DynamicsInfo, vec_cross
-from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity
-from burl.utils.utils import sign, truncate, included_angle
+from burl.utils import (ang_norm, JointInfo, make_cls, g_cfg, DynamicsInfo, vec_cross,
+                        sign, included_angle, safe_asin, safe_acos)
+from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 TP_ZERO3 = (0., 0., 0.)
 TP_Q0 = (0., 0., 0., 1.)
@@ -63,7 +63,7 @@ class Quadruped(object):
                  make_motor: make_cls = MotorSim):
         self._env, self._frequency = sim_env, g_cfg.execution_frequency
         self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-                                           kp=self.P_PARAMS, kd=self.D_PARAMS)
+                                           kp=self.P_PARAMS, kd=self.D_PARAMS, torque_limits=self.TORQUE_LIMITS)
         assert g_cfg.latency >= 0
         self._latency = g_cfg.latency
 
@@ -99,6 +99,7 @@ class Quadruped(object):
         self._observation: ObservationRaw = None
         self._time = 0.0
         self._step_counter = 0
+        self._sum_work = 0.0
 
     def _loadRobotOnRack(self):
         path = os.path.join(g_cfg.local_urdf, self.URDF_FILE)
@@ -107,7 +108,7 @@ class Quadruped(object):
                                    jointType=self._env.JOINT_FIXED,
                                    jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
                                    childFramePosition=self.INIT_RACK_POSITION,
-                                   childFrameOrientation=self.INIT_ORIENTATION)
+                                   childFrameOrientation=Quaternion.from_rpy((0.3, 0.2, 0.)))
         return robot
 
     def _loadRobot(self, init_height_addition=0.0):
@@ -163,9 +164,6 @@ class Quadruped(object):
             self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
 
         self._mass = sum([self._env.getDynamicsInfo(self._quadruped, i)[0] for i in range(self._num_joints)])
-
-    def is_safe(self) -> bool:  # FIXME: MOVE THIS TO TASK
-        raise DeprecationWarning
 
     def applyCommand(self, motor_commands):
         # motor_commands = np.clip(motor_commands, self.STANCE_POSTURE - 0.3,
@@ -227,7 +225,7 @@ class Quadruped(object):
         self._observation_history.append(self._observation)
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
-        self._motor.update_observation()
+        self._motor.update_observation(self.getJointPositions(), self.getJointVelocities())
         self._updateStepInfos()
         return self._observation, observation_noisy
 
@@ -352,15 +350,13 @@ class Quadruped(object):
         return Rotation.from_quaternion(self.getBaseOrientation(noisy)).Z
 
     def getBaseRpy(self, noisy=False):
-        return Rpy.from_quaternion(self.getBaseOrientation(noisy))
+        return Rpy.from_quaternion(self.getBaseOrientation(True)) if noisy else self._rpy
 
-    def getHorizontalFrameInBaseFrame(self, noisy=False):
+    def transformFromHorizontalToBase(self, noisy=False):
         rot = Rotation.from_quaternion(self.getBaseOrientation(noisy))
         y = self._rpy.y
         sy, cy = np.sin(y), np.cos(y)
-        X = (cy, sy, 0)
-        Y = (-sy, cy, 0)
-        Z = (0, 0, 1)
+        X, Y, Z = (cy, sy, 0), (-sy, cy, 0), (0, 0, 1)
         return rot.transpose() @ np.array((X, Y, Z)).transpose()
 
     def getBaseLinearVelocity(self):
@@ -455,9 +451,9 @@ class Quadruped(object):
         return self._foot_clearances
 
     def getCostOfTransport(self):
-        mgv = self._mass * 9.8 * np.linalg.norm(self._base_twist.linear)
+        mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear[:2])
         work = sum(filter(lambda i: i > 0, self._last_torque * self.getJointVelocities()))
-        # print(self._last_torque, self.getJointVelocities())
+        self._sum_work += work
         self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         return np.mean(self._cot_buffer)
 
@@ -588,7 +584,7 @@ class A1(Quadruped):
             distance = np.linalg.norm(_pos)
             hip_angle_bias = math.atan2(dy, dz)
             _sin = distance * shoulder_len / math.hypot(dy, dz) / distance
-            _sum = math.asin(truncate(_sin, -1., 1.))
+            _sum = safe_asin(_sin)
             hip_angle = min(ang_norm(_sum - hip_angle_bias), ang_norm(np.pi - _sum - hip_angle_bias), key=abs)
             shoulder_vector = np.array((0, math.cos(hip_angle), math.sin(hip_angle))) * shoulder_len
             foot_position_shoulder = _pos - shoulder_vector
@@ -596,10 +592,10 @@ class A1(Quadruped):
             thigh_len_2, shank_len_2, dist_foot_shoulder_2 = \
                 thigh_len ** 2, shank_len ** 2, dist_foot_shoulder ** 2
             _cos = (thigh_len_2 + shank_len_2 - dist_foot_shoulder_2) / (2 * thigh_len * shank_len)
-            angle_shank = math.acos(truncate(_cos, -1., 1.)) - np.pi
+            angle_shank = safe_acos(_cos) - np.pi
 
             _cos = (thigh_len_2 + dist_foot_shoulder_2 - shank_len_2) / (2 * thigh_len * dist_foot_shoulder)
-            angle_thigh = math.acos(truncate(_cos, -1., 1.))
+            angle_thigh = safe_acos(_cos)
             normal = vec_cross(shoulder_vector, vec_cross((0, 0, -1), shoulder_vector))
             angle_thigh -= included_angle(normal, foot_position_shoulder) * sign(dx)
             return hip_angle, ang_norm(angle_thigh), ang_norm(angle_shank)
@@ -673,12 +669,28 @@ class AlienGo(A1):
     HIP_OFFSETS = ((0.2399, -0.051, 0.), (0.2399, 0.051, 0.),
                    (-0.2399, -0.051, 0), (-0.2399, 0.051, 0.))
     STANCE_HEIGHT = 0.4
-    STANCE_FOOT_POSITIONS = ((0., 0., -0.4),) * 4
+    STANCE_FOOT_POSITIONS = ((0., 0., -STANCE_HEIGHT),) * 4
     STANCE_POSTURE = (0., 0.6435, -1.287) * 4
     TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)
     ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
-    P_PARAMS = 160.
-    D_PARAMS = (2., 4., 4.) * 4
+    P_PARAMS = 100.
+    D_PARAMS = (2., 2., 2.) * 4
+
+    # P_PARAMS = 160.
+    # D_PARAMS = (2., 4., 4.) * 4
+    # D_PARAMS = (2., 1., .5) * 4
+
+    def _getContactStates(self):
+        def _getContactState(link_id):
+            return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
+
+        base_contact = _getContactState(0)
+        contact_states = [base_contact]
+        # NOTICE: THIS IS SPECIFICALLY FOR A1
+        for leg in range(4):  # FIXME: CONTACT JUDGEMENT SHOULD BE THOUGHT OVER
+            base_contact = base_contact or _getContactState(leg * 4 + 2)
+            contact_states.extend([_getContactState(leg * 4 + i) for i in range(3, 6)])
+        return contact_states
 
 
 if __name__ == '__main__':
@@ -686,6 +698,7 @@ if __name__ == '__main__':
     from burl.sim.terrain import PlainTerrain
 
     g_cfg.on_rack = False
+    g_cfg.action_frequency = 100.
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = PlainTerrain(p)

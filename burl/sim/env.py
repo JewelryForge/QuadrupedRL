@@ -135,7 +135,8 @@ class QuadrupedEnv(object):
                 time.sleep(time_to_sleep)
         if g_cfg.moving_camera:
             yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
-            self._env.resetDebugVisualizerCamera(dist, yaw, pitch, self._robot.position)
+            (x, y, _), z = self._robot.position, self._robot.STANCE_HEIGHT
+            self._env.resetDebugVisualizerCamera(dist, yaw, pitch, (x, y, z))
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
         if g_cfg.extra_visualization:
             for obj in self._contact_obj_ids:
@@ -220,7 +221,10 @@ class QuadrupedEnv(object):
                 reward_details[n] = reward_details.get(n, 0) + r
             if update_execution:
                 self._robot.updateObservation()
-        if self._gui:
+            if self._gui and g_cfg.single_step_rendering:
+                self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
+                self._updateRendering()
+        if self._gui and not g_cfg.single_step_rendering:
             self._updateRendering()
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats
@@ -355,18 +359,26 @@ class TGEnv(QuadrupedEnv):
         self._stm.update(action.leg_frequencies)
         # self._filter += self._stm.flags
         priori = self._stm.get_priori_trajectory() + self._robot.STANCE_FOOT_POSITIONS
-        # if False:
-        #     h2b = self._robot.getHorizontalFrameInBaseFrame(False)  # FIXME: HERE SHOULD BE TRUE
-        #     priori_in_base_frame = [h2b @ (0, 0, z) for z in priori]
-        #     residuals = action.foot_pos_residuals + np.concatenate(priori_in_base_frame)
-        # else:
         des_pos = action.foot_pos_residuals.reshape((4, 3)) + priori
+        use_horizontal_frame = False
+        if not use_horizontal_frame:
+            # self._commands = np.concatenate([self._robot.ik(i, pos, Quadruped.SHOULDER_FRAME)
+            #                                  for i, pos in enumerate(des_pos)])
+            self._commands = np.concatenate([self._robot.ik_analytic(i, pos, Quadruped.SHOULDER_FRAME)
+                                             for i, pos in enumerate(des_pos)])
+        else:
+            h2b = self._robot.transformFromHorizontalToBase(True)
+            offsets = ((0., -self._robot.LINK_LENGTHS[0], 0.),
+                       (0., self._robot.LINK_LENGTHS[0], 0.),
+                       (0., -self._robot.LINK_LENGTHS[0], 0.),
+                       (0., self._robot.LINK_LENGTHS[0], 0.))
+            des_pos = np.array([h2b @ (des_p + offset) for des_p, offset in zip(des_pos, offsets)])
+            self._commands = np.concatenate([self._robot.ik_analytic(i, pos, Quadruped.HIP_FRAME)
+                                             for i, pos in enumerate(des_pos)])
+
         if g_cfg.plot_trajectory:
             self.plotFootTrajectories(des_pos)
 
-        # NOTICE: HIP IS USED IN PAPER
-        self._commands = np.concatenate([self._robot.ik(i, pos, Quadruped.SHOULDER_FRAME)
-                                         for i, pos in enumerate(des_pos)])
         # TODO: COMPLETE NOISY OBSERVATION CONVERSIONS
         return super().step(self._commands)
 
@@ -405,13 +417,14 @@ if __name__ == '__main__':
     g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
     g_cfg.test_mode = True
+    g_cfg.single_step_rendering = False
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
     make_motor = make_cls(MotorSim)
     tg = True
     if tg:
-        env = TGEnv(A1)
+        env = TGEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
             act = Action()

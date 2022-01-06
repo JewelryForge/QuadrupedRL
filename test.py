@@ -12,10 +12,7 @@ from burl.rl.state import ExteroObservation, ProprioObservation, Action, Extende
 
 class Player:
     def __init__(self, model_dir, make_robot=A1):
-        g_cfg.rendering = True
-        g_cfg.sleeping_enabled = True
         make_env = make_cls(TGEnv, make_robot=make_robot)
-
         self.env = EnvContainer(make_env, 1)
         self.actor_critic = ActorCritic(
             Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
@@ -33,6 +30,7 @@ class Player:
             p_obs, obs = to_dev(p_obs, obs)
 
             if any(dones):
+                print(self.env._envs[0].robot._sum_work)
                 reset_ids = torch.nonzero(dones)
                 p_obs_reset, obs_reset = to_dev(*self.env.reset(reset_ids))
                 p_obs[reset_ids,], obs[reset_ids,] = p_obs_reset, obs_reset
@@ -41,7 +39,7 @@ class Player:
 
 
 def main(model_dir):
-    player = Player(model_dir, A1)
+    player = Player(model_dir, AlienGo)
     player.play()
 
 
@@ -51,23 +49,17 @@ if __name__ == '__main__':
     g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
     g_cfg.test_mode = True
+    g_cfg.rendering = True
+    g_cfg.single_step_rendering = False
     g_cfg.add_disturbance = True
     g_cfg.tg_init = 'symmetric'
     init_logger()
     set_logger_level('debug')
     remote = False
     if remote:
-        # 2240 5800
         model = find_log_remote(time=None, epoch=None, log_dir='teacher-student/log')
-        # model = find_log_remote(time=2240, epoch=4800, log_dir='python_ws/ts-dev/log',
-        #                         host='jewelry@10.192.119.171', port=22)
         # model = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',
         #                         host='jewelry@10.192.119.171', port=22)
     else:
-        # 2240 5800
-        # model = find_log(time=211850, epoch=None)
-        # model = find_log(time=2240, epoch=5800)
-        # model = find_log(time=1614, epoch=7800)
-        model = find_log(time=None, epoch=None)
-    # model = 'log/model_9900.pt'
+        model = find_log(time=None, epoch=10000)
     main(model)

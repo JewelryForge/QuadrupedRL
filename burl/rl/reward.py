@@ -82,7 +82,7 @@ class YawRateReward(Reward):
         if yaw_cmd != 0.0:
             return self.reshape_pos(yaw_rate * yaw_cmd)
         else:
-            return -self.reshape_neg(abs(yaw_rate))
+            return 1 - self.reshape_neg(abs(yaw_rate))
 
 
 class RollPitchRatePenalty(Reward):
@@ -106,7 +106,7 @@ class RedundantLinearPenalty(Reward):
 
 
 class BodyPosturePenalty(Reward):
-    def __init__(self, roll_upper=np.pi / 12, pitch_upper=np.pi / 6):
+    def __init__(self, roll_upper=np.pi / 12, pitch_upper=np.pi / 12):
         self.roll_reshape = tanh2_reshape(0, roll_upper)
         self.pitch_reshape = tanh2_reshape(0, pitch_upper)
 
@@ -116,7 +116,8 @@ class BodyPosturePenalty(Reward):
 
 
 class BodyHeightReward(Reward):
-    def __init__(self, lower=0.24, upper=0.32):
+    # def __init__(self, lower=0.24, upper=0.32):
+    def __init__(self, lower=0.32, upper=0.44):
         self.reshape = tanh2_reshape(lower, upper)
 
     def __call__(self, cmd, env, robot):
@@ -178,8 +179,17 @@ class BodyCollisionPenalty(Reward):
     def __call__(self, cmd, env, robot):
         contact_states = list(robot.getContactStates())
         for i in range(1, 5):
-            contact_states[i * 3] = False
-        return 1 - sum(contact_states)
+            contact_states[i * 3] = 0
+        return -sum(contact_states)
+
+
+class ShakePenalty(Reward):
+    def __init__(self, upper=0.2):
+        self.reshape = tanh2_reshape(0., upper)
+
+    def __call__(self, cmd, env, robot):
+        z_vel = robot.getBaseLinearVelocity()[2]
+        return -self.reshape(z_vel)
 
 
 class TorquePenalty(Reward):
@@ -254,9 +264,9 @@ class RewardRegistry(object):
         self._reward_details.clear()
         reward_terms = []
         for reward, weight in self._rewards_weights:
-            rew = reward(self._cmd, self._env, self._robot)
-            self._reward_details[reward.__class__.__name__] = rew
-            reward_terms.append(rew * weight)
+            reward_item = reward(self._cmd, self._env, self._robot)
+            self._reward_details[reward.__class__.__name__] = reward_item
+            reward_terms.append(reward_item * weight)
         return reward_terms
 
 

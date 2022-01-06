@@ -69,18 +69,16 @@ class MotorSim(object):
     def update_observation(self, pos=None, vel=None):
         self._observe_done = True
         if pos is not None:
-            self._pos = pos
-            if vel is not None:
-                self._vel = vel
-                return
+            self._pos = np.asarray(pos)
         else:
-            try:
-                self._pos = np.asarray(self._robot.getJointPositions(noisy=True))
-            except AttributeError:
-                self._pos = np.asarray(self._robot.joint_states.position)
+            self._pos = np.asarray(self._robot.getJointPositions(noisy=True))
+        if vel is not None:
+            self._vel = np.asarray(vel)
+        elif self._position_history:
+            self._vel = (self._pos - self._position_history[-1]) * self._frequency
+        else:
+            self._vel = 0.0
         self._position_history.append(self._pos)
-        ph = self._position_history
-        self._vel = (ph[-1] - ph[-2]) * self._frequency if len(ph) > 1 else 0.0
         # self._acc = (ph[-1] + ph[-3] - 2 * ph[-2]) * self._frequency ** 2 if len(ph) > 2 else 0.0
         # return MotorState(position=self._pos, velocity=self._vel, acceleration=self._acc)
 
@@ -96,8 +94,8 @@ class MotorSim(object):
     def _set_position(self, des_pos):
         if hasattr(self, '_pos_limits_upper'):
             des_pos = np.clip(des_pos, self._pos_limits_lower, self._pos_limits_upper)
-        self._kp_part, self._kd_part = (des_pos - self._pos) * self._kp, self._kd * self._vel
-        return self._set_torque(self._kp * (des_pos - self._pos) - self._kd * self._vel)
+        self._kp_part, self._kd_part = self._kp * (des_pos - self._pos), -self._kd * self._vel
+        return self._set_torque(self._kp_part + self._kd_part)
 
     def _set_torque(self, des_torque):
         if hasattr(self, '_torque_limits_upper'):

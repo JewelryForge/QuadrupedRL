@@ -45,6 +45,7 @@ class RenderParam(object):
         self.extra_visualization = True
         self.plot_trajectory = False
         self.egl_rendering = False
+        self.single_step_rendering = False
 
 
 class PPOParam(object):
@@ -89,15 +90,16 @@ class RuntimeParam(object):
             # (EluLinearVelocityReward(), 0.1),
             ('LinearVelocityReward', 0.06),
             ('YawRateReward', 0.06),
-            ('BodyHeightReward', 0.03),
+            # ('BodyHeightReward', 0.03),
             ('HipAnglePenalty', 0.04),
             ('RedundantLinearPenalty', 0.04),
             ('RollPitchRatePenalty', 0.04),
             ('BodyPosturePenalty', 0.04),
             ('FootSlipPenalty', 0.04),
             ('TrivialStridePenalty', 0.06),
-            ('FootClearanceReward', 0.06),
-            # (TargetMutationPenalty(), 0.02),
+            # ('FootClearanceReward', 0.06),
+            # ('TargetMutationPenalty', 0.02),
+            # ('ShakePenalty', 0.04),
             ('BodyCollisionPenalty', 0.04),
             ('CostOfTransportReward', 0.04)
         )
@@ -125,8 +127,8 @@ class TerrainCurriculumParam(object):
 class DisturbanceParam(object):
     def __init__(self):
         self.disturbance_interval_steps = 400
-        self.horizontal_force_bounds = (0, 20)
-        self.vertical_force_bounds = (0, 20)
+        self.horizontal_force_bounds = (0., 40.)
+        self.vertical_force_bounds = (0., 40.)
 
 
 class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, DisturbanceParam,
