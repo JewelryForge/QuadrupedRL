@@ -102,7 +102,7 @@ class RedundantLinearPenalty(Reward):
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()[:2]
         v_o = np.asarray(linear) - np.asarray(cmd[:2]) * np.dot(linear, cmd[:2])
-        return 1 - self.reshape(np.linalg.norm(v_o))
+        return 1 - self.reshape(math.hypot(*v_o))
 
 
 class BodyPosturePenalty(Reward):
@@ -125,13 +125,13 @@ class BodyHeightReward(Reward):
         return self.reshape(height)
 
 
-class TargetMutationPenalty(Reward):
-    def __init__(self, upper=500):
+class TorqueGradientPenalty(Reward):
+    def __init__(self, upper=200):
         self.reshape = tanh2_reshape(0.0, upper)
 
     def __call__(self, cmd, env, robot):
-        mutation = env.getActionMutation()
-        return 1 - self.reshape(mutation)
+        torque_grad = robot.getTorqueGradients()
+        return -sum(self.reshape(grad) for grad in torque_grad) / 12
 
 
 class FootSlipPenalty(Reward):
@@ -150,7 +150,7 @@ class HipAnglePenalty(Reward):
 
     def __call__(self, cmd, env, robot):
         hip_angles = robot.getJointPositions()[(0, 3, 6, 9),]
-        return -sum(self.reshape(a) for a in hip_angles) / 4
+        return -sum(self.reshape(abs(a)) for a in hip_angles) / 4
 
 
 class TrivialStridePenalty(Reward):
@@ -170,6 +170,19 @@ class FootClearanceReward(Reward):
     def __call__(self, cmd, env, robot):
         foot_clearances = robot.getFootClearances()
         return sum(self.reshape(c) for c in foot_clearances)
+
+
+class ClearanceOverTerrainReward(Reward):
+    def __init__(self):
+        pass
+
+    def __call__(self, cmd, env, robot):
+        reward = 0.
+        for leg in range(4):
+            x, y, z = robot.getFootPositionInWorldFrame(leg)
+            if z - robot.FOOT_RADIUS > max(env.getTerrainScan(x, y, robot.rpy.y)) + 0.01:
+                reward += 1 / 2
+        return reward
 
 
 class BodyCollisionPenalty(Reward):

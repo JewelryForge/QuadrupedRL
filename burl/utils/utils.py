@@ -15,7 +15,7 @@ def ang_norm(x):  # [-pi, pi)
 
 
 def unit(x) -> np.ndarray:
-    return np.asarray(x) / np.linalg.norm(x)
+    return np.asarray(x) / math.hypot(*x)
 
 
 def sign(x: float) -> int:
@@ -86,8 +86,11 @@ def get_const_variables(cls):
 
 
 class WithTimer:
-    def __init__(self):
-        pass
+    def __init__(self, func=None, *args, **kwargs):
+        if func:
+            self.start()
+            func(*args, **kwargs)
+            self.end()
 
     def start(self):
         self._start_time = time.time()

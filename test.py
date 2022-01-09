@@ -61,5 +61,5 @@ if __name__ == '__main__':
         # model = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',
         #                         host='jewelry@10.192.119.171', port=22)
     else:
-        model = find_log(time=None, epoch=10000)
+        model = find_log(time=None, epoch=None)
     main(model)

@@ -78,6 +78,7 @@ class Quadruped(object):
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
+        self._torque_history: Deque[np.ndarray] = deque(maxlen=100)
         # self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency / 1.25))
         self._cot_buffer: Deque[float] = deque()
 
@@ -90,7 +91,6 @@ class Quadruped(object):
         self._base_twist: Twist = None
         self._base_twist_in_base_frame: Twist = None
         self._rpy: Rpy = None
-        self._last_torque: np.ndarray = np.zeros(12)
         self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
         self._max_foot_heights: np.ndarray = np.zeros(4)
         self._foot_clearances: np.ndarray = np.zeros(4)
@@ -108,7 +108,7 @@ class Quadruped(object):
                                    jointType=self._env.JOINT_FIXED,
                                    jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
                                    childFramePosition=self.INIT_RACK_POSITION,
-                                   childFrameOrientation=Quaternion.from_rpy((0.3, 0.2, 0.)))
+                                   childFrameOrientation=Quaternion.from_rpy((0., 0., 0.)))
         return robot
 
     def _loadRobot(self, init_height_addition=0.0):
@@ -150,30 +150,36 @@ class Quadruped(object):
         for i in range(12):
             self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i], 0.0)
 
-    def setPhysicsParams(self, **kwargs):
-        # for m in self._motor_ids:
-        #     self._env.changeDynamics(self, -1, linearDamping=0, angularDamping=0)
-
-        for f in self._foot_ids:
-            self._env.changeDynamics(self._quadruped, f, spinningFriction=g_cfg.foot_spinning_friction,
-                                     lateralFriction=g_cfg.foot_lateral_friction)
+    def setPhysicsParams(self, random_dynamics=False):
+        for m in self._motor_ids:
+            self._env.changeDynamics(self._quadruped, m, linearDamping=0, angularDamping=0)
         self._env.setPhysicsEngineParameter(enableConeFriction=0)
-        self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
-                                            forces=(g_cfg.joint_friction,) * len(self._motor_ids))
+        if random_dynamics:
+            base_mass = DynamicsInfo(self._env.getDynamicsInfo(self._quadruped, 0)).mass,
+            base_inertial = DynamicsInfo(self._env.getDynamicsInfo(self._quadruped, 0)).inertial
+            joint_friction = np.random.random(12) * 0.05
+            self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
+                                                forces=joint_friction)
+            raise NotImplementedError
+
+        else:
+            for f in self._foot_ids:
+                self._env.changeDynamics(self._quadruped, f, spinningFriction=g_cfg.foot_spinning_friction,
+                                         lateralFriction=g_cfg.foot_lateral_friction)
+            self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
+                                                forces=(g_cfg.joint_friction,) * len(self._motor_ids))
         for leg in range(4):
             self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
 
         self._mass = sum([self._env.getDynamicsInfo(self._quadruped, i)[0] for i in range(self._num_joints)])
 
     def applyCommand(self, motor_commands):
-        # motor_commands = np.clip(motor_commands, self.STANCE_POSTURE - 0.3,
-        #                          self.STANCE_POSTURE + 0.3)
         motor_commands = np.asarray(motor_commands)
         self._command_history.append(motor_commands)
         torques = self._motor.apply_command(motor_commands)
         self._env.setJointMotorControlArray(self._quadruped, self._motor_ids,
                                             self._env.TORQUE_CONTROL, forces=torques)
-        self._last_torque = torques
+        self._torque_history.append(torques)
         return torques
 
     def reset(self, height_addition=0.0, reload=False, in_situ=False):
@@ -189,6 +195,7 @@ class Quadruped(object):
         self._observation_history.clear()
         self._observation_noisy_history.clear()
         self._command_history.clear()
+        self._torque_history.clear()
         self._cot_buffer.clear()
         if reload:
             self._quadruped = self._loadRobot(height_addition)
@@ -451,8 +458,8 @@ class Quadruped(object):
         return self._foot_clearances
 
     def getCostOfTransport(self):
-        mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear[:2])
-        work = sum(filter(lambda i: i > 0, self._last_torque * self.getJointVelocities()))
+        mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
+        work = sum(filter(lambda i: i > 0, self._torque_history[-1] * self.getJointVelocities()))
         self._sum_work += work
         self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         return np.mean(self._cot_buffer)
@@ -467,7 +474,12 @@ class Quadruped(object):
         return self.getObservation(noisy).joint_states.velocity[self._motor_ids,]
 
     def getLastAppliedTorques(self):
-        return self._last_torque
+        return self._torque_history[-1]
+
+    def getTorqueGradients(self):
+        if len(self._torque_history) > 2:
+            return (self._torque_history[-1] - self._torque_history[-2]) * self._frequency
+        return np.zeros(12)
 
     def getCmdHistoryFromIndex(self, idx):
         len_requirement = -idx if idx < 0 else idx + 1
@@ -581,14 +593,14 @@ class A1(Quadruped):
 
         def _ik_hip_frame(_pos):
             dx, dy, dz = _pos
-            distance = np.linalg.norm(_pos)
+            distance = math.hypot(*_pos)
             hip_angle_bias = math.atan2(dy, dz)
             _sin = distance * shoulder_len / math.hypot(dy, dz) / distance
             _sum = safe_asin(_sin)
             hip_angle = min(ang_norm(_sum - hip_angle_bias), ang_norm(np.pi - _sum - hip_angle_bias), key=abs)
             shoulder_vector = np.array((0, math.cos(hip_angle), math.sin(hip_angle))) * shoulder_len
             foot_position_shoulder = _pos - shoulder_vector
-            dist_foot_shoulder = np.linalg.norm(foot_position_shoulder)
+            dist_foot_shoulder = math.hypot(*foot_position_shoulder)
             thigh_len_2, shank_len_2, dist_foot_shoulder_2 = \
                 thigh_len ** 2, shank_len ** 2, dist_foot_shoulder ** 2
             _cos = (thigh_len_2 + shank_len_2 - dist_foot_shoulder_2) / (2 * thigh_len * shank_len)
@@ -669,6 +681,7 @@ class AlienGo(A1):
     HIP_OFFSETS = ((0.2399, -0.051, 0.), (0.2399, 0.051, 0.),
                    (-0.2399, -0.051, 0), (-0.2399, 0.051, 0.))
     STANCE_HEIGHT = 0.4
+    FOOT_RADIUS = 0.02649
     STANCE_FOOT_POSITIONS = ((0., 0., -STANCE_HEIGHT),) * 4
     STANCE_POSTURE = (0., 0.6435, -1.287) * 4
     TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)

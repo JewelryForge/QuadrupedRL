@@ -34,21 +34,30 @@ class BasicTask(RewardRegistry):
     def sendOrPrint(self):
         from burl.sim import Quadruped, TGEnv
         from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
-                                    FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty)
+                                    FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty,
+                                    ClearanceOverTerrainReward, TorqueGradientPenalty)
 
         from burl.utils import udp_pub
+        from collections import deque
         cmd = self.cmd
         env: TGEnv = self.env
         rob: Quadruped = self.robot
 
         def wrap(reward_type):
             return reward_type().__call__(cmd, env, rob)
+        # if not hasattr(self, 'tgp'):
+        #     self.tgp = deque(maxlen=1000)
 
         # for s, b in zip(rob.getFootSlipVelocity(), self.buf):
         #     b.append(s)
         # print(np.array([np.mean(b) for b in self.buf]))
         # print(rob.getCostOfTransport())
-
+        # print(wrap(ClearanceOverTerrainReward))
+        print(wrap(HipAnglePenalty))
+        # print(rob.getTorqueGradients())
+        # self.tgp.append(wrap(TorqueGradientPenalty))
+        # print(np.mean(self.tgp))
+        # print(wrap(TorqueGradientPenalty))
         # r_rate, p_rate, _ = rob.getBaseRpyRate()
         # print(r_rate, p_rate, wrap(RollPitchRatePenalty))
         # r, p, _ = rob.rpy
@@ -65,7 +74,7 @@ class BasicTask(RewardRegistry):
         # print(wrap(HipAnglePenalty))
         # print(rob.getJointPositions()[(0,3,6,9),])
         data = {'joint_pos': tuple(rob.getJointPositions()),
-                'commands': tuple(env.getLastCommand().reshape(-1)),
+                'commands': tuple(rob._command_history[-1]),
                 'joint_vel': tuple(rob.getJointVelocities()),
                 'kp_part': tuple(rob._motor._kp_part),
                 'kd_part': tuple(rob._motor._kd_part),

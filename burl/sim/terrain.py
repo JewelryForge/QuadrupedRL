@@ -33,7 +33,7 @@ class PlainTerrain(Terrain):
     def __init__(self, bullet_client):
         super().__init__(bullet_client)
         self.terrain_id = bullet_client.loadURDF("plane.urdf")
-        bullet_client.changeDynamics(self.terrain_id, -1, lateralFriction=5.0)
+        bullet_client.changeDynamics(self.terrain_id, -1, lateralFriction=1.0)
 
     def getHeight(self, x, y):
         return 0.0

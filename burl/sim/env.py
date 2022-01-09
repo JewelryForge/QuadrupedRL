@@ -206,11 +206,18 @@ class QuadrupedEnv(object):
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
         rewards = []
         reward_details = {}
+        prev_action = self._action_buffer[-1] if self._action_buffer else np.array(self._robot.STANCE_POSTURE)
         self._action_buffer.append(action)
-        for _ in range(self._num_action_repeats):
+        for i in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
             if update_execution:
-                torques = self._robot.applyCommand(action)
+                if g_cfg.use_action_interpolation:
+                    weight = (i + 1) / self._num_action_repeats
+                    current_action = action * weight + prev_action * (1 - weight)
+                    torques = self._robot.applyCommand(current_action)
+                else:
+                    torques = self._robot.applyCommand(action)
+
             if g_cfg.add_disturbance:
                 self._addRandomDisturbanceOnRobot()
             self._env.stepSimulation()

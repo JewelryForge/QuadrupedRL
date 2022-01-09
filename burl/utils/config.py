@@ -21,7 +21,7 @@ class PhysicsParam(object):
         self.self_collision_enabled = False
         self.latency = 0.
         self.joint_friction = 0.025
-        self.foot_lateral_friction = 1.0
+        self.foot_lateral_friction = 0.4
         self.foot_spinning_friction = 0.2
         self.foot_restitution = 0.3
         self.joint_angle_range = 1.0
@@ -35,6 +35,7 @@ class SimParam(PhysicsParam):
         self.sim_frequency = 400.
         self.execution_frequency = 400.
         self.max_sim_iterations = 8000  # 20s
+        self.use_action_interpolation = True
 
 
 class RenderParam(object):
@@ -90,7 +91,7 @@ class RuntimeParam(object):
             # (EluLinearVelocityReward(), 0.1),
             ('LinearVelocityReward', 0.06),
             ('YawRateReward', 0.06),
-            # ('BodyHeightReward', 0.03),
+            ('BodyHeightReward', 0.03),
             ('HipAnglePenalty', 0.04),
             ('RedundantLinearPenalty', 0.04),
             ('RollPitchRatePenalty', 0.04),
@@ -98,8 +99,9 @@ class RuntimeParam(object):
             ('FootSlipPenalty', 0.04),
             ('TrivialStridePenalty', 0.06),
             # ('FootClearanceReward', 0.06),
-            # ('TargetMutationPenalty', 0.02),
+            ('TorqueGradientPenalty', 0.04),
             # ('ShakePenalty', 0.04),
+            ('ClearanceOverTerrainReward', 0.04),
             ('BodyCollisionPenalty', 0.04),
             ('CostOfTransportReward', 0.04)
         )
@@ -127,8 +129,8 @@ class TerrainCurriculumParam(object):
 class DisturbanceParam(object):
     def __init__(self):
         self.disturbance_interval_steps = 400
-        self.horizontal_force_bounds = (0., 40.)
-        self.vertical_force_bounds = (0., 40.)
+        self.horizontal_force_bounds = (0., 20.)
+        self.vertical_force_bounds = (0., 20.)
 
 
 class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, DisturbanceParam,
