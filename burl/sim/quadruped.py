@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os.path
+import random
 from collections import deque
 from typing import Deque
 
@@ -15,6 +16,7 @@ from burl.sim.motor import MotorSim
 from burl.utils import (ang_norm, JointInfo, make_cls, g_cfg, DynamicsInfo, vec_cross,
                         sign, included_angle, safe_asin, safe_acos)
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
+from itertools import repeat
 
 TP_ZERO3 = (0., 0., 0.)
 TP_Q0 = (0., 0., 0., 1.)
@@ -70,10 +72,11 @@ class Quadruped(object):
         self._resetStates()
 
         self._latency_steps = int(self._latency * g_cfg.execution_frequency)
-        self._quadruped = self._loadRobot(init_height_addition)
+        self._body_id = self._loadRobot(init_height_addition)
         self._analyseModelJoints()
         self._resetPosture()
-        self.setPhysicsParams()
+        self.initPhysicsParams()
+        self.setDynamics(g_cfg.random_dynamics)
 
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
@@ -84,7 +87,7 @@ class Quadruped(object):
 
     @property
     def id(self):
-        return self._quadruped
+        return self._body_id
 
     def _resetStates(self):
         self._base_pose: Pose = None
@@ -134,13 +137,13 @@ class Quadruped(object):
         return self._joint_ids[leg * 4 + joint_type]
 
     def _analyseModelJoints(self):
-        self._num_joints = self._env.getNumJoints(self._quadruped)
+        self._num_joints = self._env.getNumJoints(self._body_id)
         self._joint_names = ['_'.join((l, j, s)) for l in self.LEG_NAMES
                              for j, s in zip(self.JOINT_TYPES, self.JOINT_SUFFIX)]
 
         joint_name_to_id = {}
-        for i in range(self._env.getNumJoints(self._quadruped)):
-            joint_info = self._env.getJointInfo(self._quadruped, i)
+        for i in range(self._env.getNumJoints(self._body_id)):
+            joint_info = self._env.getJointInfo(self._body_id, i)
             joint_name_to_id[joint_info[1].decode("UTF-8")] = joint_info[0]
         self._joint_ids = [joint_name_to_id.get(n, -1) for n in self._joint_names]
         self._motor_ids = [self._getJointId(l, j) for l in range(4) for j in range(3)]
@@ -148,36 +151,48 @@ class Quadruped(object):
 
     def _resetPosture(self):
         for i in range(12):
-            self._env.resetJointState(self._quadruped, self._motor_ids[i], self.STANCE_POSTURE[i], 0.0)
+            self._env.resetJointState(self._body_id, self._motor_ids[i], self.STANCE_POSTURE[i], 0.0)
 
-    def setPhysicsParams(self, random_dynamics=False):
-        for m in self._motor_ids:
-            self._env.changeDynamics(self._quadruped, m, linearDamping=0, angularDamping=0)
+    def initPhysicsParams(self):
         self._env.setPhysicsEngineParameter(enableConeFriction=0)
-        if random_dynamics:
-            base_mass = DynamicsInfo(self._env.getDynamicsInfo(self._quadruped, 0)).mass,
-            base_inertial = DynamicsInfo(self._env.getDynamicsInfo(self._quadruped, 0)).inertial
-            joint_friction = np.random.random(12) * 0.05
-            self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
-                                                forces=joint_friction)
-            raise NotImplementedError
-
-        else:
-            for f in self._foot_ids:
-                self._env.changeDynamics(self._quadruped, f, spinningFriction=g_cfg.foot_spinning_friction,
-                                         lateralFriction=g_cfg.foot_lateral_friction)
-            self._env.setJointMotorControlArray(self._quadruped, self._motor_ids, self._env.VELOCITY_CONTROL,
-                                                forces=(g_cfg.joint_friction,) * len(self._motor_ids))
         for leg in range(4):
-            self._env.enableJointForceTorqueSensor(self._quadruped, self._getJointId(leg, 3), True)
+            self._env.enableJointForceTorqueSensor(self._body_id, self._getJointId(leg, 3), True)
+        self._base_dynamics = DynamicsInfo(self._env.getDynamicsInfo(self._body_id, 0))
+        self._leg_dynamics = [DynamicsInfo(self._env.getDynamicsInfo(self._body_id, i)) for i in self._motor_ids[:3]]
 
-        self._mass = sum([self._env.getDynamicsInfo(self._quadruped, i)[0] for i in range(self._num_joints)])
+    def setDynamics(self, random_dynamics=False):
+        if random_dynamics:
+            base_mass = self._base_dynamics.mass * random.uniform(0.8, 1.2)
+            base_inertia = self._base_dynamics.inertia * np.random.uniform(0.8, 1.2, 3)
+            leg_masses, leg_inertia = zip(*[(leg_dyn.mass * random.uniform(0.8, 1.2),
+                                             leg_dyn.inertia * np.random.uniform(0.8, 1.2, 3))
+                                            for _ in range(4) for leg_dyn in self._leg_dynamics])
+            joint_friction = np.random.random(12) * 0.05
+            foot_friction = np.random.uniform(0.4, 1.0, 4)
+
+            self._env.changeDynamics(self._body_id, 0, mass=base_mass, localInertiaDiagonal=base_inertia)
+            # self._latency = np.random.uniform(0.01, 0.02)
+            self._env.setJointMotorControlArray(self._body_id, self._motor_ids,
+                                                pybullet.VELOCITY_CONTROL, forces=joint_friction)
+            for link_id, mass, inertia in zip(self._motor_ids, leg_masses, leg_inertia):
+                self._env.changeDynamics(self._body_id, link_id, mass=mass, localInertiaDiagonal=inertia)
+            for link_id, fric in zip(self._foot_ids, foot_friction):
+                self._env.changeDynamics(self._body_id, link_id, lateralFriction=fric)
+        else:
+            for link_id in self._foot_ids:
+                self._env.changeDynamics(self._body_id, link_id, spinningFriction=g_cfg.foot_spinning_friction,
+                                         lateralFriction=g_cfg.foot_lateral_friction)
+            self._env.setJointMotorControlArray(self._body_id, self._motor_ids, self._env.VELOCITY_CONTROL,
+                                                forces=(g_cfg.joint_friction,) * len(self._motor_ids))
+        for link_id in self._motor_ids:
+            self._env.changeDynamics(self._body_id, link_id, linearDamping=0, angularDamping=0)
+        self._mass = sum([self._env.getDynamicsInfo(self._body_id, i)[0] for i in range(self._num_joints)])
 
     def applyCommand(self, motor_commands):
         motor_commands = np.asarray(motor_commands)
         self._command_history.append(motor_commands)
         torques = self._motor.apply_command(motor_commands)
-        self._env.setJointMotorControlArray(self._quadruped, self._motor_ids,
+        self._env.setJointMotorControlArray(self._body_id, self._motor_ids,
                                             self._env.TORQUE_CONTROL, forces=torques)
         self._torque_history.append(torques)
         return torques
@@ -198,34 +213,36 @@ class Quadruped(object):
         self._torque_history.clear()
         self._cot_buffer.clear()
         if reload:
-            self._quadruped = self._loadRobot(height_addition)
-            self.setPhysicsParams()
+            self._body_id = self._loadRobot(height_addition)
+            self.initPhysicsParams()
         else:
             if g_cfg.on_rack:
-                self._env.resetBasePositionAndOrientation(self._quadruped, self.INIT_RACK_POSITION, self.orientation)
+                self._env.resetBasePositionAndOrientation(self._body_id, self.INIT_RACK_POSITION, self.orientation)
             elif in_situ:
                 x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2] + height_addition
                 _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
                 orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
-                self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z), orn_q)
+                self._env.resetBasePositionAndOrientation(self._body_id, (x, y, z), orn_q)
             else:
                 x, y, z = self.INIT_POSITION
-                self._env.resetBasePositionAndOrientation(self._quadruped, (x, y, z + height_addition), TP_Q0)
-        self._env.resetBaseVelocity(self._quadruped, TP_ZERO3, TP_ZERO3)
+                self._env.resetBasePositionAndOrientation(self._body_id, (x, y, z + height_addition), TP_Q0)
+        if reload or g_cfg.random_dynamics:
+            self.setDynamics(g_cfg.random_dynamics)
+        self._env.resetBaseVelocity(self._body_id, TP_ZERO3, TP_ZERO3)
         self._resetPosture()
         self._motor.reset()
 
     def updateObservation(self):
         self._step_counter += 1
         self._time += 1 / self._frequency
-        self._base_pose = Pose(*self._env.getBasePositionAndOrientation(self._quadruped))
-        self._base_twist = Twist(*self._env.getBaseVelocity(self._quadruped))
+        self._base_pose = Pose(*self._env.getBasePositionAndOrientation(self._body_id))
+        self._base_twist = Twist(*self._env.getBaseVelocity(self._body_id))
         self._base_twist_in_base_frame = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
                                                self._rotateFromWorldToBase(self._base_twist.angular))
         self._rpy = Rpy.from_quaternion(self._base_pose.orientation)
         self._observation = ObservationRaw()
         self._observation.base_state = BaseState(self._base_pose, self._base_twist_in_base_frame)
-        joint_states_raw = self._env.getJointStates(self._quadruped, range(self._num_joints))
+        joint_states_raw = self._env.getJointStates(self._body_id, range(self._num_joints))
         self._observation.joint_states = JointStates(*zip(*joint_states_raw))
         self._observation.foot_states = self._getFootStates()
         self._observation.contact_states = ContactStates(self._getContactStates())
@@ -259,7 +276,7 @@ class Quadruped(object):
 
         pos_world, _ = self._env.multiplyTransforms(self.position, self.orientation, pos, TP_Q0)
         all_joint_angles = self._env.calculateInverseKinematics(
-            self._quadruped, self._foot_ids[leg], pos_world, solver=0)
+            self._body_id, self._foot_ids[leg], pos_world, solver=0)
 
         return np.array(all_joint_angles[leg * 3: leg * 3 + 3])
 
@@ -279,7 +296,7 @@ class Quadruped(object):
 
     def _getContactStates(self):
         def _getContactState(link_id):
-            return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
+            return bool(self._env.getContactPoints(bodyA=self._body_id, linkIndexA=link_id))
 
         contact_states = [_getContactState(i) for i in range(self._num_joints)]
         return contact_states
@@ -289,10 +306,10 @@ class Quadruped(object):
         Get foot positions, orientations and forces by getLinkStates and getContactPoints.
         :return: FootStates
         """
-        link_states = self._env.getLinkStates(self._quadruped, self._foot_ids)
+        link_states = self._env.getLinkStates(self._body_id, self._foot_ids)
         foot_positions = [ls[0] for ls in link_states]
         foot_orientations = [ls[1] for ls in link_states]
-        contact_points = self._env.getContactPoints(bodyA=self._quadruped)
+        contact_points = self._env.getContactPoints(bodyA=self._body_id)
         contact_dict = {}
         for p in contact_points:
             link_idx = p[3]
@@ -525,8 +542,8 @@ class Quadruped(object):
     def analyseJointInfos(self):
         print(f"{'id':>2}  {'name':^14} {'type':>4}  {'q u':^5}  {'damp'}  {'fric'}  {'range':^13} "
               f"{'maxF':>4}  {'maxV':>4}  {'link':^10}  {'AX'}  {'par'}  {'mass':>5}  {'inertial':^21}")
-        for i in range(self._env.getNumJoints(self._quadruped)):
-            info = JointInfo(self._env.getJointInfo(self._quadruped, i))
+        for i in range(self._env.getNumJoints(self._body_id)):
+            info = JointInfo(self._env.getJointInfo(self._body_id, i))
             is_fixed = info.type == pybullet.JOINT_FIXED
             print(f'{info.idx:>2d}  {info.name[:14]:^14} {info.joint_types[info.type]:>4}', end='  ')
             print(f"{f'{info.q_idx}':>2} {f'{info.u_idx}':<2} " if not is_fixed else f"{'---':^6}", end=' ')
@@ -551,13 +568,13 @@ class Quadruped(object):
                     return f' {f:.0f}e-{e}'
                 return f'{f:.1f}e-{e}'
 
-            dyn = DynamicsInfo(self._env.getDynamicsInfo(self._quadruped, i))
+            dyn = DynamicsInfo(self._env.getDynamicsInfo(self._body_id, i))
             print(f"{f'{dyn.mass:.3f}'}  "
-                  f"{float_e(dyn.inertial[0])} {float_e(dyn.inertial[1])} {float_e(dyn.inertial[2])}")
+                  f"{float_e(dyn.inertia[0])} {float_e(dyn.inertia[1])} {float_e(dyn.inertia[2])}")
 
     def analyseDynamicsInfos(self):
-        for i in range(p.getNumJoints(self._quadruped)):
-            print(p.getDynamicsInfo(self._quadruped, i))
+        for i in range(p.getNumJoints(self._body_id)):
+            print(p.getDynamicsInfo(self._body_id, i))
 
 
 class A1(Quadruped):
@@ -651,7 +668,7 @@ class A1(Quadruped):
 
     def _getContactStates(self):
         def _getContactState(link_id):
-            return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
+            return bool(self._env.getContactPoints(bodyA=self._body_id, linkIndexA=link_id))
 
         base_contact = _getContactState(0)
         contact_states = [base_contact]
@@ -695,7 +712,7 @@ class AlienGo(A1):
 
     def _getContactStates(self):
         def _getContactState(link_id):
-            return bool(self._env.getContactPoints(bodyA=self._quadruped, linkIndexA=link_id))
+            return bool(self._env.getContactPoints(bodyA=self._body_id, linkIndexA=link_id))
 
         base_contact = _getContactState(0)
         contact_states = [base_contact]

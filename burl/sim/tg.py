@@ -20,7 +20,8 @@ def vertical_tg(h=0.08):  # 0.2 in paper
     coeff1 = np.array((0., 0., 3., -2.)) * h
     coeff2 = np.array((-4., 12., -9., 2.)) * h
 
-    def _tg(k):
+    def _tg(phi):
+        k = phi * 2 / np.pi
         if k <= 0 or k >= 2:
             return np.zeros(3)
         k_pow = list(power(k, 3))
@@ -36,7 +37,8 @@ def vertical_and_lateral_tg(h=0.12, coeff=0.2):
     coeff1 = np.array((0., 0., 3., -2.)) * h
     coeff2 = np.array((-4., 12., -9., 2.)) * h
 
-    def _tg(k):
+    def _tg(phi):
+        k = phi * 2 / np.pi
         if k <= 0 or k >= 2:
             return -_tg(-k) * 0.2
         k_pow = list(power(k, 3))
@@ -49,44 +51,44 @@ def vertical_and_lateral_tg(h=0.12, coeff=0.2):
     return _tg
 
 
-def designed_tg(c=0.3, h=0.1):
-    def _poly5th(x, coeff):
-        return np.asarray(coeff) @ list(power(x, 5))
-
-    def _solve5th(d1, d2):
-        x1, y1, v1, a1 = d1
-        x2, y2, v2, a2 = d2
-        coeff = np.array(((1, 1, 1, 1, 1, 1),
-                          (1, 1, 1, 1, 1, 1),
-                          (0, 1, 2, 3, 4, 5),
-                          (0, 1, 2, 3, 4, 5),
-                          (0, 0, 2, 6, 12, 20),
-                          (0, 0, 2, 6, 12, 20)))
-        x1_pow = list(power(x1, 5))
-        x2_pow = list(power(x2, 5))
-        X = np.array((x1_pow,
-                      x2_pow,
-                      [0, *x1_pow[:-1]],
-                      [0, *x2_pow[:-1]],
-                      [0, 0, *x1_pow[:-2]],
-                      [0, 0, *x2_pow[:-2]]))
-        Y = np.array((y1, y2, v1, v2, a1, a2))
-        return np.linalg.solve(coeff * X, Y)
-
-    dots = np.array(((-2, 0, 0, 0.0),
-                     (-1, -c * h, 0, 0),
-                     (0, 0, 0.05, 0.15),
-                     (1, h, 0, -0.3),
-                     (2, 0, 0, 0.0)))
-    coeffs = np.array([_solve5th(dot1, dot2) for dot1, dot2 in zip(dots, dots[1:])])
-    num_sections = len(coeffs)
-
-    def _tg(k):
-        if k < -2 or k > 2:
-            return 0.0
-        return _poly5th(k, coeffs[min(num_sections - 1, int(k + 2))])
-
-    return _tg
+# def designed_tg(c=0.3, h=0.1):
+#     def _poly5th(x, coeff):
+#         return np.asarray(coeff) @ list(power(x, 5))
+#
+#     def _solve5th(d1, d2):
+#         x1, y1, v1, a1 = d1
+#         x2, y2, v2, a2 = d2
+#         coeff = np.array(((1, 1, 1, 1, 1, 1),
+#                           (1, 1, 1, 1, 1, 1),
+#                           (0, 1, 2, 3, 4, 5),
+#                           (0, 1, 2, 3, 4, 5),
+#                           (0, 0, 2, 6, 12, 20),
+#                           (0, 0, 2, 6, 12, 20)))
+#         x1_pow = list(power(x1, 5))
+#         x2_pow = list(power(x2, 5))
+#         X = np.array((x1_pow,
+#                       x2_pow,
+#                       [0, *x1_pow[:-1]],
+#                       [0, *x2_pow[:-1]],
+#                       [0, 0, *x1_pow[:-2]],
+#                       [0, 0, *x2_pow[:-2]]))
+#         Y = np.array((y1, y2, v1, v2, a1, a2))
+#         return np.linalg.solve(coeff * X, Y)
+#
+#     dots = np.array(((-2, 0, 0, 0.0),
+#                      (-1, -c * h, 0, 0),
+#                      (0, 0, 0.05, 0.15),
+#                      (1, h, 0, -0.3),
+#                      (2, 0, 0, 0.0)))
+#     coeffs = np.array([_solve5th(dot1, dot2) for dot1, dot2 in zip(dots, dots[1:])])
+#     num_sections = len(coeffs)
+#
+#     def _tg(k):
+#         if k < -2 or k > 2:
+#             return 0.0
+#         return _poly5th(k, coeffs[min(num_sections - 1, int(k + 2))])
+#
+#     return _tg
 
 
 class LocomotionStateMachine(object):
@@ -156,7 +158,7 @@ class LocomotionStateMachine(object):
 
     def get_priori_trajectory(self):
         # k: [-2, 2)
-        return np.array([self._tg(phi / np.pi * 2) for phi in self._phases])
+        return np.array([self._tg(phi) for phi in self._phases])
 
 
 if __name__ == '__main__':
@@ -169,7 +171,7 @@ if __name__ == '__main__':
     #     stm._init_phases()
     #     print(stm.phases)
 
-    tg = designed_tg()
+    # tg = designed_tg()
     # tg2 = end_trajectory_generator()
     x = np.linspace(-2, 2, 1000)
     y1 = [tg(x) for x in x]

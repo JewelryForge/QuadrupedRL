@@ -14,6 +14,7 @@ class Options(object):
         self.trn_type = 'plain'
         self.tg_init = 'fixed'
         self.schedule = 'fixed'
+        self.random_dynamics = False
 
 
 class PhysicsParam(object):
@@ -30,7 +31,8 @@ class PhysicsParam(object):
 class SimParam(PhysicsParam):
     def __init__(self):
         super().__init__()
-        self.local_urdf = '/home/jewel/Workspaces/teacher-student/urdf'
+        # self.local_urdf = '/home/jewel/Workspaces/teacher-student/urdf'
+        self.local_urdf = '/home/jewelry/python_ws/teacher-student/urdf'
         self.action_frequency = 50.0
         self.sim_frequency = 400.
         self.execution_frequency = 400.

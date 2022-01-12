@@ -145,7 +145,7 @@ class DynamicsInfo(object):
 
     mass = property(lambda self: self._info[0])
     lateral_fric = property(lambda self: self._info[1])
-    inertial = property(lambda self: self._info[2])
+    inertia = property(lambda self: self._info[2])
     inertial_pos = property(lambda self: self._info[3])
     inertial_orn = property(lambda self: self._info[4])
     restitution = property(lambda self: self._info[5])
