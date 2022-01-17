@@ -168,7 +168,7 @@ class Quadruped(object):
                                              leg_dyn.inertia * np.random.uniform(0.8, 1.2, 3))
                                             for _ in range(4) for leg_dyn in self._leg_dynamics])
             joint_friction = np.random.random(12) * 0.05
-            foot_friction = np.random.uniform(0.4, 1.0, 4)
+            self._foot_friction = np.random.uniform(0.4, 1.0, 4)
 
             self._env.changeDynamics(self._body_id, 0, mass=base_mass, localInertiaDiagonal=base_inertia)
             # self._latency = np.random.uniform(0.01, 0.02)
@@ -176,7 +176,7 @@ class Quadruped(object):
                                                 pybullet.VELOCITY_CONTROL, forces=joint_friction)
             for link_id, mass, inertia in zip(self._motor_ids, leg_masses, leg_inertia):
                 self._env.changeDynamics(self._body_id, link_id, mass=mass, localInertiaDiagonal=inertia)
-            for link_id, fric in zip(self._foot_ids, foot_friction):
+            for link_id, fric in zip(self._foot_ids, self._foot_friction):
                 self._env.changeDynamics(self._body_id, link_id, lateralFriction=fric)
         else:
             for link_id in self._foot_ids:
@@ -184,6 +184,7 @@ class Quadruped(object):
                                          lateralFriction=g_cfg.foot_lateral_friction)
             self._env.setJointMotorControlArray(self._body_id, self._motor_ids, self._env.VELOCITY_CONTROL,
                                                 forces=(g_cfg.joint_friction,) * len(self._motor_ids))
+            self._foot_friction = (g_cfg.foot_lateral_friction,) * 4
         for link_id in self._motor_ids:
             self._env.changeDynamics(self._body_id, link_id, linearDamping=0, angularDamping=0)
         self._mass = sum([self._env.getDynamicsInfo(self._body_id, i)[0] for i in range(self._num_joints)])
@@ -360,6 +361,9 @@ class Quadruped(object):
     @property
     def rpy(self):
         return self._rpy
+
+    def getFootFriction(self):
+        return np.asarray(self._foot_friction)
 
     def getObservation(self, noisy=False):
         return self._observation_noisy_history[-1] if noisy else self._observation

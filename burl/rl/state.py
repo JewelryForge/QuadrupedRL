@@ -9,34 +9,83 @@ class ArrayAttr(object):
         super().__setattr__(key, np.asarray(value, dtype=float))
 
 
-class ProprioceptiveObservation(ArrayAttr):
-    dim = 60
+def rp(element, times):  # repeat
+    return (element,) * times
+
+
+zero3, zero4, zero8 = rp(0., 3), rp(0., 4), rp(0., 8)
+zero12, zero24, zero36 = rp(0., 12), rp(0., 24), rp(0., 36)
+
+
+class ProprioObservation(object):
+    dim = 60 + 73
+    command_avg, command_scl = zero3, rp(1., 3)
+    gravity_vector_avg, gravity_vector_scl = (0., 0., .998), rp(10., 3)
+    base_linear_avg, base_linear_scl = zero3, rp(2., 3)
+    base_angular_avg, base_angular_scl = zero3, rp(2., 3)
+    joint_pos_avg, joint_pos_scl = None, rp(2., 12)
+    joint_vel_avg, joint_vel_scl = zero12, (0.5, 0.4, 0.3) * 4
+    joint_prev_pos_err_avg, joint_prev_pos_err_scl = zero12, (6.5, 4.5, 3.5) * 4
+    ftg_phases_avg, ftg_phases_scl = zero8, rp(1., 8)
+    ftg_frequencies_avg, ftg_frequencies_scl = None, rp(100., 4)
+    joint_pos_err_his_avg, joint_pos_err_his_scl = zero24, rp(5., 24)
+    joint_vel_his_avg, joint_vel_his_scl = zero24, (0.5, 0.4, 0.3) * 8
+    joint_pos_target_avg, joint_pos_target_scl = None, rp(2., 12)
+    joint_prev_pos_target_avg, joint_prev_pos_target_scl = None, rp(2., 12)
+    base_frequency_avg, base_frequency_scl = None, (1.,)
+    offset, scale = None, None
 
     def __init__(self):
-        self.command = zero(3)
-        self.gravity_vector = zero(3)
-        self.base_linear = zero(3)
-        self.base_angular = zero(3)
-        self.joint_pos = zero(12)
-        self.joint_vel = zero(12)
-        self.joint_prev_pos_err = zero(12)  # if needed
-        self.ftg_phases = zero(8)
-        self.ftg_frequencies = zero(4)
+        self.command = zero3
+        self.gravity_vector = zero3
+        self.base_linear = zero3
+        self.base_angular = zero3
+        self.joint_pos = zero12
+        self.joint_vel = zero12
+        self.joint_prev_pos_err = zero12
+        self.ftg_phases = zero8
+        self.ftg_frequencies = zero4
+        self.joint_pos_err_his = zero24
+        self.joint_vel_his = zero24
+        self.joint_pos_target = zero12
+        self.joint_prev_pos_target = zero12
+        self.base_frequency = (0.,)
 
-    offset = np.concatenate((
-        zero(3), (0., 0., 0.998),  # command & gravity_vector
-        zero(6), (0, 0.723, -1.445) * 4,  # base twist & joint pos
-        zero(12), zero(12),  # joint vel &  joint_prev_pos_err
-        zero(8), (2.0,) * 4  # ftg phases & frequencies
-    ))
+    @classmethod
+    def init(cls):
+        cls.offset = np.concatenate((
+            cls.command_avg,
+            cls.gravity_vector_avg,
+            cls.base_linear_avg,
+            cls.base_angular_avg,
+            cls.joint_pos_avg,
+            cls.joint_vel_avg,
+            cls.joint_prev_pos_err_avg,
+            cls.ftg_phases_avg,
+            cls.ftg_frequencies_avg,
+            cls.joint_pos_err_his_avg,
+            cls.joint_vel_his_avg,
+            cls.joint_pos_target_avg,
+            cls.joint_prev_pos_target_avg,
+            cls.base_frequency_avg,
+        ))
 
-    scale = np.concatenate((
-        (1.0,) * 3, (5.0,) * 3,  # command & gravity_vector
-        (2.,) * 6, (2.0,) * 12,  # base twist & joint pos
-        # FIXME: why joint_prev_pos_err so large
-        (0.5, 0.4, 0.3) * 4, (6.5, 4.5, 3.5) * 4,  # joint vel &  joint_prev_pos_err
-        (1.5,) * 8, (100.,) * 4  # ftg phases & frequencies
-    ))
+        cls.scale = np.concatenate((
+            cls.command_scl,
+            cls.gravity_vector_scl,
+            cls.base_linear_scl,
+            cls.base_angular_scl,
+            cls.joint_pos_scl,
+            cls.joint_vel_scl,
+            cls.joint_prev_pos_err_scl,
+            cls.ftg_phases_scl,
+            cls.ftg_frequencies_scl,
+            cls.joint_pos_err_his_scl,
+            cls.joint_vel_his_scl,
+            cls.joint_pos_target_scl,
+            cls.joint_prev_pos_target_scl,
+            cls.base_frequency_scl,
+        ))
 
     def to_array(self):
         return np.concatenate((
@@ -48,38 +97,7 @@ class ProprioceptiveObservation(ArrayAttr):
             self.joint_vel,
             self.joint_prev_pos_err,
             self.ftg_phases,
-            self.ftg_frequencies
-        ))
-
-
-class ProprioObservation(ProprioceptiveObservation):
-    dim = ProprioceptiveObservation.dim + 73
-
-    def __init__(self):
-        super(ProprioObservation, self).__init__()
-        self.joint_pos_err_his = zero(24)
-        self.joint_vel_his = zero(24)
-        self.joint_pos_target = zero(12)
-        self.joint_prev_pos_target = zero(12)
-        self.base_frequency = np.array((0.,))
-
-    offset = np.concatenate((
-        ProprioceptiveObservation.offset,
-        zero(24), zero(24),  # joint_pos_err_his & joint_vel_his
-        (0, 0.723, -1.445) * 8,  # joint_pos_target * 2
-        (2.,)  # base_frequency
-    ))
-
-    scale = np.concatenate((
-        ProprioceptiveObservation.scale,
-        (5.,) * 24, (0.5, 0.4, 0.3) * 8,  # joint_pos_err_his & joint_vel_his
-        (2.0,) * 24,  # joint_pos_target * 2
-        (1,),  # base_frequency NOTICE: differ from paper
-    ))
-
-    def to_array(self):
-        return np.concatenate((
-            super().to_array(),
+            self.ftg_frequencies,
             self.joint_pos_err_his,
             self.joint_vel_his,
             self.joint_pos_target,
@@ -90,28 +108,41 @@ class ProprioObservation(ProprioceptiveObservation):
 
 class ExteroObservation(object):
     dim = 79
-
-    offset = np.concatenate((
-        (0.02,) * 36, (0., 0., 0.98) * 4,  # terrain scan & normal
-        (0.5, 0.5, 0.5) * 4,  # contact states
-        (0, 0, 30.0) * 4,  # contact forces
-        (0., 0., 0., 0.), (0., 0., 0.)  # friction & disturbance
-    ))
-
-    scale = np.concatenate((
-        (10.,) * 36, (5., 5., 10.) * 4,  # terrain scan & normal
-        (2,) * 12,  # contact states
-        (0.01, 0.01, 0.02) * 4,  # contact forces
-        (1.,) * 4, (0.1,) * 3  # friction & disturbance
-    ))
+    terrain_scan_avg, terrain_scan_scl = zero36, rp(10., 36)
+    terrain_normal_avg, terrain_normal_scl = (0., 0., 0.98) * 4, (5., 5., 10.) * 4
+    contact_states_avg, contact_states_scl = rp(0.5, 12), (2.,) * 12
+    foot_contact_forces_avg, foot_contact_forces_scl = (0., 0., 30.) * 4, (0.01, 0.01, 0.02) * 4
+    foot_friction_coeffs_avg, foot_friction_coeffs_scl = zero4, rp(1., 4)
+    external_disturbance_avg, external_disturbance_scl = zero3, rp(0.1, 3)
+    offset, scale = None, None
 
     def __init__(self):
-        self.terrain_scan = zero(36)  # clip
-        self.terrain_normal = np.array((0, 0, 1) * 4)  # clip
-        self.contact_states = zero(12)
-        self.foot_contact_forces = zero(12)
-        self.foot_friction_coeffs = zero(4)
-        self.external_disturbance = zero(3)
+        self.terrain_scan = zero36
+        self.terrain_normal = zero12
+        self.contact_states = zero12
+        self.foot_contact_forces = zero12
+        self.foot_friction_coeffs = zero4
+        self.external_disturbance = zero3
+
+    @classmethod
+    def init(cls):
+        cls.offset = np.concatenate((
+            cls.terrain_scan_avg,
+            cls.terrain_normal_avg,
+            cls.contact_states_avg,
+            cls.foot_contact_forces_avg,
+            cls.foot_friction_coeffs_avg,
+            cls.external_disturbance_avg
+        ))
+
+        cls.scale = np.concatenate((
+            cls.terrain_scan_scl,
+            cls.terrain_normal_scl,
+            cls.contact_states_scl,
+            cls.foot_contact_forces_scl,
+            cls.foot_friction_coeffs_scl,
+            cls.external_disturbance_scl
+        ))
 
     def to_array(self):
         return np.concatenate((
@@ -126,12 +157,18 @@ class ExteroObservation(object):
 
 class ExtendedObservation(ExteroObservation, ProprioObservation):
     dim = ExteroObservation.dim + ProprioObservation.dim
-    offset = np.concatenate((ExteroObservation.offset, ProprioObservation.offset))
-    scale = np.concatenate((ExteroObservation.scale, ProprioObservation.scale))
+    offset, scale = None, None
 
     def __init__(self):
         ExteroObservation.__init__(self)
         ProprioObservation.__init__(self)
+
+    @classmethod
+    def init(cls):
+        ExteroObservation.init()
+        ProprioObservation.init()
+        cls.offset = np.concatenate((ExteroObservation.offset, ProprioObservation.offset))
+        cls.scale = np.concatenate((ExteroObservation.scale, ProprioObservation.scale))
 
     def to_array(self):
         return np.concatenate((ExteroObservation.to_array(self),

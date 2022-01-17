@@ -117,12 +117,13 @@ class BodyPosturePenalty(Reward):
 
 class BodyHeightReward(Reward):
     # def __init__(self, lower=0.24, upper=0.32):
-    def __init__(self, lower=0.32, upper=0.44):
-        self.reshape = tanh2_reshape(lower, upper)
+    def __init__(self, des=0.4, range_=0.1):
+        self.des = des
+        self.reshape = tanh2_reshape(0., range_)
 
     def __call__(self, cmd, env, robot):
         height = env.getSafetyHeightOfRobot()
-        return self.reshape(height)
+        return 1 - self.reshape(abs(height - self.des))
 
 
 class TorqueGradientPenalty(Reward):

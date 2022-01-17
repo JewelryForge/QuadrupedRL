@@ -53,7 +53,7 @@ class BasicTask(RewardRegistry):
         # print(np.array([np.mean(b) for b in self.buf]))
         # print(rob.getCostOfTransport())
         # print(wrap(ClearanceOverTerrainReward))
-        print(wrap(HipAnglePenalty))
+        # print(wrap(HipAnglePenalty))
         # print(rob.getTorqueGradients())
         # self.tgp.append(wrap(TorqueGradientPenalty))
         # print(np.mean(self.tgp))

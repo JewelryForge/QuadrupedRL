@@ -8,12 +8,12 @@ import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
 
-from burl.rl.state import ExtendedObservation, Action
+from burl.rl.state import ProprioObservation, ExtendedObservation, Action
 from burl.rl.task import BasicTask
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.terrain import makeTerrain
-from burl.sim.tg import LocomotionStateMachine, vertical_tg
+from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
 from burl.utils.transforms import Rpy, Rotation
 
@@ -46,6 +46,21 @@ class QuadrupedEnv(object):
         if self._gui:
             self._initRendering()
         self._action_buffer = deque(maxlen=10)
+        self._initObservationStatistics()
+
+    def _initObservationStatistics(self):
+        if not hasattr(QuadrupedEnv, '_init_observation_statistics_'):
+            QuadrupedEnv._init_observation_statistics_ = True
+            ProprioObservation.joint_pos_avg = self._robot.STANCE_POSTURE
+            ProprioObservation.joint_pos_target_avg = self._robot.STANCE_POSTURE
+            ProprioObservation.joint_prev_pos_target_avg = self._robot.STANCE_POSTURE
+            ProprioObservation.joint_prev_pos_target_avg = self._robot.STANCE_POSTURE
+            self._initObservationStatisticsForSubclass()
+            ExtendedObservation.init()
+
+    def _initObservationStatisticsForSubclass(self):
+        ProprioObservation.ftg_frequencies_avg = (0.,) * 4
+        ProprioObservation.base_frequency_avg = (0.,)
 
     def _resetStates(self):
         self._sim_step_counter = 0
@@ -185,7 +200,7 @@ class QuadrupedEnv(object):
         eo.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
         eo.contact_states = r.getContactStates()[1:]
         eo.foot_contact_forces = r.getFootContactForces()
-        eo.foot_friction_coeffs = [self.getTerrainFrictionCoeff(x, y) for x, y in foot_xy]
+        eo.foot_friction_coeffs = [self.getTerrainFrictionCoeff(x, y) for x, y in foot_xy] * r.getFootFriction()
         eo.external_disturbance = self._external_force
         return eo
 
@@ -340,7 +355,7 @@ class QuadrupedEnv(object):
         return self._terrain.getNormal(x, y)
 
     def getTerrainFrictionCoeff(self, x, y) -> float:
-        return 0.0
+        return 1.0  # TODO
 
 
 class TGEnv(QuadrupedEnv):
@@ -348,11 +363,15 @@ class TGEnv(QuadrupedEnv):
                 'AlienGo': make_cls(vertical_tg, h=0.12)}
 
     def __init__(self, *args, **kwargs):
-        super(TGEnv, self).__init__(*args, **kwargs)
-        self._stm = LocomotionStateMachine(1 / g_cfg.action_frequency,
-                                           make_tg=self.tg_types[self._robot.__class__.__name__])
+        super().__init__(*args, **kwargs)
+        self._stm = TgStateMachine(1 / g_cfg.action_frequency,
+                                   self.tg_types[self._robot.__class__.__name__])
         self._commands = None
         # self._filter = self._stm.flags
+
+    def _initObservationStatisticsForSubclass(self):
+        ProprioObservation.ftg_frequencies_avg = (TgStateMachine.base_frequency,) * 4
+        ProprioObservation.base_frequency_avg = (TgStateMachine.base_frequency,)
 
     def makeObservation(self, if_noisy=False) -> ExtendedObservation:
         eo: ExtendedObservation = super().makeObservation(if_noisy)

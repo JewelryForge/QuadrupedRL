@@ -91,10 +91,11 @@ def vertical_and_lateral_tg(h=0.12, coeff=0.2):
 #     return _tg
 
 
-class LocomotionStateMachine(object):
+class TgStateMachine(object):
     INIT_ANGLES = (0.0, -np.pi, -np.pi, 0.0)
+    base_frequency = 2.0  # TODO: COMPLETE THE STATE MACHINE
 
-    def __init__(self, time_step, make_tg=vertical_tg, lower_frequency=0.5, upper_frequency=3.0):
+    def __init__(self, time_step, make_tg, lower_frequency=0.5, upper_frequency=3.0):
         # We set the base frequency f0 to zero when the zero command is given for 0.5s,
         # which stops FTGs, and the robot stands still on the terrain.
         # f0 is set to 1.25 Hz when the direction command is given
@@ -122,10 +123,6 @@ class LocomotionStateMachine(object):
             self._phases = ang_norm(np.random.random(4) * 2 * np.pi)
         else:
             raise RuntimeError(f'Unknown TG Init Mode {g_cfg.tg_init}')
-
-    @property
-    def base_frequency(self):
-        return 2.0  # TODO: COMPLETE THE STATE MACHINE
 
     @property
     def phases(self):

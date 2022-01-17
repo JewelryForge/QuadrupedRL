@@ -76,7 +76,7 @@ class ActorCritic(nn.Module):
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 
-        print('Actor:', self.actor, 'Critic:', self.critic, sep='\n')
+        print(self.actor, self.critic, sep='\n')
 
     @staticmethod
     def init_weights(sequential, scales):  # not used at the moment
