@@ -20,35 +20,38 @@ def vertical_tg(h=0.08):  # 0.2 in paper
     coeff1 = np.array((0., 0., 3., -2.)) * h
     coeff2 = np.array((-4., 12., -9., 2.)) * h
 
-    def _tg(phi):
-        k = phi * 2 / np.pi
-        if k <= 0 or k >= 2:
-            return np.zeros(3)
-        k_pow = list(power(k, 3))
-        if 0 < k <= 1:
-            return np.array((0., 0., coeff1 @ k_pow))
-        if 1 < k < 2:
-            return np.array((0., 0., coeff2 @ k_pow))
+    def _tg(phases):
+        priori = []
+        for phi in phases:
+            k = phi * 2 / np.pi
+            if k <= 0 or k >= 2:
+                priori.append(np.zeros(3))
+            k_pow = list(power(k, 3))
+            if 0 < k <= 1:
+                priori.append((0., 0., coeff1 @ k_pow))
+            if 1 < k < 2:
+                priori.append((0., 0., coeff2 @ k_pow))
+        return np.array(priori)
 
     return _tg
 
 
-def vertical_and_lateral_tg(h=0.12, coeff=0.2):
-    coeff1 = np.array((0., 0., 3., -2.)) * h
-    coeff2 = np.array((-4., 12., -9., 2.)) * h
-
-    def _tg(phi):
-        k = phi * 2 / np.pi
-        if k <= 0 or k >= 2:
-            return -_tg(-k) * 0.2
-        k_pow = list(power(k, 3))
-        if 0 < k <= 1:
-            z = coeff1 @ k_pow
-        if 1 < k < 2:
-            z = coeff2 @ k_pow
-        return np.array(z * coeff, 0., z)
-
-    return _tg
+# def vertical_and_lateral_tg(h=0.12, coeff=0.2):
+#     coeff1 = np.array((0., 0., 3., -2.)) * h
+#     coeff2 = np.array((-4., 12., -9., 2.)) * h
+#
+#     def _tg(phi):
+#         k = phi * 2 / np.pi
+#         if k <= 0 or k >= 2:
+#             return -_tg(-k) * 0.2
+#         k_pow = list(power(k, 3))
+#         if 0 < k <= 1:
+#             z = coeff1 @ k_pow
+#         if 1 < k < 2:
+#             z = coeff2 @ k_pow
+#         return np.array(z * coeff, 0., z)
+#
+#     return _tg
 
 
 # def designed_tg(c=0.3, h=0.1):
@@ -154,8 +157,9 @@ class TgStateMachine(object):
         return self._phases
 
     def get_priori_trajectory(self):
+        return np.asarray(self._tg(self._phases))
         # k: [-2, 2)
-        return np.array([self._tg(phi) for phi in self._phases])
+        # return np.array([(phi) for phi in self._phases])
 
 
 if __name__ == '__main__':

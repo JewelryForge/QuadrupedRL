@@ -1,18 +1,15 @@
 import os
-import time
 from collections import deque
-from multiprocessing import Process, Queue, Pipe
 
 import numpy as np
 import torch
 import wandb
 
-from burl.alg.ac import ActorCritic, Actor, Critic
-from burl.alg.ppo import PPO
-from burl.rl.task import BasicTask, RandomCmdTask
-from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
-from burl.sim import TGEnv, A1, AlienGo, EnvContainerMultiProcess2, EnvContainer
-from burl.utils import make_cls, g_cfg, to_dev, WithTimer, log_info
+from burl.alg import ActorCritic, Actor, Critic, PPO
+from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation, SimplifiedObservation
+from burl.rl.task import BasicTask
+from burl.sim import IkEnv, FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, WholeBodyTgNet
+from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
 
 
 class Accountant:
@@ -41,27 +38,21 @@ class Accountant:
 
 
 class OnPolicyRunner:
-    def __init__(self):
-        make_robot = make_cls(AlienGo)
-        make_task = make_cls(BasicTask)
-        # make_task = make_cls(RandomCmdTask)
-        make_env = make_cls(TGEnv, make_task=make_task, make_robot=make_robot)
+    def __init__(self, make_env, make_actor_critic):
         if g_cfg.use_mp:
-            self.env = EnvContainerMultiProcess2(make_env, g_cfg.num_envs)
+            self.env = EnvContainerMp2(make_env, g_cfg.num_envs)
         else:
             self.env = EnvContainer(make_env, g_cfg.num_envs)
         if g_cfg.validation:
+            raise NotImplementedError
             self.eval_env = EnvContainer(make_env, 1)
-        actor_critic = ActorCritic(
-            Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
-                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
-            Critic(ExtendedObservation.dim, 1), g_cfg.init_noise_std).to(g_cfg.dev)
+        actor_critic = make_actor_critic().to(g_cfg.dev)
         self.alg = PPO(actor_critic)
 
         self.current_iter = 0
 
     def learn(self):
-        p_obs, obs = to_dev(*self.env.init_observations())
+        actor_obs, critic_obs = to_dev(*self.env.init_observations())
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         reward_buffer, eps_len_buffer = deque(maxlen=10), deque(maxlen=10)
@@ -69,14 +60,14 @@ class OnPolicyRunner:
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
         total_iter = self.current_iter + g_cfg.num_iterations
         accountant = Accountant()
-        timer = WithTimer()
+        timer = MfTimer()
         for it in range(self.current_iter + 1, total_iter + 1):
             with torch.inference_mode():
                 timer.start()
                 for _ in range(g_cfg.storage_len):
-                    actions = self.alg.act(obs, p_obs)
-                    p_obs, obs, rewards, dones, infos = self.env.step(actions)
-                    p_obs, obs, rewards, dones = to_dev(p_obs, obs, rewards, dones)
+                    actions = self.alg.act(actor_obs, critic_obs)
+                    actor_obs, critic_obs, rewards, dones, infos = self.env.step(actions)
+                    actor_obs, critic_obs, rewards, dones = to_dev(actor_obs, critic_obs, rewards, dones)
                     self.alg.process_env_step(rewards, dones, infos['time_out'])
                     cur_reward_sum += rewards
                     cur_episode_length += 1
@@ -84,8 +75,8 @@ class OnPolicyRunner:
 
                     if any(dones):
                         reset_ids = torch.squeeze(dones.nonzero(), dim=1)
-                        p_obs_reset, obs_reset = to_dev(*self.env.reset(reset_ids))
-                        p_obs[reset_ids,], obs[reset_ids,] = p_obs_reset, obs_reset
+                        actor_obs_reset, critic_obs_reset = to_dev(*self.env.reset(reset_ids))
+                        actor_obs[reset_ids,], critic_obs[reset_ids,] = actor_obs_reset, critic_obs_reset
                         reward_buffer.extend(cur_reward_sum[reset_ids].cpu().numpy().tolist())
                         eps_len_buffer.extend(cur_episode_length[reset_ids].cpu().numpy().tolist())
                         cur_reward_sum[reset_ids] = 0
@@ -97,7 +88,7 @@ class OnPolicyRunner:
 
                 timer.start()
                 # Learning step
-                self.alg.compute_returns(p_obs)
+                self.alg.compute_returns(critic_obs)
             mean_value_loss, mean_surrogate_loss = self.alg.update()
             learning_time = timer.end()
             self.log(it, locals())
@@ -169,3 +160,32 @@ class OnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_inference
+
+
+class PolicyTrainer(OnPolicyRunner):
+    def __init__(self):
+        make_actor_critic = make_cls(
+            ActorCritic,
+            actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                        g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
+            critic=Critic(ExtendedObservation.dim, 1),
+            init_noise_std=g_cfg.init_noise_std
+        )
+        super().__init__(
+            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=BasicTask),
+            make_actor_critic=make_actor_critic,
+        )
+
+
+class TgNetTrainer(OnPolicyRunner):
+    def __init__(self):
+        make_actor_critic = make_cls(
+            ActorCritic,
+            actor=WholeBodyTgNet('D:/Workspaces/teacher-student/tg_base.pt'),
+            critic=Critic(SimplifiedObservation.dim, 1),
+            init_noise_std=g_cfg.init_noise_std
+        )
+        super().__init__(
+            make_env=make_cls(IkEnv, make_robot=AlienGo, make_task=BasicTask),
+            make_actor_critic=make_actor_critic,
+        )

@@ -117,7 +117,7 @@ class BodyPosturePenalty(Reward):
 
 class BodyHeightReward(Reward):
     # def __init__(self, lower=0.24, upper=0.32):
-    def __init__(self, des=0.4, range_=0.1):
+    def __init__(self, des=0.4, range_=0.05):
         self.des = des
         self.reshape = tanh2_reshape(0., range_)
 

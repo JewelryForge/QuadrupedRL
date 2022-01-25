@@ -208,10 +208,10 @@ def get_rpy_rate_from_angular_velocity(rpy, angular):
 
 
 if __name__ == '__main__':
-    from burl.utils import WithTimer
+    from burl.utils import MfTimer
 
     r = np.array(Rotation.from_rpy((0.16, 0.28, 0.4)))
     for _ in range(10):
-        with WithTimer() as timer:
+        with MfTimer() as timer:
             Rpy.from_rotation(r)
         print(timer.time_spent)

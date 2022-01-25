@@ -85,7 +85,7 @@ def get_const_variables(cls):
     return var
 
 
-class WithTimer:
+class MfTimer:
     def __init__(self, func=None, *args, **kwargs):
         if func:
             self.start()
@@ -200,9 +200,11 @@ def find_log(log_dir='log', time=None, epoch=None):
 
 
 def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-debug/log', time=None, epoch=None):
+    print(f'ssh {host} -p {port} ls {log_dir}')
     remote_logs = os.popen(f'ssh {host} -p {port} ls {log_dir}').read().split('\n')
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
+    print('remote log items: ', *folders)
     if not time:
         folder = folders[0]
     else:
@@ -211,7 +213,9 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-de
                 break
         else:
             raise RuntimeError(f'Record with time {time} not found, all {folders}')
-    models = os.popen(f'ssh {host} -p {port} ls {os.path.join(log_dir, folder)}').read().split('\n')
+    dst_dir = os.path.join(log_dir, folder).replace('\\', '/')
+    print(f'ssh {host} -p {port} ls {dst_dir}')
+    models = os.popen(f'ssh {host} -p {port} ls {dst_dir}').read().split('\n')
     final_epoch = max(int(m.removeprefix('model_').removesuffix('.pt'))
                       for m in models if m.startswith('model'))
     if epoch:
@@ -224,6 +228,7 @@ def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-de
     local_log_dir = os.path.join('log', 'remote-' + folder)
     if not os.path.exists(os.path.join(local_log_dir, model_name)):
         os.makedirs(local_log_dir, exist_ok=True)
+        print(f'downloading model file')
         if os.system(f'scp -P {port} {host}:{remote_log} {local_log_dir}'):
             raise RuntimeError('scp failed')
     return os.path.join(local_log_dir, model_name)

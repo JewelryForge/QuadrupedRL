@@ -32,26 +32,23 @@ class BasicTask(RewardRegistry):
         return super().calculateReward()
 
     def sendOrPrint(self):
-        from burl.sim import Quadruped, TGEnv
+        from burl.sim import Quadruped, FixedTgEnv
         from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
                                     FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty,
-                                    ClearanceOverTerrainReward, TorqueGradientPenalty)
+                                    ClearanceOverTerrainReward, TorqueGradientPenalty, CostOfTransportReward)
 
         from burl.utils import udp_pub
         from collections import deque
         cmd = self.cmd
-        env: TGEnv = self.env
+        env: FixedTgEnv = self.env
         rob: Quadruped = self.robot
 
         def wrap(reward_type):
             return reward_type().__call__(cmd, env, rob)
+
         # if not hasattr(self, 'tgp'):
         #     self.tgp = deque(maxlen=1000)
 
-        # for s, b in zip(rob.getFootSlipVelocity(), self.buf):
-        #     b.append(s)
-        # print(np.array([np.mean(b) for b in self.buf]))
-        # print(rob.getCostOfTransport())
         # print(wrap(ClearanceOverTerrainReward))
         # print(wrap(HipAnglePenalty))
         # print(rob.getTorqueGradients())
@@ -65,26 +62,31 @@ class BasicTask(RewardRegistry):
         # linear = rob.getBaseLinearVelocityInBaseFrame()
         # projected_velocity = np.dot(cmd[:2], linear[:2])
         # print(projected_velocity)
-        # print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward)())
+        print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward))
+        # print(rob.getCostOfTransport(), wrap(CostOfTransportReward))
         # strides = [np.linalg.norm(s) for s in rob.getStrides()]
         # if any(s != 0.0 for s in strides):
-        #     print(strides, wrap(SmallStridePenalty)())
+        #     print(strides, wrap(SmallStridePenalty))
         # if any(clearances := rob.getFootClearances()):
         #     print(clearances, wrap(FootClearanceReward))
         # print(wrap(HipAnglePenalty))
-        # print(rob.getJointPositions()[(0,3,6,9),])
-        data = {'joint_pos': tuple(rob.getJointPositions()),
+        data = {
+            'joint_states': {
+                'joint_pos': tuple(rob.getJointPositions()),
                 'commands': tuple(rob._command_history[-1]),
                 'joint_vel': tuple(rob.getJointVelocities()),
                 'kp_part': tuple(rob._motor._kp_part),
                 'kd_part': tuple(rob._motor._kd_part),
                 'torque': tuple(rob.getLastAppliedTorques()),
-                'contact': tuple(rob.getContactStates())
-                }
+                'contact': tuple(rob.getContactStates())},
+            'body_height': env.getSafetyHeightOfRobot(),
+            'cot': rob.getCostOfTransport(),
+            'twist': {
+                'linear': rob.getBaseLinearVelocityInBaseFrame(),
+                'angular': rob.getBaseAngularVelocityInBaseFrame(),
+            },
+        }
         udp_pub.send(data)
-        # print(rob.getBaseLinearVelocity()[2])
-        # data = {'z': rob.position[2]}
-        # udp_pub.send(data)
         # print(wrap(BodyCollisionPenalty))
 
     def reset(self):

@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append('.')
-from burl.rl.runner import OnPolicyRunner
+from burl.rl.runner import PolicyTrainer
 from burl.rl.task import BasicTask
 from burl.utils import g_cfg, log_warn, init_logger, parse_args
 import wandb
@@ -32,7 +32,7 @@ def main():
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     log_warn(f'Training on {g_cfg.device}')
-    runner = OnPolicyRunner()
+    runner = PolicyTrainer()
     runner.learn()
 
 
