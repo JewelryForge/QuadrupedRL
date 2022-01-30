@@ -2,11 +2,12 @@ import sys
 
 sys.path.append('.')
 from burl.rl.runner import OnPolicyRunner
-from burl.rl.task import BasicTask
 from burl.utils import g_cfg, log_warn, init_logger, parse_args, find_log
 import wandb
 
 resume_params = {'run_id': None, 'time': None, 'epoch': None}
+
+raise NotImplementedError
 
 
 def update_cfg_from_args():
@@ -23,7 +24,6 @@ def update_cfg_from_args():
 
 def main():
     init_logger()
-    g_cfg.task_class = BasicTask
     if len(sys.argv) > 1:
         update_cfg_from_args()
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name,

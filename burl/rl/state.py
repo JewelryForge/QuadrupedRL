@@ -24,13 +24,13 @@ class ObservationBase(object):
 
     @classmethod
     def init(cls):
-        cls._class_init()
+        cls._wb_init()
         inst = cls()
         if not inst.to_array().shape == cls.biases.shape == cls.weights.shape:
             raise RuntimeError(f'{cls.__name__} Shape Check Failed')
 
     @classmethod
-    def _class_init(cls):
+    def _wb_init(cls):
         pass
 
     def to_array(self) -> np.ndarray:
@@ -40,7 +40,7 @@ class ObservationBase(object):
         return (self.to_array() - self.biases) * self.weights
 
 
-class SimplifiedObservation(ObservationBase):
+class StateSnapshot(ObservationBase):
     dim = 36
     command_bias, command_weight = zero3, rp(1., 3)
     gravity_vector_bias, gravity_vector_weight = (0., 0., .998), rp(10., 3)
@@ -58,7 +58,7 @@ class SimplifiedObservation(ObservationBase):
         self.joint_vel = zero12
 
     @classmethod
-    def _class_init(cls):
+    def _wb_init(cls):
         cls.biases = np.concatenate((
             cls.command_bias,
             cls.gravity_vector_bias,
@@ -88,7 +88,45 @@ class SimplifiedObservation(ObservationBase):
         ))
 
 
-class ProprioObservation(SimplifiedObservation):
+class TgPhasesObservation(ObservationBase):
+    dim = 8
+    phases_bias, phases_weight = zero8, rp(1., 8)
+
+    def __init__(self):
+        super().__init__()
+        self.phases = zero8
+
+    @classmethod
+    def _wb_init(cls):
+        cls.biases = np.array(cls.phases_bias)
+        cls.weights = np.array(cls.phases_weight)
+
+    def to_array(self):
+        return np.array(self.phases)
+
+    def standard(self):
+        return self.to_array()
+
+
+class SimplifiedObservation(StateSnapshot):
+    dim = 36 + 8
+    phases_bias, phases_weight = zero8, rp(1., 8)
+
+    def __init__(self):
+        super().__init__()
+        self.phases = zero8
+
+    @classmethod
+    def _wb_init(cls):
+        StateSnapshot._wb_init()
+        cls.biases = np.concatenate((StateSnapshot.biases, cls.phases_bias))
+        cls.weights = np.concatenate((StateSnapshot.weights, cls.phases_weight))
+
+    def to_array(self):
+        return np.concatenate((super().to_array(), self.phases))
+
+
+class ProprioObservation(StateSnapshot):
     dim = 60 + 73
     joint_vel_bias, joint_vel_weight = zero12, (0.5, 0.4, 0.3) * 4
     joint_prev_pos_err_bias, joint_prev_pos_err_weight = zero12, (6.5, 4.5, 3.5) * 4
@@ -112,10 +150,10 @@ class ProprioObservation(SimplifiedObservation):
         self.base_frequency = (0.,)
 
     @classmethod
-    def _class_init(cls):
-        SimplifiedObservation._class_init()
+    def _wb_init(cls):
+        StateSnapshot._wb_init()
         cls.biases = np.concatenate((
-            SimplifiedObservation.biases,
+            StateSnapshot.biases,
             cls.joint_prev_pos_err_bias,
             cls.ftg_phases_bias,
             cls.ftg_frequencies_bias,
@@ -127,7 +165,7 @@ class ProprioObservation(SimplifiedObservation):
         ))
 
         cls.weights = np.concatenate((
-            SimplifiedObservation.weights,
+            StateSnapshot.weights,
             cls.joint_prev_pos_err_weight,
             cls.ftg_phases_weight,
             cls.ftg_frequencies_weight,
@@ -170,7 +208,7 @@ class ExteroObservation(ObservationBase):
         self.external_disturbance = zero3
 
     @classmethod
-    def _class_init(cls):
+    def _wb_init(cls):
         cls.biases = np.concatenate((
             cls.terrain_scan_bias,
             cls.terrain_normal_bias,
@@ -208,9 +246,9 @@ class ExtendedObservation(ExteroObservation, ProprioObservation):
         ProprioObservation.__init__(self)
 
     @classmethod
-    def _class_init(cls):
-        ExteroObservation._class_init()
-        ProprioObservation._class_init()
+    def _wb_init(cls):
+        ExteroObservation._wb_init()
+        ProprioObservation._wb_init()
         cls.biases = np.concatenate((ExteroObservation.biases, ProprioObservation.biases))
         cls.weights = np.concatenate((ExteroObservation.weights, ProprioObservation.weights))
 
@@ -326,9 +364,9 @@ class ObservationRaw(object):
 
 
 if __name__ == '__main__':
-    s = SimplifiedObservation()
-    SimplifiedObservation.joint_pos_bias = rp(0., 12)
-    SimplifiedObservation.init()
+    s = StateSnapshot()
+    StateSnapshot.joint_pos_bias = rp(0., 12)
+    StateSnapshot.init()
     print(s.dim)
     print(s.bias.shape, s.scale.shape)
     print(s.to_array().shape)

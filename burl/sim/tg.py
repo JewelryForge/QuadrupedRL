@@ -93,12 +93,11 @@ def vertical_tg(h=0.08):  # 0.2 in paper
 #
 #     return _tg
 
-
-class TgStateMachine(object):
-    INIT_ANGLES = (0.0, -np.pi, -np.pi, 0.0)
+class PhaseRoller(object):
+    INIT_PHASES = (0.0, -np.pi, -np.pi, 0.0)
     base_frequency = 2.0  # TODO: COMPLETE THE STATE MACHINE
 
-    def __init__(self, time_step, make_tg, lower_frequency=0.5, upper_frequency=3.0):
+    def __init__(self, time_step):
         # We set the base frequency f0 to zero when the zero command is given for 0.5s,
         # which stops FTGs, and the robot stands still on the terrain.
         # f0 is set to 1.25 Hz when the direction command is given
@@ -107,9 +106,6 @@ class TgStateMachine(object):
         self._time_step = time_step
         self._init_phases()
         self._frequency = np.ones(4) * self.base_frequency
-        self._lower_frequency, self._upper_frequency = lower_frequency, upper_frequency
-        # self._tg = designed_tg()
-        self._tg = make_tg()
         self._cycles = np.zeros(4)
 
     @staticmethod
@@ -117,15 +113,19 @@ class TgStateMachine(object):
         fr, fl, rr, rl = phases
         return fl, fr, rl, rr
 
+    def random_symmetric(self, phases, threshold=0.5):
+        return phases if random.random() > threshold else self.symmetric(phases)
+
     def _init_phases(self):
         if g_cfg.tg_init == 'fixed':
-            self._phases = np.array(self.INIT_ANGLES)
+            self.__init_phases = np.array(self.INIT_PHASES, dtype=np.float32)
         elif g_cfg.tg_init == 'symmetric':
-            self._phases = np.array(random.choice((self.INIT_ANGLES, self.symmetric(self.INIT_ANGLES))))
+            self.__init_phases = np.array(self.random_symmetric(self.INIT_PHASES), dtype=np.float32)
         elif g_cfg.tg_init == 'random':
-            self._phases = ang_norm(np.random.random(4) * 2 * np.pi)
+            self.__init_phases = ang_norm(np.random.random(4) * 2 * np.pi).astype(np.float32)
         else:
             raise RuntimeError(f'Unknown TG Init Mode {g_cfg.tg_init}')
+        self._phases = self.__init_phases.copy()
 
     @property
     def phases(self):
@@ -144,17 +144,32 @@ class TgStateMachine(object):
         self._frequency = np.ones(4) * self.base_frequency
         self._cycles = np.zeros(4)
 
+    def update(self):
+        _phases = self._phases.copy()
+        self._phases += self._frequency * self._time_step * 2 * np.pi
+        flags = np.logical_and(ang_norm(_phases - self.__init_phases) < 0,
+                               ang_norm(self._phases - self.__init_phases) >= 0)
+        self._cycles[flags.nonzero(),] += 1
+        self._phases = ang_norm(self._phases)
+        return self._phases
+
+
+class TgStateMachine(PhaseRoller):
+    def __init__(self, time_step, make_tg, lower_frequency=0.5, upper_frequency=3.0):
+        # We set the base frequency f0 to zero when the zero command is given for 0.5s,
+        # which stops FTGs, and the robot stands still on the terrain.
+        # f0 is set to 1.25 Hz when the direction command is given
+        # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
+        # The state machine is included in the training environment.
+        super().__init__(time_step)
+        self._lower_frequency, self._upper_frequency = lower_frequency, upper_frequency
+        self._tg = make_tg()
+
     def update(self, frequency_offsets):
         frequency_offsets = np.asarray(frequency_offsets)
         self._frequency = self.base_frequency + frequency_offsets
         self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
-        _phases = self._phases.copy()
-        self._phases += self._frequency * self._time_step * 2 * np.pi
-        flags = np.logical_and(ang_norm(_phases - self.INIT_ANGLES) < 0,
-                               ang_norm(self._phases - self.INIT_ANGLES) >= 0)
-        self._cycles[flags.nonzero(),] += 1
-        self._phases = ang_norm(self._phases)
-        return self._phases
+        return super().update()
 
     def get_priori_trajectory(self):
         return np.asarray(self._tg(self._phases))

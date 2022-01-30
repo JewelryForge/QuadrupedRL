@@ -25,6 +25,9 @@ class TgNet(nn.Module):
 
 
 class WholeBodyTgNet(nn.Module):
+    input_dim = 8
+    action_dim = 12
+
     def __init__(self, init_model_dir=None):
         super().__init__()
         if init_model_dir:
@@ -34,8 +37,9 @@ class WholeBodyTgNet(nn.Module):
         else:
             self.nets = nn.ModuleList(TgNet() for _ in range(4))
 
-    def forward(self, X):
-        return torch.concat([net(x) for net, x in zip(self.nets, X)])
+    def forward(self, X):  # shape: (..., 8) -> (..., 12)
+        inputs = [X[..., 2 * i:2 * i + 2] for i in range(4)]
+        return torch.cat([net(x) for net, x in zip(self.nets, inputs)], dim=-1)
 
 
 def implicit_tg(init_model_dir=None, device='cuda'):
@@ -43,8 +47,8 @@ def implicit_tg(init_model_dir=None, device='cuda'):
     tg_net = WholeBodyTgNet(init_model_dir).to(device)
 
     def _tg(phases):
-        phases = torch.tensor(phases, dtype=torch.float).to(device).unsqueeze(dim=1)
-        X = torch.cat((torch.sin(phases), torch.cos(phases)), dim=1)
+        phases = torch.tensor(phases, dtype=torch.float).to(device)
+        X = torch.stack((torch.sin(phases), torch.cos(phases)), dim=1).reshape(-1, 8)
         return tg_net(X).detach().cpu().numpy().reshape(-1)
 
     return _tg

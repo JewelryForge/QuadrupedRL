@@ -4,7 +4,6 @@ from multiprocessing import Process, Pipe
 import numpy as np
 import torch
 
-from burl.rl.state import Action
 from burl.sim.env import FixedTgEnv
 
 
@@ -19,9 +18,7 @@ class EnvContainer(object):
         self._envs[0].task.report()
 
     def step(self, actions: torch.Tensor):
-        actions = [Action.from_array(action.cpu().numpy()) for action in actions]
-        # print(actions[0].__dict__)
-        return self.merge_results([e.step(a) for e, a in zip(self._envs, actions)])
+        return self.merge_results([e.step(a) for e, a in zip(self._envs, actions.cpu().numpy())])
 
     def __del__(self):
         self.close()
@@ -86,6 +83,10 @@ class SingleEnvContainer(EnvContainer):
 
 
 class EnvContainerMp2(EnvContainer):
+    CMD_RESET = 0
+    CMD_ACT = 1
+    CMD_EXIT = 2
+
     def __init__(self, make_env, num_envs=None):
         super().__init__(make_env, num_envs)
         self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(self.num_envs)])
@@ -99,28 +100,27 @@ class EnvContainerMp2(EnvContainer):
         obs = env.initObservation()
         conn.send(obs)
         while True:
-            action = conn.recv()
-            if action == 'reset':
+            action_type, *content = conn.recv()
+            if action_type == EnvContainerMp2.CMD_RESET:
                 obs = env.reset()
                 conn.send(obs)
-            elif isinstance(action, Action):
-                obs = env.step(action)
+            elif action_type == EnvContainerMp2.CMD_ACT:
+                obs = env.step(content[0])
                 conn.send(obs)
-            elif action is None:
+            elif action_type == EnvContainerMp2.CMD_EXIT:
                 return
             else:
-                raise RuntimeError(f'Unknown action {action}')
+                raise RuntimeError(f'Unknown action_type {action_type}')
 
     def step(self, actions: torch.Tensor):
-        actions = [Action.from_array(action.cpu().numpy()) for action in actions]
-        for action, conn in zip(actions, self._conn2):
-            conn.send(action)
+        for action, conn in zip(actions.cpu().numpy(), self._conn2):
+            conn.send((self.CMD_ACT, action))
         results = [conn.recv() for conn in self._conn2]
         return self.merge_results(results)
 
     def close(self):
         for conn in self._conn2:
-            conn.send(None)
+            conn.send((self.CMD_EXIT,))
         for proc in self._processes:
             proc.join()
 
@@ -130,6 +130,6 @@ class EnvContainerMp2(EnvContainer):
 
     def reset(self, ids):
         for i in ids:
-            self._conn2[i].send('reset')
+            self._conn2[i].send((self.CMD_RESET,))
         actor_obs, critic_obs = zip(*[self._conn2[i].recv() for i in ids])
         return torch.Tensor(np.array(actor_obs)), torch.Tensor(np.array(critic_obs))

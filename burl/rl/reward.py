@@ -50,6 +50,18 @@ def elu_reshape(coeff):
     return _reshape
 
 
+def quadratic_linear_reshape(upper):
+    k = 1 / upper ** 2
+    kl = 2 * k * upper
+
+    def _reshape(v):
+        if v >= 0:
+            return v ** 2 * k if v < upper else kl * (v - upper) + 1
+        return _reshape(-v)
+
+    return _reshape
+
+
 class LinearVelocityReward(Reward):
     def __init__(self, lower=-0.4, upper=0.8):
         self.reshape = tanh_reshape(lower, upper)
@@ -116,7 +128,6 @@ class BodyPosturePenalty(Reward):
 
 
 class BodyHeightReward(Reward):
-    # def __init__(self, lower=0.24, upper=0.32):
     def __init__(self, des=0.4, range_=0.05):
         self.des = des
         self.reshape = tanh2_reshape(0., range_)
@@ -128,7 +139,7 @@ class BodyHeightReward(Reward):
 
 class TorqueGradientPenalty(Reward):
     def __init__(self, upper=200):
-        self.reshape = tanh2_reshape(0.0, upper)
+        self.reshape = quadratic_linear_reshape(upper)
 
     def __call__(self, cmd, env, robot):
         torque_grad = robot.getTorqueGradients()
@@ -173,10 +184,12 @@ class FootClearanceReward(Reward):
         return sum(self.reshape(c) for c in foot_clearances)
 
 
-class ClearanceOverTerrainReward(Reward):
-    def __init__(self):
-        pass
+class AliveReward(Reward):
+    def __call__(self, cmd, env, robot):
+        return 1.0
 
+
+class ClearanceOverTerrainReward(Reward):
     def __call__(self, cmd, env, robot):
         reward = 0.
         for leg in range(4):
@@ -187,9 +200,6 @@ class ClearanceOverTerrainReward(Reward):
 
 
 class BodyCollisionPenalty(Reward):
-    def __init__(self):
-        pass
-
     def __call__(self, cmd, env, robot):
         contact_states = list(robot.getContactStates())
         for i in range(1, 5):
@@ -222,6 +232,19 @@ class CostOfTransportReward(Reward):
     def __call__(self, cmd, env, robot):
         cot = robot.getCostOfTransport()
         return -self.reshape(cot)
+
+
+class ImitationReward(Reward):
+    def __init__(self, upper=0.05, dst=None):
+        from burl.sim import vertical_tg
+        self.reshape = tanh2_reshape(0., upper)
+        self.dst = dst() if dst else vertical_tg(h=0.12)
+
+    def __call__(self, cmd, env, robot):
+        dst = self.dst(env.phases)
+        foot_pos = np.array([robot.getFootPositionInInitFrame(i) for i in range(4)])
+        residue = np.linalg.norm(dst - foot_pos, axis=1)
+        return 1 - sum(self.reshape(r) for r in residue) / 4
 
 
 class RewardRegistry(object):
@@ -287,16 +310,17 @@ class RewardRegistry(object):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    registry = RewardRegistry(1, 2, 3)
-    registry.register('CostOfTransportReward', 0.1)
+    # registry = RewardRegistry(1, 2, 3)
+    # registry.register('CostOfTransportReward', 0.1)
     # registry.register('RedundantAngularPenalty', 0.2)
-    registry.report()
+    # registry.report()
 
     print(tanh_reverse(0.0, 2.0, -0.5))
     print(tanh_reverse(-0.4, 0.8, 0.9))
     # r1 = tanh2_reshape(0.0, 2.0)
     # r = tanh_reshape(0.0, 2.0)
-    # x = np.linspace(-0.5, 2.5, 1000)
-    # plt.plot(x, [r1(x) for x in x])
+    r = quadratic_linear_reshape(3)
+    x = np.linspace(-5, 5, 1000)
+    plt.plot(x, [r(x) for x in x])
     # plt.plot(x, [(r(x) + 1) / 2 for x in x])
-    # plt.show()
+    plt.show()

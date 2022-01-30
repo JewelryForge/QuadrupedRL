@@ -1,9 +1,8 @@
 import sys
 
 sys.path.append('.')
-from burl.rl.runner import PolicyTrainer
-from burl.rl.task import BasicTask
-from burl.utils import g_cfg, log_warn, init_logger, parse_args
+from burl.rl.runner import TgNetTrainer
+from burl.utils import g_cfg, log_warn, init_logger, parse_args, reward_profile2
 import wandb
 
 
@@ -18,7 +17,9 @@ def update_cfg_from_args():
 
 def main():
     init_logger()
-    g_cfg.task_class = BasicTask
+    g_cfg.rewards_weights = reward_profile2
+    g_cfg.action_frequency = 500
+    g_cfg.init_noise_std = 0.03
     if len(sys.argv) > 1:
         update_cfg_from_args()
     else:
@@ -32,7 +33,7 @@ def main():
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     log_warn(f'Training on {g_cfg.device}')
-    runner = PolicyTrainer()
+    runner = TgNetTrainer()
     runner.learn()
 
 

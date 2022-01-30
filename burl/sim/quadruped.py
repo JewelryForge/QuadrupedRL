@@ -60,6 +60,7 @@ class Quadruped(object):
     BASE_FRAME = 0
     HIP_FRAME = 1
     SHOULDER_FRAME = 2
+    INIT_FRAME = 3
 
     def __init__(self, sim_env=pybullet, init_height_addition=0.0,
                  make_motor: make_cls = MotorSim):
@@ -431,6 +432,11 @@ class Quadruped(object):
     def getFootPositionInHipFrame(self, leg):
         return self.getFootPositionInBaseFrame(leg) - self.HIP_OFFSETS[leg]
 
+    def getFootPositionInInitFrame(self, leg):
+        shoulder_len = -self.LINK_LENGTHS[0] if self.LEG_NAMES[leg].endswith('R') else self.LINK_LENGTHS[0]
+        return (self.getFootPositionInBaseFrame(leg) - self.HIP_OFFSETS[leg]
+                - (0, shoulder_len, 0) - self.STANCE_FOOT_POSITIONS[leg])
+
     def getFootPositionInWorldFrame(self, leg):
         return self._observation.foot_states.positions[leg, :]
 
@@ -642,6 +648,8 @@ class A1(Quadruped):
             return _ik_hip_frame(pos)
         if frame == Quadruped.SHOULDER_FRAME:
             return _ik_hip_frame(pos + (0, shoulder_len, 0))
+        if frame == Quadruped.INIT_FRAME:
+            return _ik_hip_frame(pos + (0, shoulder_len, 0) + self.STANCE_FOOT_POSITIONS[leg])
         raise RuntimeError(f'Unknown Frame {frame}')
 
     def fk(self, leg: int, angles) -> Odometry:

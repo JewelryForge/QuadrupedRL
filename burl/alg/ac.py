@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 import torch
 from torch import nn
 
@@ -10,6 +12,7 @@ class Actor(nn.Module):
                  proprio_layer_dims=(),
                  action_layer_dims=(256, 128, 64)):
         super().__init__()
+        self.input_dim = extero_obs_dim + proprio_obs_dim
         self.extero_obs_dim, self.proprio_obs_dim, self.action_dim = extero_obs_dim, proprio_obs_dim, action_dim
         extero_layers, proprio_layers, action_layers = [], [], []
         self.extero_obs_dim = extero_feature_dim = extero_obs_dim
@@ -48,6 +51,7 @@ class Critic(nn.Module):
 
     def __init__(self, input_dim, output_dim=1, hidden_dims=(256, 128, 64)):
         super().__init__()
+        self.input_dim, self.output_dim = input_dim, output_dim
         layers = []
         for dim in hidden_dims:
             layers.append(nn.Linear(input_dim, dim))
@@ -72,7 +76,10 @@ class ActorCritic(nn.Module):
         # Action noise
         # self.log_std = nn.Parameter(torch.full(actor.action_dim, torch.log(init_noise_std)), requires_grad=True)
         # self.std = torch.exp(self.log_std)
-        self.std = nn.Parameter(torch.full((16,), init_noise_std), requires_grad=True)
+        if isinstance(init_noise_std, Iterable):
+            self.std = nn.Parameter(torch.tensor(init_noise_std), requires_grad=True)
+        else:
+            self.std = nn.Parameter(torch.full((actor.action_dim,), init_noise_std), requires_grad=True)
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 
@@ -101,7 +108,6 @@ class ActorCritic(nn.Module):
     def act(self, observations, **kwargs):
         mean = self.actor(observations)
         # self.std = torch.exp(self.log_std)
-        # self.distribution = torch.distributions.Normal(mean, self.std)
         self.distribution = torch.distributions.Normal(mean, torch.clip(self.std, 0.01))
         return self.distribution.sample()
 

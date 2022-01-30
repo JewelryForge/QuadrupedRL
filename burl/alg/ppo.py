@@ -1,7 +1,6 @@
 import torch
 
 from burl.alg.ac import ActorCritic
-from burl.rl.state import Action, ExtendedObservation
 from burl.utils import g_cfg
 
 
@@ -23,19 +22,11 @@ class RolloutStorage(object):
             self.__init__()
 
     def __init__(self, num_envs, num_transitions_per_env,
-                 obs_shape, privileged_obs_shape, actions_shape):
-        self.obs_shape = obs_shape
-        self.privileged_obs_shape = privileged_obs_shape
-        self.actions_shape = actions_shape
-
+                 actor_obs_shape, critic_obs_shape, actions_shape):
         # Core
         g_dev = g_cfg.dev
-        self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=g_dev)
-        if privileged_obs_shape[0] is not None:
-            self.privileged_observations = torch.zeros(num_transitions_per_env, num_envs,
-                                                       *privileged_obs_shape, device=g_dev)
-        else:
-            self.privileged_observations = None
+        self.actor_obs = torch.zeros(num_transitions_per_env, num_envs, *actor_obs_shape, device=g_dev)
+        self.critic_obs = torch.zeros(num_transitions_per_env, num_envs, *critic_obs_shape, device=g_dev)
         self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
         self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=g_dev)
         self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev).byte()
@@ -56,9 +47,8 @@ class RolloutStorage(object):
     def add_transitions(self, transition: Transition):
         if self.step >= self.num_transitions_per_env:
             raise AssertionError("Rollout buffer overflow")
-        self.observations[self.step].copy_(transition.observations)
-        if self.privileged_observations is not None:
-            self.privileged_observations[self.step].copy_(transition.critic_observations)
+        self.actor_obs[self.step].copy_(transition.observations)
+        self.critic_obs[self.step].copy_(transition.critic_observations)
         self.actions[self.step].copy_(transition.actions)
         self.rewards[self.step].copy_(transition.rewards.view(-1, 1))
         self.dones[self.step].copy_(transition.dones.view(-1, 1))
@@ -102,11 +92,8 @@ class RolloutStorage(object):
         mini_batch_size = batch_size // num_mini_batches
         indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=g_cfg.dev)
 
-        observations = self.observations.flatten(0, 1)
-        if self.privileged_observations is not None:
-            critic_observations = self.privileged_observations.flatten(0, 1)
-        else:
-            critic_observations = observations
+        actor_observations = self.actor_obs.flatten(0, 1)
+        critic_observations = self.critic_obs.flatten(0, 1)
 
         actions = self.actions.flatten(0, 1)
         values = self.values.flatten(0, 1)
@@ -122,7 +109,7 @@ class RolloutStorage(object):
                 end = (i + 1) * mini_batch_size
                 batch_idx = indices[start:end]
 
-                obs_batch = observations[batch_idx]
+                obs_batch = actor_observations[batch_idx]
                 critic_observations_batch = critic_observations[batch_idx]
                 actions_batch = actions[batch_idx]
                 target_values_batch = values[batch_idx]
@@ -139,16 +126,15 @@ class PPO(object):
     actor_critic: ActorCritic
 
     def __init__(self, actor_critic):
-        self.actor_critic = actor_critic
-        self.actor_critic.to(g_cfg.dev)
+        self.actor_critic = actor_critic.to(g_cfg.dev)
         self.optimizer = torch.optim.AdamW(self.actor_critic.parameters(), lr=g_cfg.learning_rate,
                                            weight_decay=1e-2)
         if g_cfg.schedule == 'linearLR':
             self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
                                                                total_iters=5000)
         self.transition = RolloutStorage.Transition()
-        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (ExtendedObservation.dim,),
-                                      (ExtendedObservation.dim,), (Action.dim,))
+        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (self.actor_critic.actor.input_dim,),
+                                      (self.actor_critic.critic.input_dim,), (self.actor_critic.actor.action_dim,))
         self.learning_rate = g_cfg.learning_rate
 
     def test_mode(self):

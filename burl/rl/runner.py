@@ -8,7 +8,7 @@ import wandb
 from burl.alg import ActorCritic, Actor, Critic, PPO
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation, SimplifiedObservation
 from burl.rl.task import BasicTask
-from burl.sim import IkEnv, FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, WholeBodyTgNet
+from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, WholeBodyTgNet, ExternalTgEnv
 from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
 
 
@@ -108,13 +108,10 @@ class OnPolicyRunner:
         logs = {'Loss/value_function': locs['mean_value_loss'],
                 'Loss/surrogate': locs['mean_surrogate_loss'],
                 'Loss/learning_rate': self.alg.learning_rate,
-                'Policy/freq_noise_std': self.alg.actor_critic.std.cpu()[:4].mean().item(),
-                'Policy/X_noise_std': self.alg.actor_critic.std.cpu()[(4, 7, 10, 13),].mean().item(),
-                'Policy/Y_noise_std': self.alg.actor_critic.std.cpu()[(5, 8, 11, 14),].mean().item(),
-                'Policy/Z_noise_std': self.alg.actor_critic.std.cpu()[(6, 9, 12, 15),].mean().item(),
                 'Perform/total_fps': fps,
                 'Perform/collection time': locs['collection_time'],
                 'Perform/learning_time': locs['learning_time']}
+        logs.update(self.get_policy_info())
         logs.update({f'Reward/{k}': v for k, v in locs['accountant'].report().items()})
         locs['accountant'].clear()
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
@@ -130,6 +127,9 @@ class OnPolicyRunner:
         log_info(f"Total Frames: {it * g_cfg.num_envs * g_cfg.storage_len}")
 
         wandb.log(logs, step=it)
+
+    def get_policy_info(self):
+        return {}
 
     # def log_eval(self, it, locs, width=25):
     #     log_info(f"{'#' * width}")
@@ -176,6 +176,12 @@ class PolicyTrainer(OnPolicyRunner):
             make_actor_critic=make_actor_critic,
         )
 
+    def get_policy_info(self):
+        return {'Policy/freq_noise_std': self.alg.actor_critic.std.cpu()[:4].mean().item(),
+                'Policy/X_noise_std': self.alg.actor_critic.std.cpu()[(4, 7, 10, 13),].mean().item(),
+                'Policy/Y_noise_std': self.alg.actor_critic.std.cpu()[(5, 8, 11, 14),].mean().item(),
+                'Policy/Z_noise_std': self.alg.actor_critic.std.cpu()[(6, 9, 12, 15),].mean().item()}
+
 
 class TgNetTrainer(OnPolicyRunner):
     def __init__(self):
@@ -186,6 +192,11 @@ class TgNetTrainer(OnPolicyRunner):
             init_noise_std=g_cfg.init_noise_std
         )
         super().__init__(
-            make_env=make_cls(IkEnv, make_robot=AlienGo, make_task=BasicTask),
+            make_env=make_cls(ExternalTgEnv, make_robot=AlienGo, make_task=make_cls(BasicTask, cmd=(0., 0., 0.))),
             make_actor_critic=make_actor_critic,
         )
+
+    def get_policy_info(self):
+        return {'Policy/X_noise_std': self.alg.actor_critic.std.cpu()[(0, 3, 6, 9),].mean().item(),
+                'Policy/Y_noise_std': self.alg.actor_critic.std.cpu()[(1, 4, 7, 10),].mean().item(),
+                'Policy/Z_noise_std': self.alg.actor_critic.std.cpu()[(2, 5, 8, 11),].mean().item()}

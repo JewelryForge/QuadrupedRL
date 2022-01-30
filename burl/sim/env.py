@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import time
 from collections import deque
@@ -6,14 +8,17 @@ from itertools import chain
 import numpy as np
 import pybullet
 import pybullet_data
+import torch
 from pybullet_utils import bullet_client
 
-from burl.rl.state import SimplifiedObservation, ProprioObservation, ExtendedObservation, Action
+from burl.rl.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action, TgPhasesObservation, \
+    SimplifiedObservation
 from burl.rl.task import BasicTask
 from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.terrain import makeTerrain
-from burl.sim.tg import TgStateMachine, vertical_tg
+from burl.sim.tg import TgStateMachine, vertical_tg, PhaseRoller
+from burl.sim.tg_net import WholeBodyTgNet
 from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
 from burl.utils.transforms import Rpy, Rotation
 
@@ -24,7 +29,7 @@ class QuadrupedEnv(object):
     Reads g_cfg.trn_type to generate terrains.
     """
 
-    ALLOWED_OBSERVATION_TYPES = {'simplified': 'makeSimplifiedObservation',
+    ALLOWED_OBSERVATION_TYPES = {'snapshot': 'makeStateSnapshot',
                                  'priprio': 'makePriprioObservation',
                                  'noisy_priprio': 'makeNoisyPriprioObservation',
                                  'extended': 'makeExtendedObservation'}
@@ -54,17 +59,21 @@ class QuadrupedEnv(object):
         if self._gui:
             self._initRendering()
         self._action_buffer = deque(maxlen=10)
-        self._initObservationStatistics()
+        self.initObservationStatistics()
 
-    def _initObservationStatistics(self):
+    def initObservationStatistics(self):
         if not hasattr(QuadrupedEnv, '_init_observation_statistics_'):
             QuadrupedEnv._init_observation_statistics_ = True
-            SimplifiedObservation.joint_pos_bias = self._robot.STANCE_POSTURE
-            ProprioObservation.joint_pos_target_bias = self._robot.STANCE_POSTURE
-            ProprioObservation.joint_prev_pos_target_bias = self._robot.STANCE_POSTURE
-            ProprioObservation.joint_prev_pos_target_bias = self._robot.STANCE_POSTURE
-            self._initTgObservationStatistics()
-            ExtendedObservation.init()
+            self._initObservationStatistics()
+
+    def _initObservationStatistics(self):
+        StateSnapshot.joint_pos_bias = self._robot.STANCE_POSTURE
+        ProprioObservation.joint_pos_target_bias = self._robot.STANCE_POSTURE
+        ProprioObservation.joint_prev_pos_target_bias = self._robot.STANCE_POSTURE
+        ProprioObservation.joint_prev_pos_target_bias = self._robot.STANCE_POSTURE
+        self._initTgObservationStatistics()
+        ExtendedObservation.init()
+        SimplifiedObservation.init()
 
     def _initTgObservationStatistics(self):
         ProprioObservation.ftg_frequencies_bias = (0.,) * 4
@@ -202,16 +211,17 @@ class QuadrupedEnv(object):
                 observations.append(obs.standard())
             return observations
 
-    def makeSimplifiedObservation(self) -> SimplifiedObservation:
-        so = SimplifiedObservation()
+    def makeStateSnapshot(self, obs=None) -> StateSnapshot:
+        if not obs:
+            obs = StateSnapshot()
         r = self._robot
-        so.command = self._task.cmd
-        so.gravity_vector = r.getBaseAxisZ()
-        so.base_linear = r.getBaseLinearVelocityInBaseFrame()
-        so.base_angular = r.getBaseAngularVelocityInBaseFrame()
-        so.joint_pos = r.getJointPositions()
-        so.joint_vel = r.getJointVelocities()
-        return so
+        obs.command = self._task.cmd
+        obs.gravity_vector = r.getBaseAxisZ()
+        obs.base_linear = r.getBaseLinearVelocityInBaseFrame()
+        obs.base_angular = r.getBaseAngularVelocityInBaseFrame()
+        obs.joint_pos = r.getJointPositions()
+        obs.joint_vel = r.getJointVelocities()
+        return obs
 
     def makePriprioObservation(self) -> ProprioObservation:
         raise NotImplementedError
@@ -340,7 +350,6 @@ class QuadrupedEnv(object):
                           reload=completely_reset)
         self._initSimulation()
         self._robot.updateObservation()
-        # print(self.assembleObservation(False).__dict__)
         return self.makeObservation()
 
     def close(self):
@@ -411,7 +420,7 @@ class IkEnv(QuadrupedEnv):
 
     def step(self, des_pos):
         if not self._horizontal_frame:
-            self._commands = np.concatenate([self._ik(i, pos, Quadruped.SHOULDER_FRAME)
+            self._commands = np.concatenate([self._ik(i, pos, Quadruped.INIT_FRAME)
                                              for i, pos in enumerate(des_pos)])
         else:
             h2b = self._robot.transformFromHorizontalToBase(True)
@@ -429,17 +438,74 @@ class IkEnv(QuadrupedEnv):
         return self._commands
 
 
+class ExternalTgEnv(IkEnv):
+    ALLOWED_OBSERVATION_TYPES = IkEnv.ALLOWED_OBSERVATION_TYPES.copy()
+    ALLOWED_OBSERVATION_TYPES.update({'tg_phases': 'makeTgPhasesObservation',
+                                      'simplified': 'makeSimplifiedObservation'})
+
+    def __init__(self, *args, **kwargs):
+        if 'observation_type' in kwargs:
+            super().__init__(*args, **kwargs)
+        else:
+            super().__init__(*args, **kwargs, observation_type=('tg_phases', 'simplified'))
+        self._pr = PhaseRoller(1 / g_cfg.action_frequency)
+
+    @property
+    def phases(self):
+        return self._pr.phases
+
+    def makeSimplifiedObservation(self, obs=None) -> SimplifiedObservation:
+        if not obs:
+            obs = SimplifiedObservation()
+        self.makeStateSnapshot(obs)
+        self.makeTgPhasesObservation(obs)
+        return obs
+
+    def makeTgPhasesObservation(self, obs=None) -> TgPhasesObservation:
+        if not obs:
+            obs = TgPhasesObservation()
+        obs.phases = np.stack((np.sin(self._pr.phases), np.cos(self._pr.phases)), axis=-1).reshape(-1)
+        return obs
+
+    def step(self, des_pos):
+        des_pos = des_pos.reshape(4, 3)
+        self._pr.update()
+        if g_cfg.plot_trajectory:
+            self.plotFootTrajectories(des_pos)
+        return super().step(des_pos)
+
+    def reset(self):
+        self._pr.reset()
+        return super().reset()
+
+    def plotFootTrajectories(self, des_pos):
+        from burl.utils import plotTrajectories
+        if not hasattr(self, '_plotter'):
+            self._plotter = plotTrajectories()
+        for i, flag in enumerate(self._pr.cycles == 5):
+            if flag:
+                x, y, z = des_pos[i]
+                self._plotter(i, (x, z), 'r')
+                x, y, z = self._robot.getFootPositionInHipFrame(i)
+                self._plotter(i, (x, z), 'b')
+
+    def _initSimulation(self):  # for the stability of the beginning
+        for _ in range(500):
+            self._robot.updateObservation()
+            self._robot.applyCommand(self._robot.STANCE_POSTURE)
+            self._env.stepSimulation()
+
+
 class FixedTgEnv(IkEnv):
     tg_types = {'A1': make_cls(vertical_tg, h=0.08),
-                'AlienGo': make_cls(vertical_tg, h=0.12),}
-                # 'AlienGo': make_cls(implicit_tg, init_model_dir=
-                # 'D:/Workspaces/teacher-student/tg_base.pt')}
+                'AlienGo': make_cls(vertical_tg, h=0.12), }
+
+    # 'AlienGo': make_cls(implicit_tg, init_model_dir='D:/Workspaces/teacher-student/tg_base.pt')}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._stm = TgStateMachine(1 / g_cfg.action_frequency,
                                    self.tg_types[self._robot.__class__.__name__])
-        # self._filter = self._stm.flags
 
     def _initTgObservationStatistics(self):
         ProprioObservation.ftg_frequencies_bias = (TgStateMachine.base_frequency,) * 4
@@ -451,11 +517,12 @@ class FixedTgEnv(IkEnv):
         eo.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
         return eo
 
-    def step(self, action: Action):
+    def step(self, action: Action | np.ndarray):
+        if not isinstance(action, Action):
+            action = Action.from_array(action)
         self._stm.update(action.leg_frequencies)
-        # self._filter += self._stm.flags
-        priori = self._stm.get_priori_trajectory().reshape((4, 3)) + self._robot.STANCE_FOOT_POSITIONS
-        des_pos = action.foot_pos_residuals.reshape((4, 3)) + priori
+        priori = self._stm.get_priori_trajectory().reshape(4, 3)
+        des_pos = action.foot_pos_residuals.reshape(4, 3) + priori
 
         if g_cfg.plot_trajectory:
             self.plotFootTrajectories(des_pos)
@@ -500,18 +567,23 @@ if __name__ == '__main__':
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg = True
-    if tg:
+    tg, external = True, True
+    if tg and external:
+        g_cfg.action_frequency = 500
+        g_cfg.execution_frequency = 500
+        g_cfg.sim_frequency = 500
+        env = ExternalTgEnv(AlienGo)
+        tg = WholeBodyTgNet('D:/Workspaces/teacher-student/tg_base.pt')
+        obs, _ = env.initObservation()
+        for i in range(1, 100000):
+            X = torch.tensor(obs)
+            action = tg(X).detach().cpu().numpy().reshape(-1)
+            obs, *_ = env.step(action)
+    elif tg and not external:
         env = FixedTgEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
-            act = Action()
-            # print(np.array(env.getSafetyFootHeightsOfRobot()))
-            # env.robot.addDisturbanceOnBase((0, 0, 300))
-            env.step(act)
-            # time.sleep(0.05)
-            # if i % 500 == 0:
-            #     env.reset()
+            env.step(Action())
     else:
         env = QuadrupedEnv(AlienGo)
         env.initObservation()

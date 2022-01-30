@@ -199,7 +199,7 @@ def find_log(log_dir='log', time=None, epoch=None):
     return os.path.join(folder, f'model_{epoch}.pt')
 
 
-def find_log_remote(host='61.153.52.71', port=10022, log_dir='teacher-student-debug/log', time=None, epoch=None):
+def find_log_remote(host='jewel@61.153.52.71', port=10022, log_dir='teacher-student-dev/log', time=None, epoch=None):
     print(f'ssh {host} -p {port} ls {log_dir}')
     remote_logs = os.popen(f'ssh {host} -p {port} ls {log_dir}').read().split('\n')
     remote_logs.remove('')

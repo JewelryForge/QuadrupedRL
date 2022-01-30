@@ -58,11 +58,10 @@ if __name__ == '__main__':
     remote = True
     if remote:
         # model = find_log_remote(time=None, epoch=None, log_dir='teacher-student/log')
-        model = find_log_remote(time=None, epoch=15000, log_dir='Workspaces/teacher-student/log',
+        model = find_log_remote(time=None, epoch=None, log_dir='Workspaces/teacher-student/log',
                                 host='jewel@10.12.120.120', port=22)
         # model = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',
         #                         host='jewelry@10.192.119.171', port=22)
     else:
         model = find_log(time=None, epoch=None)
-    # model = 'D:/Workspaces/teacher-student/log/remote-Jan18_13-51-31/model_9100.pt'
     main(model)
