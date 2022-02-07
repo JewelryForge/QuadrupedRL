@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import time
 from collections import deque
 from itertools import chain
@@ -11,6 +12,7 @@ import pybullet_data
 import torch
 from pybullet_utils import bullet_client
 
+import burl
 from burl.rl.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action, TgPhasesObservation, \
     SimplifiedObservation
 from burl.rl.task import BasicTask
@@ -498,9 +500,7 @@ class ExternalTgEnv(IkEnv):
 
 class FixedTgEnv(IkEnv):
     tg_types = {'A1': make_cls(vertical_tg, h=0.08),
-                'AlienGo': make_cls(vertical_tg, h=0.12), }
-
-    # 'AlienGo': make_cls(implicit_tg, init_model_dir='D:/Workspaces/teacher-student/tg_base.pt')}
+                'AlienGo': make_cls(vertical_tg, h=0.12)}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -573,7 +573,7 @@ if __name__ == '__main__':
         g_cfg.execution_frequency = 500
         g_cfg.sim_frequency = 500
         env = ExternalTgEnv(AlienGo)
-        tg = WholeBodyTgNet('D:/Workspaces/teacher-student/tg_base.pt')
+        tg = WholeBodyTgNet(os.path.join(burl.rsc_path, 'tg_base.pt'))
         obs, _ = env.initObservation()
         for i in range(1, 100000):
             X = torch.tensor(obs)

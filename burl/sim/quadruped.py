@@ -11,6 +11,7 @@ import pybullet
 import pybullet_data
 from pybullet_utils import bullet_client
 
+import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
 from burl.utils import (ang_norm, JointInfo, make_cls, g_cfg, DynamicsInfo, vec_cross,
@@ -106,7 +107,7 @@ class Quadruped(object):
         self._sum_work = 0.0
 
     def _loadRobotOnRack(self):
-        path = os.path.join(g_cfg.local_urdf, self.URDF_FILE)
+        path = os.path.join(burl.urdf_path, self.URDF_FILE)
         robot = self._env.loadURDF(path, self.INIT_RACK_POSITION, self.INIT_ORIENTATION, flags=0)
         self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                    jointType=self._env.JOINT_FIXED,
@@ -121,7 +122,8 @@ class Quadruped(object):
         x, y, z = self.INIT_POSITION
         z += init_height_addition
         flags = self._env.URDF_USE_SELF_COLLISION if g_cfg.self_collision_enabled else 0
-        path = os.path.join(g_cfg.local_urdf, self.URDF_FILE)
+        path = os.path.join(burl.urdf_path, self.URDF_FILE)
+        print(path)
         robot = self._env.loadURDF(path, (x, y, z), self.INIT_ORIENTATION, flags=flags)
         return robot
 
@@ -699,7 +701,7 @@ class A1(Quadruped):
 
 class AlienGo(A1):
     INIT_POSITION = (0., 0., .41)
-    INIT_RACK_POSITION = (0., 0., 1.)
+    INIT_RACK_POSITION = (0., 0., 0.5)
     INIT_ORIENTATION = (0., 0., 0., 1.)
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
@@ -740,7 +742,7 @@ if __name__ == '__main__':
     from burl.sim.terrain import PlainTerrain
 
     g_cfg.on_rack = False
-    g_cfg.action_frequency = 100.
+    g_cfg.action_frequency = 100
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = PlainTerrain(p)

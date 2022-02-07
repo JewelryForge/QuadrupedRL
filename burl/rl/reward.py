@@ -128,7 +128,7 @@ class BodyPosturePenalty(Reward):
 
 
 class BodyHeightReward(Reward):
-    def __init__(self, des=0.4, range_=0.05):
+    def __init__(self, des=0.4, range_=0.03):
         self.des = des
         self.reshape = tanh2_reshape(0., range_)
 
@@ -147,7 +147,7 @@ class TorqueGradientPenalty(Reward):
 
 
 class FootSlipPenalty(Reward):
-    def __init__(self, lower=0.2, upper=1.0):
+    def __init__(self, lower=0.1, upper=0.6):
         # Due to the error of slip velocity estimation, tolerate error of 0.2
         self.reshape = tanh2_reshape(lower, upper)
 
@@ -157,7 +157,7 @@ class FootSlipPenalty(Reward):
 
 
 class HipAnglePenalty(Reward):
-    def __init__(self, upper=0.3):
+    def __init__(self, upper=0.4):
         self.reshape = tanh2_reshape(0., upper)
 
     def __call__(self, cmd, env, robot):

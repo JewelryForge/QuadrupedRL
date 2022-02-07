@@ -49,7 +49,7 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     activation = nn.ELU
 
-    def __init__(self, input_dim, output_dim=1, hidden_dims=(256, 128, 64)):
+    def __init__(self, input_dim, output_dim=1, hidden_dims=(256, 256, 256)):
         super().__init__()
         self.input_dim, self.output_dim = input_dim, output_dim
         layers = []

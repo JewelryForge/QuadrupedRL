@@ -31,10 +31,7 @@ class PhysicsParam(object):
 class SimParam(PhysicsParam):
     def __init__(self):
         super().__init__()
-        # self.local_urdf = '/home/jewel/Workspaces/teacher-student/urdf'
-        # self.local_urdf = '/home/jewelry/python_ws/teacher-student/urdf'
-        self.local_urdf = 'D:/Workspaces/teacher-student/urdf'
-        self.action_frequency = 100
+        self.action_frequency = 50
         self.sim_frequency = 500
         self.execution_frequency = 500
         self.max_sim_iterations = 10000
@@ -80,32 +77,6 @@ class TrainParam(object):
         self.action_layer_dims = (256, 128, 64)
 
 
-reward_profile1 = (('LinearVelocityReward', 0.06),
-                   ('YawRateReward', 0.06),
-                   ('BodyHeightReward', 0.03),
-                   ('HipAnglePenalty', 0.04),
-                   ('RedundantLinearPenalty', 0.04),
-                   ('RollPitchRatePenalty', 0.04),
-                   ('BodyPosturePenalty', 0.04),
-                   ('FootSlipPenalty', 0.04),
-                   ('TrivialStridePenalty', 0.06),
-                   # ('TorqueGradientPenalty', 0.04),
-                   ('ClearanceOverTerrainReward', 0.04),
-                   ('BodyCollisionPenalty', 0.04),
-                   ('CostOfTransportReward', 0.04))
-
-reward_profile2 = (('ImitationReward', 0.08),
-                   ('YawRateReward', 0.04),
-                   ('BodyHeightReward', 0.08),
-                   # ('HipAnglePenalty', 0.04),
-                   ('RedundantLinearPenalty', 0.04),
-                   ('RollPitchRatePenalty', 0.04),
-                   ('BodyPosturePenalty', 0.04),
-                   ('FootSlipPenalty', 0.04),
-                   # ('TorqueGradientPenalty', 0.04),
-                   ('AliveReward', 0.1))
-
-
 class RuntimeParam(object):
     def __init__(self):
         self.log_dir = f'log/{timestamp()}'
@@ -114,7 +85,19 @@ class RuntimeParam(object):
         self.ip_address = '127.0.0.1'
         self.port = '19996'
         self.validation = False
-        self.rewards_weights = reward_profile1
+        self.rewards_weights = (('LinearVelocityReward', 0.06),
+                                ('YawRateReward', 0.06),
+                                ('BodyHeightReward', 0.03),
+                                ('HipAnglePenalty', 0.04),
+                                ('RedundantLinearPenalty', 0.04),
+                                ('RollPitchRatePenalty', 0.04),
+                                ('BodyPosturePenalty', 0.04),
+                                ('FootSlipPenalty', 0.04),
+                                ('TrivialStridePenalty', 0.06),
+                                # ('TorqueGradientPenalty', 0.04),
+                                ('ClearanceOverTerrainReward', 0.04),
+                                ('BodyCollisionPenalty', 0.04),
+                                ('CostOfTransportReward', 0.04))
 
 
 class TerrainParam(object):

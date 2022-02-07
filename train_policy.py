@@ -2,7 +2,7 @@ import sys
 
 sys.path.append('.')
 from burl.rl.runner import PolicyTrainer
-from burl.utils import g_cfg, log_warn, init_logger, parse_args, reward_profile1
+from burl.utils import g_cfg, log_warn, init_logger, parse_args
 import wandb
 
 
@@ -17,7 +17,6 @@ def update_cfg_from_args():
 
 def main():
     init_logger()
-    g_cfg.rewards_weights = reward_profile1
     if len(sys.argv) > 1:
         update_cfg_from_args()
     else:
