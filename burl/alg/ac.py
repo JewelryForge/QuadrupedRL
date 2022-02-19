@@ -13,7 +13,7 @@ class Actor(nn.Module):
                  action_layer_dims=(256, 128, 64)):
         super().__init__()
         self.input_dim = extero_obs_dim + proprio_obs_dim
-        self.extero_obs_dim, self.proprio_obs_dim, self.action_dim = extero_obs_dim, proprio_obs_dim, action_dim
+        self.extero_obs_dim, self.proprio_obs_dim, self.output_dim = extero_obs_dim, proprio_obs_dim, action_dim
         extero_layers, proprio_layers, action_layers = [], [], []
         self.extero_obs_dim = extero_feature_dim = extero_obs_dim
         if extero_layer_dims:
@@ -79,7 +79,7 @@ class ActorCritic(nn.Module):
         if isinstance(init_noise_std, Iterable):
             self.std = nn.Parameter(torch.tensor(init_noise_std), requires_grad=True)
         else:
-            self.std = nn.Parameter(torch.full((actor.action_dim,), init_noise_std), requires_grad=True)
+            self.std = nn.Parameter(torch.full((actor.output_dim,), init_noise_std), requires_grad=True)
         self.distribution = None
         torch.distributions.Normal.set_default_validate_args = False
 

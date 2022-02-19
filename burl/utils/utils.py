@@ -158,12 +158,12 @@ class DynamicsInfo(object):
 
 
 def timestamp():
-    return datetime.now().strftime('%b%d_%H-%M-%S')
+    return datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
 
 def str2time(time_str):
     try:
-        return datetime.strptime(time_str, '%b%d_%H-%M-%S')
+        return datetime.strptime(time_str, '%y-%m-%d_%H-%M-%S')
     except ValueError:
         return datetime(1900, 1, 1)
 
@@ -248,11 +248,12 @@ def parse_args(argv=None):
         if '=' in name:
             name, value = name.split('=')
         else:
-            try:
-                value = next(args)
-                assert not value.startswith('--')
-            except (StopIteration, AssertionError):
-                raise RuntimeError(f"Parameter '{name}' has no corresponding value")
+            value = True
+            # try:
+            #     value = next(args)
+            #     assert not value.startswith('--')
+            # except (StopIteration, AssertionError):
+            #     raise RuntimeError(f"Parameter '{name}' has no corresponding value")
         name = name.replace('-', '_')
         kwargs[name] = value
     return kwargs

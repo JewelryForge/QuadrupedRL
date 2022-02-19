@@ -253,7 +253,7 @@ class Quadruped(object):
         self._observation_history.append(self._observation)
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
-        self._motor.update_observation(self.getJointPositions(), self.getJointVelocities())
+        self._motor.update_observation(self.getJointPositions(noisy=True), self.getJointVelocities(noisy=True))
         self._updateStepInfos()
         return self._observation, observation_noisy
 
@@ -345,7 +345,6 @@ class Quadruped(object):
                 self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
 
     def _estimateObservation(self):
-        # TODO: ADD NOISE
         idx = 0 if len(self._observation_history) <= self._latency_steps else -self._latency_steps - 1
         observation = self._observation_history[idx]
         return self._addNoiseOnObservation(observation)

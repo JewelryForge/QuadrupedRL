@@ -1,6 +1,10 @@
+import random
+
 import numpy as np
 from burl.rl.reward import RewardRegistry
 from burl.utils import g_cfg
+
+__all__ = ['BasicTask', 'RandomForwardBackTask', 'RandomCmdTask']
 
 
 class BasicTask(RewardRegistry):
@@ -28,15 +32,15 @@ class BasicTask(RewardRegistry):
 
     def calculateReward(self):
         if g_cfg.test_mode:
-            self.sendOrPrint()
+            self.sendAndPrint()
         return super().calculateReward()
 
-    def sendOrPrint(self):
+    def sendAndPrint(self):
         from burl.sim import Quadruped, FixedTgEnv
         from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
                                     FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty,
                                     ClearanceOverTerrainReward, TorqueGradientPenalty, CostOfTransportReward,
-                                    ImitationReward)
+                                    ImitationReward, LinearVelocityReward)
 
         from burl.utils import udp_pub
         from collections import deque
@@ -46,6 +50,8 @@ class BasicTask(RewardRegistry):
 
         def wrap(reward_type):
             return reward_type().__call__(cmd, env, rob)
+
+        # print(cmd, rob.getBaseLinearVelocityInBaseFrame()[:2], wrap(LinearVelocityReward))
 
         # if not hasattr(self, 'tgp'):
         #     self.tgp = deque(maxlen=1000)
@@ -108,6 +114,15 @@ class BasicTask(RewardRegistry):
         if any(joint_diff > g_cfg.joint_angle_range) or any(joint_diff < -g_cfg.joint_angle_range):
             return True
         return False
+
+
+class RandomForwardBackTask(BasicTask):
+    def __init__(self, env, seed=None):
+        random.seed(seed)
+        super().__init__(env, (random.choice((1., -1.)), 0., 0.))
+
+    def reset(self):
+        self._cmd = np.array((random.choice((1., -1.)), 0., 0.))
 
 
 class RandomCmdTask(BasicTask):

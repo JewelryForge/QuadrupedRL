@@ -8,10 +8,8 @@ from burl.rl.runner import TgNetPlayer
 if __name__ == '__main__':
     g_cfg.trn_type = 'plain'
     g_cfg.trn_roughness = 0.05
-    g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
-    g_cfg.test_mode = True
-    g_cfg.rendering = True
+    g_cfg.test_profile()
     g_cfg.single_step_rendering = False
     g_cfg.add_disturbance = True
     g_cfg.tg_init = 'symmetric'

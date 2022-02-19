@@ -157,8 +157,9 @@ class FootSlipPenalty(Reward):
 
 
 class HipAnglePenalty(Reward):
-    def __init__(self, upper=0.4):
-        self.reshape = tanh2_reshape(0., upper)
+    def __init__(self, upper=0.3):
+        # self.reshape = tanh2_reshape(0., upper)
+        self.reshape = quadratic_linear_reshape(upper)
 
     def __call__(self, cmd, env, robot):
         hip_angles = robot.getJointPositions()[(0, 3, 6, 9),]

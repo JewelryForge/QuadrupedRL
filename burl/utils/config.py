@@ -88,7 +88,7 @@ class RuntimeParam(object):
         self.rewards_weights = (('LinearVelocityReward', 0.06),
                                 ('YawRateReward', 0.06),
                                 ('BodyHeightReward', 0.03),
-                                ('HipAnglePenalty', 0.04),
+                                ('HipAnglePenalty', 0.05),
                                 ('RedundantLinearPenalty', 0.04),
                                 ('RollPitchRatePenalty', 0.04),
                                 ('BodyPosturePenalty', 0.04),
@@ -143,6 +143,17 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, Disturbanc
     @property
     def dev(self):
         return self.device
+
+    def test_profile(self):
+        self.test_mode = True
+        self.rendering = True
+        self.use_mp = False
+        self.use_wandb = False
+        self.sleeping_enabled = True
+
+    def update(self, kv: dict):
+        for k, v in kv.items():
+            setattr(self, k, v)
 
     def __setattr__(self, key, value):
         if not hasattr(self, '_init'):

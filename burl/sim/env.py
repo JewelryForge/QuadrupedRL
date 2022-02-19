@@ -143,6 +143,7 @@ class QuadrupedEnv(object):
                                         for _ in range(36)]
             self._force_indicator = -1
             self._external_force_buffer = self._external_force
+            self._time_ratio_indicator = -1
 
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
@@ -160,12 +161,16 @@ class QuadrupedEnv(object):
         if (current := self._env.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
             self._reset_counter = current
             self.reset()
+        time_spent = time.time() - self._last_frame_time
         if g_cfg.sleeping_enabled:
-            time_spent = time.time() - self._last_frame_time
-            self._last_frame_time = time.time()
-            time_to_sleep = self._num_action_repeats / g_cfg.sim_frequency - time_spent
-            if time_to_sleep > 0:
+            if (time_to_sleep := self._num_action_repeats / g_cfg.sim_frequency - time_spent) > 0:
                 time.sleep(time_to_sleep)
+                time_spent += time_to_sleep
+        self._last_frame_time = time.time()
+        time_ratio = 1 / g_cfg.sim_frequency / time_spent
+        if not g_cfg.single_step_rendering:
+            time_ratio *= self._num_action_repeats
+        # print('time ratio:', f'{time_ratio:.2f}')
         if g_cfg.moving_camera:
             yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
             (x, y, _), z = self._robot.position, self._robot.STANCE_HEIGHT
@@ -555,19 +560,16 @@ class FixedTgEnv(IkEnv):
 if __name__ == '__main__':
     from burl.utils import init_logger, set_logger_level
 
-    g_cfg.moving_camera = False
-    g_cfg.sleeping_enabled = True
     g_cfg.on_rack = False
-    g_cfg.rendering = True
     g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
-    g_cfg.test_mode = True
-    g_cfg.single_step_rendering = False
+    g_cfg.test_profile()
+    g_cfg.single_step_rendering = True
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
     make_motor = make_cls(MotorSim)
-    tg, external = True, True
+    tg, external = True, False
     if tg and external:
         g_cfg.action_frequency = 500
         g_cfg.execution_frequency = 500

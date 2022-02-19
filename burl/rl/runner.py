@@ -8,7 +8,7 @@ import wandb
 import burl
 from burl.alg import ActorCritic, Actor, Critic, PPO
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation, SimplifiedObservation
-from burl.rl.task import BasicTask
+from burl.rl.task import BasicTask, RandomForwardBackTask
 from burl.sim import (FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, WholeBodyTgNet, ExternalTgEnv,
                       SingleEnvContainer)
 from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
@@ -162,16 +162,17 @@ class OnPolicyRunner:
 
 
 class PolicyTrainer(OnPolicyRunner):
-    def __init__(self):
+    def __init__(self, task_class=BasicTask):
         make_actor_critic = make_cls(
             ActorCritic,
             actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
                         g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
             critic=Critic(ExtendedObservation.dim, 1),
-            init_noise_std=g_cfg.init_noise_std
+            # init_noise_std=g_cfg.init_noise_std
+            init_noise_std=(.1,) * 4 + (.2, .1, .1) * 4
         )
         super().__init__(
-            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=BasicTask),
+            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
             make_actor_critic=make_actor_critic,
         )
 
@@ -239,6 +240,7 @@ class PolicyPlayer(Player):
             make_actor_critic=make_actor_critic,
         )
 
+
 class TgNetPlayer(Player):
     def __init__(self, model_path):
         make_actor_critic = make_cls(
@@ -252,8 +254,3 @@ class TgNetPlayer(Player):
             make_env=make_cls(ExternalTgEnv, make_robot=AlienGo, make_task=make_cls(BasicTask, cmd=(0., 0., 0.))),
             make_actor_critic=make_actor_critic,
         )
-
-    def get_policy_info(self):
-        return {'Policy/X_noise_std': self.alg.actor_critic.std.cpu()[(0, 3, 6, 9),].mean().item(),
-                'Policy/Y_noise_std': self.alg.actor_critic.std.cpu()[(1, 4, 7, 10),].mean().item(),
-                'Policy/Z_noise_std': self.alg.actor_critic.std.cpu()[(2, 5, 8, 11),].mean().item()}

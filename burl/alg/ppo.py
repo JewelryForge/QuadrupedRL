@@ -22,13 +22,13 @@ class RolloutStorage(object):
             self.__init__()
 
     def __init__(self, num_envs, num_transitions_per_env,
-                 actor_obs_shape, critic_obs_shape, actions_shape):
+                 actor_obs_shape, critic_obs_shape, actions_shape, rewards_shape=(1,)):
         # Core
         g_dev = g_cfg.dev
         self.actor_obs = torch.zeros(num_transitions_per_env, num_envs, *actor_obs_shape, device=g_dev)
         self.critic_obs = torch.zeros(num_transitions_per_env, num_envs, *critic_obs_shape, device=g_dev)
-        self.rewards = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev)
         self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=g_dev)
+        self.rewards = torch.zeros(num_transitions_per_env, num_envs, *rewards_shape, device=g_dev)
         self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=g_dev).byte()
 
         # For PPO
@@ -133,8 +133,11 @@ class PPO(object):
             self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
                                                                total_iters=5000)
         self.transition = RolloutStorage.Transition()
-        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len, (self.actor_critic.actor.input_dim,),
-                                      (self.actor_critic.critic.input_dim,), (self.actor_critic.actor.action_dim,))
+        self.storage = RolloutStorage(g_cfg.num_envs, g_cfg.storage_len,
+                                      (self.actor_critic.actor.input_dim,),
+                                      (self.actor_critic.critic.input_dim,),
+                                      (self.actor_critic.actor.output_dim,),
+                                      (self.actor_critic.critic.output_dim,))
         self.learning_rate = g_cfg.learning_rate
 
     def test_mode(self):
