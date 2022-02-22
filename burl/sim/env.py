@@ -36,7 +36,7 @@ class QuadrupedEnv(object):
                                  'noisy_priprio': 'makeNoisyPriprioObservation',
                                  'extended': 'makeExtendedObservation'}
 
-    def __init__(self, make_robot=A1, make_task=BasicTask, observation_type=('extended', 'extended')):
+    def __init__(self, make_robot=Quadruped, make_task=BasicTask, observation_type=('extended', 'extended')):
         self._gui = g_cfg.rendering
         self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -47,7 +47,10 @@ class QuadrupedEnv(object):
         if self._gui:
             self._prepareRendering()
         self._terrain = makeTerrain(self._env)
-        self._robot: Quadruped = make_robot(self._env, self._terrain.getPeakInRegion(*make_robot.ROBOT_SIZE)[2])
+        self._robot: Quadruped = make_robot(self._env, execution_frequency=g_cfg.execution_frequency,
+                                            on_rack=g_cfg.on_rack,
+                                            random_dynamics=g_cfg.random_dynamics, motor_latency=0.0,
+                                            height_addition=self._terrain.getPeakInRegion(*make_robot.ROBOT_SIZE)[2])
         self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
@@ -111,7 +114,10 @@ class QuadrupedEnv(object):
         return self.makeObservation()
 
     def _initSimulation(self):
-        pass
+        return
+        for _ in range(300):
+            self._robot.applyTorques((0.,) * 12)
+            self._env.stepSimulation()
 
     def _loadEgl(self):
         import pkgutil
@@ -131,6 +137,7 @@ class QuadrupedEnv(object):
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
 
     def _initRendering(self):
+        self._env.resetDebugVisualizerCamera(1.5, math.pi / 2, 0., (0., 0., self._robot.STANCE_HEIGHT))
         if g_cfg.extra_visualization:
             self._contact_visual_shape = self._env.createVisualShape(shapeType=pybullet.GEOM_BOX,
                                                                      halfExtents=(0.03, 0.03, 0.03),
@@ -142,7 +149,7 @@ class QuadrupedEnv(object):
             self._terrain_indicators = [self._env.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
                                         for _ in range(36)]
             self._force_indicator = -1
-            self._external_force_buffer = self._external_force
+            self._external_force_buffer = None
             self._time_ratio_indicator = -1
 
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
@@ -162,14 +169,14 @@ class QuadrupedEnv(object):
             self._reset_counter = current
             self.reset()
         time_spent = time.time() - self._last_frame_time
+        period_coeff = 1. if g_cfg.single_step_rendering else self._num_action_repeats
         if g_cfg.sleeping_enabled:
-            if (time_to_sleep := self._num_action_repeats / g_cfg.sim_frequency - time_spent) > 0:
+            period = period_coeff / g_cfg.sim_frequency / g_cfg.time_ratio
+            if (time_to_sleep := period - time_spent) > 0:
                 time.sleep(time_to_sleep)
                 time_spent += time_to_sleep
         self._last_frame_time = time.time()
-        time_ratio = 1 / g_cfg.sim_frequency / time_spent
-        if not g_cfg.single_step_rendering:
-            time_ratio *= self._num_action_repeats
+        time_ratio = period_coeff / g_cfg.sim_frequency / time_spent
         # print('time ratio:', f'{time_ratio:.2f}')
         if g_cfg.moving_camera:
             yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
@@ -279,6 +286,7 @@ class QuadrupedEnv(object):
         rewards = []
         reward_details = {}
         prev_action = self._action_buffer[-1] if self._action_buffer else np.array(self._robot.STANCE_POSTURE)
+        action = np.asarray(action)
         self._action_buffer.append(action)
         for i in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
@@ -315,10 +323,6 @@ class QuadrupedEnv(object):
         if hasattr(self._terrain, 'difficulty'):
             info['difficulty'] = self._terrain.difficulty
         # log_debug(f'Step time: {time.time() - start}')
-        # print(self.makeObservation(False).__dict__)
-        # print(self.makeObservation(False).foot_contact_forces[(0, 3, 6, 9),].sum(),
-        #       self.makeObservation(False).foot_contact_forces[(1, 4, 7, 10),].sum(),
-        #       self.makeObservation(False).foot_contact_forces[(2, 5, 8, 11),].sum())
         return (*self.makeObservation(),
                 mean_reward,
                 is_failed or time_out,
@@ -563,8 +567,9 @@ if __name__ == '__main__':
     g_cfg.on_rack = False
     g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
+    g_cfg.moving_camera = False
     g_cfg.test_profile()
-    g_cfg.single_step_rendering = True
+    g_cfg.slow_down_rendering()
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
@@ -589,6 +594,22 @@ if __name__ == '__main__':
     else:
         env = QuadrupedEnv(AlienGo)
         env.initObservation()
-        for i in range(1, 100000):
+        for i in range(1000):
             env.step(env.robot.STANCE_POSTURE)
-            print(env.robot.rpy)
+
+        # for i in range(100):
+        #     env.step(env.robot.getJointPositions())
+        # init_pos = env.robot.getJointPositions()
+        # des_pos = np.array(env.robot.STANCE_POSTURE)
+        # duration = 1
+        # for i in range(1000):
+        #     time_spent = i / g_cfg.action_frequency
+        #     if time_spent > duration:
+        #         env.step(env.robot.STANCE_POSTURE)
+        #     else:
+        #         process = time_spent / duration
+        #         env.step(des_pos * process + init_pos * (1 - process))
+
+        # for i in range(100000):
+        #     env.step(env.robot.STANCE_POSTURE)
+        #     print(env.robot.rpy)

@@ -40,7 +40,7 @@ class BasicTask(RewardRegistry):
         from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
                                     FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty,
                                     ClearanceOverTerrainReward, TorqueGradientPenalty, CostOfTransportReward,
-                                    ImitationReward, LinearVelocityReward)
+                                    ImitationReward, LinearVelocityReward, TorquePenalty)
 
         from burl.utils import udp_pub
         from collections import deque
@@ -51,8 +51,13 @@ class BasicTask(RewardRegistry):
         def wrap(reward_type):
             return reward_type().__call__(cmd, env, rob)
 
-        # print(cmd, rob.getBaseLinearVelocityInBaseFrame()[:2], wrap(LinearVelocityReward))
+        # wrap(TorquePenalty)
 
+        # print(cmd, rob.getBaseLinearVelocityInBaseFrame()[:2], wrap(LinearVelocityReward))
+        # print(rob.getFootSlipVelocity())
+        # print(max(rob.getLastAppliedTorques()))
+        # print(wrap(HipAnglePenalty))
+        # print(rob.getBaseLinearVelocityInBaseFrame()[2])
         # if not hasattr(self, 'tgp'):
         #     self.tgp = deque(maxlen=1000)
 
@@ -69,7 +74,6 @@ class BasicTask(RewardRegistry):
         # projected_velocity = np.dot(cmd[:2], linear[:2])
         # print(projected_velocity)
         # print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward))
-        # print(wrap(ImitationReward))
         # print(rob.getCostOfTransport(), wrap(CostOfTransportReward))
         # strides = [np.linalg.norm(s) for s in rob.getStrides()]
         # if any(s != 0.0 for s in strides):

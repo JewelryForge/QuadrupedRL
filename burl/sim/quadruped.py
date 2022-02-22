@@ -14,10 +14,8 @@ from pybullet_utils import bullet_client
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim
-from burl.utils import (ang_norm, JointInfo, make_cls, g_cfg, DynamicsInfo, vec_cross,
-                        sign, included_angle, safe_asin, safe_acos)
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
-from itertools import repeat
 
 TP_ZERO3 = (0., 0., 0.)
 TP_Q0 = (0., 0., 0., 1.)
@@ -39,7 +37,6 @@ class Quadruped(object):
     """
 
     INIT_POSITION: tuple
-    INIT_RACK_POSITION: tuple
     INIT_ORIENTATION: tuple
     NUM_MOTORS = 12
     LEG_NAMES: tuple[str]
@@ -63,29 +60,29 @@ class Quadruped(object):
     SHOULDER_FRAME = 2
     INIT_FRAME = 3
 
-    def __init__(self, sim_env=pybullet, init_height_addition=0.0,
-                 make_motor: make_cls = MotorSim):
-        self._env, self._frequency = sim_env, g_cfg.execution_frequency
-        self._motor: MotorSim = make_motor(self, num=12, frequency=self._frequency,
-                                           kp=self.P_PARAMS, kd=self.D_PARAMS, torque_limits=self.TORQUE_LIMITS)
-        assert g_cfg.latency >= 0
-        self._latency = g_cfg.latency
-
+    def __init__(self, sim_env=pybullet, execution_frequency=500,
+                 latency=0., motor_latency=0.,
+                 height_addition=0., on_rack=False,
+                 random_dynamics=False, self_collision_enabled=False):
+        self._env, self._frequency = sim_env, execution_frequency
+        self._motor: MotorSim = MotorSim(self.P_PARAMS, self.D_PARAMS, int(motor_latency * self._frequency),
+                                         torque_limits=self.TORQUE_LIMITS)
+        self._latency = latency
+        self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
 
-        self._latency_steps = int(self._latency * g_cfg.execution_frequency)
-        self._body_id = self._loadRobot(init_height_addition)
+        self._latency_steps = int(self._latency * execution_frequency)
+        self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(height_addition)
         self._analyseModelJoints()
         self._resetPosture()
         self.initPhysicsParams()
-        self.setDynamics(g_cfg.random_dynamics)
+        self.randomDynamics() if random_dynamics else self.setDynamics()
 
         self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
         self._torque_history: Deque[np.ndarray] = deque(maxlen=100)
-        # self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency / 1.25))
-        self._cot_buffer: Deque[float] = deque()
+        self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency))
 
     @property
     def id(self):
@@ -100,7 +97,7 @@ class Quadruped(object):
         self._max_foot_heights: np.ndarray = np.zeros(4)
         self._foot_clearances: np.ndarray = np.zeros(4)
         self._strides = [(0., 0.)] * 4
-        self._slips = [(0., 0.)] * 4
+        self._slips = [0.] * 4
         self._observation: ObservationRaw = None
         self._time = 0.0
         self._step_counter = 0
@@ -108,24 +105,19 @@ class Quadruped(object):
 
     def _loadRobotOnRack(self):
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
-        robot = self._env.loadURDF(path, self.INIT_RACK_POSITION, self.INIT_ORIENTATION, flags=0)
+        robot = self._env.loadURDF(path, (0.,0.,self.STANCE_HEIGHT * 2), self.INIT_ORIENTATION, flags=0)
         self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                    jointType=self._env.JOINT_FIXED,
                                    jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
-                                   childFramePosition=self.INIT_RACK_POSITION,
+                                   childFramePosition=(0.,0.,self.STANCE_HEIGHT * 2),
                                    childFrameOrientation=Quaternion.from_rpy((0., 0., 0.)))
         return robot
 
-    def _loadRobot(self, init_height_addition=0.0):
-        if g_cfg.on_rack:
-            return self._loadRobotOnRack()
-        x, y, z = self.INIT_POSITION
-        z += init_height_addition
-        flags = self._env.URDF_USE_SELF_COLLISION if g_cfg.self_collision_enabled else 0
+    def _loadRobot(self, height_addition=0.0):
+        (x, y), z = self.INIT_POSITION[:2], self.INIT_POSITION[2] + height_addition
+        flags = pybullet.URDF_USE_SELF_COLLISION if self._self_collision else 0
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
-        print(path)
-        robot = self._env.loadURDF(path, (x, y, z), self.INIT_ORIENTATION, flags=flags)
-        return robot
+        return self._env.loadURDF(path, (x, y, z), self.INIT_ORIENTATION, flags=flags)
 
     def _getJointIdByName(self, leg: str, joint_type: str):
         if isinstance(leg, str):
@@ -163,43 +155,45 @@ class Quadruped(object):
         self._base_dynamics = DynamicsInfo(self._env.getDynamicsInfo(self._body_id, 0))
         self._leg_dynamics = [DynamicsInfo(self._env.getDynamicsInfo(self._body_id, i)) for i in self._motor_ids[:3]]
 
-    def setDynamics(self, random_dynamics=False):
-        if random_dynamics:
-            base_mass = self._base_dynamics.mass * random.uniform(0.8, 1.2)
-            base_inertia = self._base_dynamics.inertia * np.random.uniform(0.8, 1.2, 3)
-            leg_masses, leg_inertia = zip(*[(leg_dyn.mass * random.uniform(0.8, 1.2),
-                                             leg_dyn.inertia * np.random.uniform(0.8, 1.2, 3))
-                                            for _ in range(4) for leg_dyn in self._leg_dynamics])
-            joint_friction = np.random.random(12) * 0.05
-            self._foot_friction = np.random.uniform(0.4, 1.0, 4)
+    def setDynamics(self, foot_lateral_friction=(0.4,) * 4,
+                    foot_spinning_friction=(0.2,) * 4,
+                    joint_friction=(0.025,) * 12):
+        self._foot_friction = foot_lateral_friction
+        for link_id, lf, sf in zip(self._foot_ids, self._foot_friction, foot_spinning_friction):
+            self._env.changeDynamics(self._body_id, link_id, lateralFriction=lf, spinningFriction=sf)
 
-            self._env.changeDynamics(self._body_id, 0, mass=base_mass, localInertiaDiagonal=base_inertia)
-            # self._latency = np.random.uniform(0.01, 0.02)
-            self._env.setJointMotorControlArray(self._body_id, self._motor_ids,
-                                                pybullet.VELOCITY_CONTROL, forces=joint_friction)
-            for link_id, mass, inertia in zip(self._motor_ids, leg_masses, leg_inertia):
-                self._env.changeDynamics(self._body_id, link_id, mass=mass, localInertiaDiagonal=inertia)
-            for link_id, fric in zip(self._foot_ids, self._foot_friction):
-                self._env.changeDynamics(self._body_id, link_id, lateralFriction=fric)
-        else:
-            for link_id in self._foot_ids:
-                self._env.changeDynamics(self._body_id, link_id, spinningFriction=g_cfg.foot_spinning_friction,
-                                         lateralFriction=g_cfg.foot_lateral_friction)
-            self._env.setJointMotorControlArray(self._body_id, self._motor_ids, self._env.VELOCITY_CONTROL,
-                                                forces=(g_cfg.joint_friction,) * len(self._motor_ids))
-            self._foot_friction = (g_cfg.foot_lateral_friction,) * 4
+        self._env.setJointMotorControlArray(self._body_id, self._motor_ids, self._env.VELOCITY_CONTROL,
+                                            forces=joint_friction)
         for link_id in self._motor_ids:
             self._env.changeDynamics(self._body_id, link_id, linearDamping=0, angularDamping=0)
         self._mass = sum([self._env.getDynamicsInfo(self._body_id, i)[0] for i in range(self._num_joints)])
 
+    def randomDynamics(self):
+        base_mass = self._base_dynamics.mass * random.uniform(0.8, 1.2)
+        base_inertia = self._base_dynamics.inertia * np.random.uniform(0.8, 1.2, 3)
+        leg_masses, leg_inertia = zip(*[(leg_dyn.mass * random.uniform(0.8, 1.2),
+                                         leg_dyn.inertia * np.random.uniform(0.8, 1.2, 3))
+                                        for _ in range(4) for leg_dyn in self._leg_dynamics])
+
+        self._env.changeDynamics(self._body_id, 0, mass=base_mass, localInertiaDiagonal=base_inertia)
+        for link_id, mass, inertia in zip(self._motor_ids, leg_masses, leg_inertia):
+            self._env.changeDynamics(self._body_id, link_id, mass=mass, localInertiaDiagonal=inertia)
+
+        # self._latency = np.random.uniform(0.01, 0.02)
+        self.setDynamics(foot_lateral_friction=np.random.uniform(0.4, 1.0, 4),
+                         joint_friction=np.random.random(12) * 0.05)
+
     def applyCommand(self, motor_commands):
         motor_commands = np.asarray(motor_commands)
         self._command_history.append(motor_commands)
-        torques = self._motor.apply_command(motor_commands)
+        torques = self._motor.apply_position(motor_commands)
+        self.applyTorques(torques)
+        return torques
+
+    def applyTorques(self, torques):
         self._env.setJointMotorControlArray(self._body_id, self._motor_ids,
                                             self._env.TORQUE_CONTROL, forces=torques)
         self._torque_history.append(torques)
-        return torques
 
     def reset(self, height_addition=0.0, reload=False, in_situ=False):
         """
@@ -209,7 +203,6 @@ class Quadruped(object):
         :param in_situ: Reset in situ if true.
         :return: Initial observation after reset.
         """
-        # print(np.mean(self._cot_buffer))
         self._resetStates()
         self._observation_history.clear()
         self._observation_noisy_history.clear()
@@ -220,9 +213,7 @@ class Quadruped(object):
             self._body_id = self._loadRobot(height_addition)
             self.initPhysicsParams()
         else:
-            if g_cfg.on_rack:
-                self._env.resetBasePositionAndOrientation(self._body_id, self.INIT_RACK_POSITION, self.orientation)
-            elif in_situ:
+            if in_situ:
                 x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2] + height_addition
                 _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
                 orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
@@ -230,8 +221,10 @@ class Quadruped(object):
             else:
                 x, y, z = self.INIT_POSITION
                 self._env.resetBasePositionAndOrientation(self._body_id, (x, y, z + height_addition), TP_Q0)
-        if reload or g_cfg.random_dynamics:
-            self.setDynamics(g_cfg.random_dynamics)
+        if self._rand_dyn:
+            self.randomDynamics()
+        elif reload:
+            self.setDynamics()
         self._env.resetBaseVelocity(self._body_id, TP_ZERO3, TP_ZERO3)
         self._resetPosture()
         self._motor.reset()
@@ -253,7 +246,8 @@ class Quadruped(object):
         self._observation_history.append(self._observation)
         observation_noisy = self._estimateObservation()
         self._observation_noisy_history.append(observation_noisy)
-        self._motor.update_observation(self.getJointPositions(noisy=True), self.getJointVelocities(noisy=True))
+        self._motor.update_observation(self.getJointPositions(noisy=True),
+                                       self.getJointVelocities(noisy=True))
         self._updateStepInfos()
         return self._observation, observation_noisy
 
@@ -325,23 +319,26 @@ class Quadruped(object):
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
     def _updateStepInfos(self):
+        joint_vel = self.getJointVelocities()
+        rolling_vel = joint_vel[(1, 4, 7, 10),] + joint_vel[(2, 5, 8, 11),]
         for i, contact in enumerate(self.getFootContactStates()):
             foot_pos_world = self.getFootPositionInWorldFrame(i)
             if contact:
                 if self._last_stance_states[i]:
                     t, pos = self._last_stance_states[i]
-                    if self._time - t >= 0.05:
+                    if (duration := self._time - t) >= 0.05:
                         self._strides[i] = (foot_pos_world - pos)[:2]
-                        self._slips[i] = (0., 0.)
+                        self._slips[i] = 0.
                         self._foot_clearances[i] = self._max_foot_heights[i] - pos[2]
                     else:
-                        self._slips[i] = (foot_pos_world - pos)[:2]
+                        # estimated slip distance
+                        self._slips[i] = abs(math.hypot(*(foot_pos_world - pos)[:2]) -
+                                             self.FOOT_RADIUS * rolling_vel[i] * duration)
                         self._strides[i] = (0., 0.)
                         self._foot_clearances[i] = 0.
                 self._last_stance_states[i] = (self._time, foot_pos_world)
             else:
-                self._strides[i] = (0., 0.)
-                self._foot_clearances[i] = 0.
+                self._strides[i], self._slips[i], self._foot_clearances[i] = (0., 0.), 0., 0.
                 self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
 
     def _estimateObservation(self):
@@ -447,37 +444,8 @@ class Quadruped(object):
     def getFootXYsInWorldFrame(self):
         return [self._observation.foot_states.positions[leg, :2] for leg in range(4)]
 
-    def getFootSlipVelocity(self):  # NOTICE: THIS ACTUALLY INCLUDES FOOT ROLLING VELOCITIES
-        return [np.linalg.norm(slip) * self._frequency for slip in self._slips]
-
-    # def getFootSlipVelocity(self):
-    #     current_contact = self.getFootContactStates()
-    #     previous_contact = self.getPrevFootContactStates()
-    #     calculate_slip = np.logical_and(current_contact, previous_contact)
-    #     slip_velocity = np.zeros(4, dtype=float)
-    #     for i, flag in enumerate(calculate_slip):
-    #         if flag:
-    #             current_leg_pos = self.getFootPositionInWorldFrame(i)
-    #             previous_leg_pos = self.getPrevFootPositionInWorldFrame(i)
-    #             current_leg_orn = self._observation.foot_states.orientations[i]
-    #             previous_leg_orn = self.getObservationHistoryFromIndex(-2).foot_states.orientations[i]
-    #             z, angle = pybullet.getAxisAngleFromQuaternion(
-    #                 pybullet.getDifferenceQuaternion(previous_leg_orn, current_leg_orn))
-    #             x = current_leg_pos - previous_leg_pos
-    #             if np.linalg.norm(x) > 1e-5:
-    #                 y = vec_cross(z, unit(x))
-    #                 rotating_velocity = vec_cross(0.02 * y, z)
-    #                 net_velocity = (current_leg_pos - previous_leg_pos) * self._frequency
-    #                 slip_velocity[i] = np.linalg.norm((net_velocity - rotating_velocity)[:2])
-    #             # np.set_printoptions(5)
-    #             # print(current_leg_pos)
-    #             # print((net_velocity - rotating_velocity)[:2])
-    #             # print(net_velocity[:2])
-    #             # print(i, np.linalg.norm(current_leg_position - previous_leg_position))
-    #             # slip_velocity[i] = np.linalg.norm(current_leg_pos - previous_leg_pos) * self._frequency
-    #             # print((current_leg_pos - previous_leg_pos) * self._frequency)
-    #             # print()
-    #     return slip_velocity
+    def getFootSlipVelocity(self):
+        return np.array(self._slips) * self._frequency
 
     def getStrides(self):
         return np.array(self._strides)
@@ -590,7 +558,6 @@ class Quadruped(object):
 
 class A1(Quadruped):
     INIT_POSITION = (0., 0., .33)
-    INIT_RACK_POSITION = (0., 0., 1.)
     INIT_ORIENTATION = (0., 0., 0., 1.)
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
@@ -611,7 +578,7 @@ class A1(Quadruped):
 
     def ik_analytic(self, leg: int | str, pos, frame=Quadruped.BASE_FRAME):
         """
-        Calculate inverse dynamics analytically.
+        Calculate inverse kinematics analytically.
         """
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
@@ -700,7 +667,6 @@ class A1(Quadruped):
 
 class AlienGo(A1):
     INIT_POSITION = (0., 0., .41)
-    INIT_RACK_POSITION = (0., 0., 0.5)
     INIT_ORIENTATION = (0., 0., 0., 1.)
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
@@ -716,12 +682,10 @@ class AlienGo(A1):
     STANCE_POSTURE = (0., 0.6435, -1.287) * 4
     TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)
     ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
-    P_PARAMS = 100.
-    D_PARAMS = (2., 2., 2.) * 4
-
-    # P_PARAMS = 160.
-    # D_PARAMS = (2., 4., 4.) * 4
-    # D_PARAMS = (2., 1., .5) * 4
+    P_PARAMS = 100
+    D_PARAMS = 2
+    # P_PARAMS = 150
+    # D_PARAMS = 4
 
     def _getContactStates(self):
         def _getContactState(link_id):
@@ -729,7 +693,6 @@ class AlienGo(A1):
 
         base_contact = _getContactState(0)
         contact_states = [base_contact]
-        # NOTICE: THIS IS SPECIFICALLY FOR A1
         for leg in range(4):  # FIXME: CONTACT JUDGEMENT SHOULD BE THOUGHT OVER
             base_contact = base_contact or _getContactState(leg * 4 + 2)
             contact_states.extend([_getContactState(leg * 4 + i) for i in range(3, 6)])
@@ -740,30 +703,17 @@ if __name__ == '__main__':
     import time
     from burl.sim.terrain import PlainTerrain
 
-    g_cfg.on_rack = False
-    g_cfg.action_frequency = 100
     p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = PlainTerrain(p)
-    make_motor = make_cls(MotorSim)
-    q = AlienGo(sim_env=p, make_motor=make_motor)
-    # p.resetSimulation()
-    # terrain.reset()
-    # robot = p.loadURDF(A1.URDF_FILE, A1.INIT_POSITION, A1.INIT_ORIENTATION)
-    # q.reset(reload=True)
+    q = AlienGo(sim_env=p, on_rack=False)
     q.analyseJointInfos()
     p.setGravity(0, 0, -9.8)
-    # print(q.fk(0, q.STANCE_POSTURE[:3]).translation - q.HIP_OFFSETS[0] + (0., q.LINK_LENGTHS[0], 0.))
-    # print(q.fk(1, q.STANCE_POSTURE[3:6]).translation - q.HIP_OFFSETS[1] + (0., -q.LINK_LENGTHS[0], 0.))
-    # print(q.fk(2, q.STANCE_POSTURE[6:9]).translation - q.HIP_OFFSETS[2] + (0., q.LINK_LENGTHS[0], 0.))
-    # print(q.fk(3, q.STANCE_POSTURE[9:12]).translation - q.HIP_OFFSETS[3] + (0., -q.LINK_LENGTHS[0], 0.))
 
-    # c = p.loadURDF("cube.urdf", globalScaling=0.1)
     for _ in range(100000):
         p.stepSimulation()
         q.updateObservation()
         time.sleep(1. / 240)
         tq = q.applyCommand(q.STANCE_POSTURE)
         # print(q.position, q.rpy)
-        # print(q.ik_absolute(0, (0, 0, -0.4), 'shoulder'))
         # print(q.getHorizontalFrameInBaseFrame())

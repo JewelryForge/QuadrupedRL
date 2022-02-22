@@ -168,8 +168,7 @@ class PolicyTrainer(OnPolicyRunner):
             actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
                         g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
             critic=Critic(ExtendedObservation.dim, 1),
-            # init_noise_std=g_cfg.init_noise_std
-            init_noise_std=(.1,) * 4 + (.2, .1, .1) * 4
+            init_noise_std=g_cfg.init_noise_std
         )
         super().__init__(
             make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
@@ -236,6 +235,7 @@ class PolicyPlayer(Player):
         )
         super().__init__(
             model_path,
+            # make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=RandomForwardBackTask),
             make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=BasicTask),
             make_actor_critic=make_actor_critic,
         )

@@ -278,14 +278,6 @@ class Action:
         return action
 
 
-class MotorState(ArrayAttr):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('position', 'velocity', 'acceleration'), args))
-        self.position = kwargs.get('position', zero(0))
-        self.velocity = kwargs.get('velocity', zero(0))
-        self.acceleration = kwargs.get('acceleration', zero(0))
-
-
 class JointStates(ArrayAttr):
     def __init__(self, *args, **kwargs):
         kwargs.update(zip(('position', 'velocity', 'reaction_force', 'torque'), args))

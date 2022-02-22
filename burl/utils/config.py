@@ -42,10 +42,10 @@ class RenderParam(object):
     def __init__(self):
         self.rendering = False
         self.sleeping_enabled = False
+        self.time_ratio = 1.
         self.moving_camera = True
         self.extra_visualization = True
         self.plot_trajectory = False
-        self.egl_rendering = False
         self.single_step_rendering = False
 
 
@@ -69,7 +69,7 @@ class TrainParam(object):
     def __init__(self):
         self.num_iterations = 10000
         self.num_envs = 8
-        self.init_noise_std = 0.05
+        self.init_noise_std = (.05,) * 4 + (.1, .05, .05) * 4
         self.save_interval = 50
         self.device = torch.device('cuda')
         self.extero_layer_dims = (72, 64)
@@ -87,17 +87,19 @@ class RuntimeParam(object):
         self.validation = False
         self.rewards_weights = (('LinearVelocityReward', 0.06),
                                 ('YawRateReward', 0.06),
-                                ('BodyHeightReward', 0.03),
-                                ('HipAnglePenalty', 0.05),
-                                ('RedundantLinearPenalty', 0.04),
+                                ('VerticalLinearPenalty', 0.04),
+                                ('AliveReward', 0.04),
+                                ('OrthogonalLinearPenalty', 0.04),
                                 ('RollPitchRatePenalty', 0.04),
                                 ('BodyPosturePenalty', 0.04),
                                 ('FootSlipPenalty', 0.04),
-                                ('TrivialStridePenalty', 0.06),
+                                # ('TrivialStridePenalty', 0.06),
                                 # ('TorqueGradientPenalty', 0.04),
                                 ('ClearanceOverTerrainReward', 0.04),
                                 ('BodyCollisionPenalty', 0.04),
-                                ('CostOfTransportReward', 0.04))
+                                ('CostOfTransportReward', 0.04),
+                                ('BodyHeightReward', 0.),
+                                ('HipAnglePenalty', 0.0),)
 
 
 class TerrainParam(object):
@@ -150,6 +152,10 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, Disturbanc
         self.use_mp = False
         self.use_wandb = False
         self.sleeping_enabled = True
+
+    def slow_down_rendering(self, time_ratio=0.1):
+        self.time_ratio = time_ratio
+        self.single_step_rendering = True
 
     def update(self, kv: dict):
         for k, v in kv.items():
