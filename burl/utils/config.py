@@ -88,7 +88,7 @@ class RuntimeParam(object):
         self.rewards_weights = (('LinearVelocityReward', 0.06),
                                 ('YawRateReward', 0.06),
                                 ('VerticalLinearPenalty', 0.04),
-                                ('AliveReward', 0.04),
+                                ('AliveReward', 0.12),
                                 ('OrthogonalLinearPenalty', 0.04),
                                 ('RollPitchRatePenalty', 0.04),
                                 ('BodyPosturePenalty', 0.04),
@@ -97,6 +97,7 @@ class RuntimeParam(object):
                                 # ('TorqueGradientPenalty', 0.04),
                                 ('ClearanceOverTerrainReward', 0.04),
                                 ('BodyCollisionPenalty', 0.04),
+                                ('TorquePenalty', 0.04),
                                 ('CostOfTransportReward', 0.04),
                                 ('BodyHeightReward', 0.),
                                 ('HipAnglePenalty', 0.0),)

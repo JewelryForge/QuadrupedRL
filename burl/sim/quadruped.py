@@ -71,7 +71,6 @@ class Quadruped(object):
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
 
-        self._latency_steps = int(self._latency * execution_frequency)
         self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(height_addition)
         self._analyseModelJoints()
         self._resetPosture()
@@ -102,6 +101,11 @@ class Quadruped(object):
         self._time = 0.0
         self._step_counter = 0
         self._sum_work = 0.0
+        if isinstance(self._latency, float):
+            self._latency_steps = int(self._latency * self._frequency)
+        else:
+            lower, upper = self._latency
+            self._latency_steps = int(random.uniform(lower, upper) * self._frequency)
 
     def _loadRobotOnRack(self):
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
@@ -367,8 +371,8 @@ class Quadruped(object):
     def getObservation(self, noisy=False):
         return self._observation_noisy_history[-1] if noisy else self._observation
 
-    def getBasePosition(self, noisy=False):
-        return self.getObservation(noisy).base_state.pose.position
+    def getBasePosition(self):
+        return self._base_pose.position
 
     def getBaseOrientation(self, noisy=False):
         return self.getObservation(noisy).base_state.pose.orientation
@@ -377,7 +381,7 @@ class Quadruped(object):
         return Rotation.from_quaternion(self.getBaseOrientation(noisy)).Z
 
     def getBaseRpy(self, noisy=False):
-        return Rpy.from_quaternion(self.getBaseOrientation(True)) if noisy else self._rpy
+        return Rpy.from_quaternion(self.getBaseOrientation(noisy=True)) if noisy else self._rpy
 
     def transformFromHorizontalToBase(self, noisy=False):
         rot = Rotation.from_quaternion(self.getBaseOrientation(noisy))

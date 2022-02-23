@@ -1,7 +1,7 @@
 import random
 
 import numpy as np
-from burl.rl.reward import RewardRegistry
+from burl.rl.reward import *
 from burl.utils import g_cfg
 
 __all__ = ['BasicTask', 'RandomForwardBackTask', 'RandomCmdTask']
@@ -37,10 +37,6 @@ class BasicTask(RewardRegistry):
 
     def sendAndPrint(self):
         from burl.sim import Quadruped, FixedTgEnv
-        from burl.rl.reward import (TrivialStridePenalty, BodyHeightReward, RollPitchRatePenalty,
-                                    FootClearanceReward, HipAnglePenalty, BodyPosturePenalty, BodyCollisionPenalty,
-                                    ClearanceOverTerrainReward, TorqueGradientPenalty, CostOfTransportReward,
-                                    ImitationReward, LinearVelocityReward, TorquePenalty)
 
         from burl.utils import udp_pub
         from collections import deque
@@ -51,28 +47,16 @@ class BasicTask(RewardRegistry):
         def wrap(reward_type):
             return reward_type().__call__(cmd, env, rob)
 
-        # wrap(TorquePenalty)
-
-        # print(cmd, rob.getBaseLinearVelocityInBaseFrame()[:2], wrap(LinearVelocityReward))
-        # print(rob.getFootSlipVelocity())
         # print(max(rob.getLastAppliedTorques()))
         # print(wrap(HipAnglePenalty))
         # print(rob.getBaseLinearVelocityInBaseFrame()[2])
-        # if not hasattr(self, 'tgp'):
-        #     self.tgp = deque(maxlen=1000)
 
-        # print(rob.getTorqueGradients())
-        # self.tgp.append(wrap(TorqueGradientPenalty))
-        # print(np.mean(self.tgp))
-        # print(wrap(ClearanceOverTerrainReward))
-        # print(wrap(HipAnglePenalty))
+        # print(wrap(TorquePenalty))
         # r_rate, p_rate, _ = rob.getBaseRpyRate()
         # print(r_rate, p_rate, wrap(RollPitchRatePenalty))
         # r, p, _ = rob.rpy
         # print(r, p, wrap(BodyPosturePenalty))
-        # linear = rob.getBaseLinearVelocityInBaseFrame()
-        # projected_velocity = np.dot(cmd[:2], linear[:2])
-        # print(projected_velocity)
+        # print(cmd, rob.getBaseLinearVelocityInBaseFrame()[:2], wrap(LinearVelocityReward))
         # print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward))
         # print(rob.getCostOfTransport(), wrap(CostOfTransportReward))
         # strides = [np.linalg.norm(s) for s in rob.getStrides()]
@@ -80,25 +64,24 @@ class BasicTask(RewardRegistry):
         #     print(strides, wrap(SmallStridePenalty))
         # if any(clearances := rob.getFootClearances()):
         #     print(clearances, wrap(FootClearanceReward))
-        # print(wrap(HipAnglePenalty))
-        # print(wrap(BodyCollisionPenalty))
-        # data = {
-        #     'joint_states': {
-        #         'joint_pos': tuple(rob.getJointPositions()),
-        #         'commands': tuple(rob._command_history[-1]),
-        #         'joint_vel': tuple(rob.getJointVelocities()),
-        #         'kp_part': tuple(rob._motor._kp_part),
-        #         'kd_part': tuple(rob._motor._kd_part),
-        #         'torque': tuple(rob.getLastAppliedTorques()),
-        #         'contact': tuple(rob.getContactStates())},
-        #     'body_height': env.getSafetyHeightOfRobot(),
-        #     'cot': rob.getCostOfTransport(),
-        #     'twist': {
-        #         'linear': tuple(rob.getBaseLinearVelocityInBaseFrame()),
-        #         'angular': tuple(rob.getBaseAngularVelocityInBaseFrame()),
-        #     },
-        # }
-        # udp_pub.send(data)
+        data = {
+            'joint_states': {
+                'joint_pos': tuple(rob.getJointPositions()),
+                'commands': tuple(rob._command_history[-1]),
+                'joint_vel': tuple(rob.getJointVelocities()),
+                'kp_part': tuple(rob._motor._kp_part),
+                'kd_part': tuple(rob._motor._kd_part),
+                'torque': tuple(rob.getLastAppliedTorques()),
+                'contact': tuple(rob.getContactStates())},
+            'body_height': env.getSafetyHeightOfRobot(),
+            'cot': rob.getCostOfTransport(),
+            'twist': {
+                'linear': tuple(rob.getBaseLinearVelocityInBaseFrame()),
+                'angular': tuple(rob.getBaseAngularVelocityInBaseFrame()),
+            },
+            'torque_pen': wrap(TorquePenalty)
+        }
+        udp_pub.send(data)
 
     def reset(self):
         pass

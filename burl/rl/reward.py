@@ -3,6 +3,11 @@ from abc import ABC
 
 import numpy as np
 
+__all__ = ['LinearVelocityReward', 'OrthogonalLinearPenalty', 'YawRateReward', 'RollPitchRatePenalty',
+           'VerticalLinearPenalty', 'BodyPosturePenalty', 'TorquePenalty',
+           'FootSlipPenalty', 'ClearanceOverTerrainReward', 'CostOfTransportReward', 'TrivialStridePenalty',
+           'AliveReward', 'RewardRegistry']
+
 
 class Reward(ABC):
     def __call__(self, cmd, env, robot):
@@ -50,7 +55,7 @@ def elu_reshape(coeff):
     return _reshape
 
 
-def quadratic_linear_reshape(upper, sequence=False):
+def quadratic_linear_reshape(upper):
     k = 1 / upper ** 2
     kl = 2 * k * upper
 
@@ -58,25 +63,12 @@ def quadratic_linear_reshape(upper, sequence=False):
         v = abs(v)
         return v ** 2 * k if v < upper else kl * (v - upper) + 1
 
-    def _reshape_sequence(seq):
-        return [_reshape(v) for v in seq]
-
-    return _reshape_sequence if sequence else _reshape
+    return _reshape
 
 
 class LinearVelocityReward(Reward):
     def __init__(self, lower=-0.8, upper=0.8):
         self.reshape = tanh_reshape(lower, upper)
-
-    def __call__(self, cmd, env, robot):
-        linear = robot.getBaseLinearVelocityInBaseFrame()
-        projected_velocity = np.dot(cmd[:2], linear[:2])
-        return self.reshape(projected_velocity)
-
-
-class EluLinearVelocityReward(Reward):
-    def __init__(self, coeff=2.0):
-        self.reshape = elu_reshape(coeff)
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()
@@ -99,12 +91,15 @@ class YawRateReward(Reward):
 
 class RollPitchRatePenalty(Reward):
     def __init__(self, dr_upper=1.0, dp_upper=0.5):
+        # self.dr_reshape = quadratic_linear_reshape(dr_upper)
+        # self.dp_reshape = quadratic_linear_reshape(dp_upper)
         self.dr_reshape = tanh2_reshape(0.0, dr_upper)
         self.dp_reshape = tanh2_reshape(0.0, dp_upper)
 
     def __call__(self, cmd, env, robot):
         r_rate, p_rate, _ = robot.getBaseRpyRate()
         return -(self.dr_reshape(abs(r_rate)) + self.dp_reshape(abs(p_rate))) / 2
+        # return -(self.dr_reshape(r_rate) + self.dp_reshape(p_rate)) / 2
 
 
 class OrthogonalLinearPenalty(Reward):
@@ -127,12 +122,12 @@ class VerticalLinearPenalty(Reward):
 
 class BodyPosturePenalty(Reward):
     def __init__(self, roll_upper=np.pi / 12, pitch_upper=np.pi / 12):
-        self.roll_reshape = tanh2_reshape(0, roll_upper)
-        self.pitch_reshape = tanh2_reshape(0, pitch_upper)
+        self.roll_reshape = quadratic_linear_reshape(roll_upper)
+        self.pitch_reshape = quadratic_linear_reshape(pitch_upper)
 
     def __call__(self, cmd, env, robot):
         r, p, _ = env.getSafetyRpyOfRobot()
-        return 1 - (self.roll_reshape(abs(r)) + self.pitch_reshape(abs(p))) / 2
+        return -(self.roll_reshape(r) + self.pitch_reshape(p)) / 2
 
 
 class BodyHeightReward(Reward):
@@ -157,21 +152,19 @@ class TorqueGradientPenalty(Reward):
 
 class FootSlipPenalty(Reward):
     def __init__(self, upper=0.5):
-        self.reshape = quadratic_linear_reshape(upper, sequence=True)
+        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
 
     def __call__(self, cmd, env, robot):
-        slips = robot.getFootSlipVelocity()
-        return -sum(self.reshape(slips))
+        return -sum(self.reshape(robot.getFootSlipVelocity()))
 
 
 class HipAnglePenalty(Reward):
     def __init__(self, upper=0.3):
-        # self.reshape = tanh2_reshape(0., upper)
-        self.reshape = quadratic_linear_reshape(upper)
+        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
 
     def __call__(self, cmd, env, robot):
         hip_angles = robot.getJointPositions()[(0, 3, 6, 9),]
-        return -sum(self.reshape(abs(a)) for a in hip_angles) / 4
+        return -sum(self.reshape(hip_angles)) / 4
 
 
 class TrivialStridePenalty(Reward):
@@ -218,10 +211,10 @@ class BodyCollisionPenalty(Reward):
 
 class TorquePenalty(Reward):
     def __init__(self, upper=900):
-        self.reshape = quadratic_linear_reshape(upper, sequence=True)
+        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
 
     def __call__(self, cmd, env, robot):
-        return -sum(self.reshape(np.square(robot.getLastAppliedTorques())))
+        return -sum(self.reshape(robot.getLastAppliedTorques() ** 2))
 
 
 class CostOfTransportReward(Reward):
@@ -309,17 +302,12 @@ class RewardRegistry(object):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    # registry = RewardRegistry(1, 2, 3)
-    # registry.register('CostOfTransportReward', 0.1)
-    # registry.register('RedundantAngularPenalty', 0.2)
-    # registry.report()
-
-    print(tanh_reverse(0.0, 2.0, -0.5))
-    print(tanh_reverse(-0.4, 0.8, 0.9))
-    # r1 = tanh2_reshape(0.0, 2.0)
-    # r = tanh_reshape(0.0, 2.0)
-    r = quadratic_linear_reshape(3)
-    x = np.linspace(-5, 5, 1000)
-    plt.plot(x, [r(x) for x in x])
-    # plt.plot(x, [(r(x) + 1) / 2 for x in x])
+    print(tanh_reverse(0.0, 2.0, -0.7))
+    # print(tanh_reverse(-0.4, 0.8, 0.9))
+    r1 = tanh2_reshape(0.0, 1.0)
+    r2 = quadratic_linear_reshape(1)
+    x = np.linspace(-2, 2, 1000)
+    plt.plot(x, [-r1(x) for x in x])
+    plt.plot(x, [-r2(x) for x in x])
+    plt.plot(x, -np.exp(x) + 1)
     plt.show()
