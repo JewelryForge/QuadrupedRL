@@ -279,32 +279,20 @@ class Action:
 
 
 class JointStates(ArrayAttr):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('position', 'velocity', 'reaction_force', 'torque'), args))
-        self.position = kwargs.get('position', zero(0))
-        self.velocity = kwargs.get('velocity', zero(0))
-        self.reaction_force = kwargs.get('reaction_force', zero((0, 6)))
-        self.torque = kwargs.get('torque', zero(0))
+    def __init__(self, position=None, velocity=None, reaction_force=None, torque=None):
+        self.position, self.velocity = position, velocity
+        self.reaction_force, self.torque = reaction_force, torque
 
 
 class Pose(ArrayAttr):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('position', 'orientation'), args))
-        self.position = kwargs.get('position', zero(3))
-        self.orientation = kwargs.get('orientation', zero(4))
-
-    def __iter__(self):
-        return (self.position, self.orientation).__iter__()
-
-    def __str__(self):
-        return str(np.concatenate([self.position, self.orientation]))
+    def __init__(self, position=None, orientation=None, rpy=None):
+        self.position, self.orientation = position, orientation
+        self.rpy = rpy
 
 
 class Twist(ArrayAttr):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('linear', 'angular'), args))
-        self.linear = kwargs.get('linear', zero(3))
-        self.angular = kwargs.get('angular', zero(3))
+    def __init__(self, linear=None, angular=None):
+        self.linear, self.angular = linear, angular
 
     def __iter__(self):
         return (self.linear, self.angular).__iter__()
@@ -314,10 +302,10 @@ class Twist(ArrayAttr):
 
 
 class BaseState(object):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('pose', 'twist'), args))
-        self.pose = kwargs.get('pose', Pose())
-        self.twist = kwargs.get('twist', Twist())
+    def __init__(self, pose=None, twist=None, twist_Base=None):
+        self.pose: Pose = pose
+        self.twist: Twist = twist
+        self.twist_Base: Twist = twist_Base
 
     def __iter__(self):
         return (self.pose, self.twist).__iter__()
@@ -332,24 +320,17 @@ class ContactStates(np.ndarray):
 
 
 class FootStates(ArrayAttr):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('positions', 'orientations', 'forces'), args))
-        self.positions = kwargs.get('positions', None)
-        self.orientations = kwargs.get('orientations', None)
-        self.forces = kwargs.get('forces', None)
+    def __init__(self, positions=None, orientations=None, forces=None):
+        self.positions, self.orientations = positions, orientations
+        self.forces = forces
 
 
 class ObservationRaw(object):
-    def __init__(self, *args, **kwargs):
-        kwargs.update(zip(('base_state', 'joint_states', 'foot_states',
-                           'foot_forces', 'contact_states', 'contact_info'), args))
-        self.base_state: BaseState = kwargs.get('base_state', None)
-        self.joint_states: JointStates = kwargs.get('joint_states', None)
-        self.foot_states: FootStates = kwargs.get('foot_states', None)
-        # self.foot_forces: np.ndarray = kwargs.get('foot_forces', None)
-        # self.foot_positions: np.ndarray = kwargs.get('foot_positions', None)
-        self.contact_states: ContactStates = kwargs.get('contact_states', None)
-        # self.contact_info: tuple = kwargs.get('contact_info', None)
+    def __init__(self, base_state=None, joint_states=None, foot_states=None, contact_states=None):
+        self.base_state: BaseState = base_state
+        self.joint_states: JointStates = joint_states
+        self.foot_states: FootStates = foot_states
+        self.contact_states: ContactStates = contact_states
 
     def __str__(self):
         return str(self.base_state) + '\n' + str(self.contact_states)

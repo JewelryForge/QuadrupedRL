@@ -84,6 +84,8 @@ class BasicTask(RewardRegistry):
         udp_pub.send(data)
 
     def reset(self):
+        if g_cfg.test_mode:
+            print('cot', self.robot.getCostOfTransport())
         pass
 
     # def curriculumUpdate(self, episode_len):

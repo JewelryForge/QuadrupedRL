@@ -81,7 +81,8 @@ class Quadruped(object):
         self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
         self._command_history: Deque[np.ndarray] = deque(maxlen=100)
         self._torque_history: Deque[np.ndarray] = deque(maxlen=100)
-        self._cot_buffer: Deque[float] = deque(maxlen=int(self._frequency))
+        self._cot_buffer: Deque[float] = deque(maxlen=int(2 * self._frequency))
+        # self._cot_buffer: Deque[float] = deque()
 
     @property
     def id(self):
@@ -90,7 +91,7 @@ class Quadruped(object):
     def _resetStates(self):
         self._base_pose: Pose = None
         self._base_twist: Twist = None
-        self._base_twist_in_base_frame: Twist = None
+        self._base_twist_Base: Twist = None
         self._rpy: Rpy = None
         self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
         self._max_foot_heights: np.ndarray = np.zeros(4)
@@ -109,11 +110,11 @@ class Quadruped(object):
 
     def _loadRobotOnRack(self):
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
-        robot = self._env.loadURDF(path, (0.,0.,self.STANCE_HEIGHT * 2), self.INIT_ORIENTATION, flags=0)
+        robot = self._env.loadURDF(path, (0., 0., self.STANCE_HEIGHT * 2), self.INIT_ORIENTATION, flags=0)
         self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                    jointType=self._env.JOINT_FIXED,
                                    jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
-                                   childFramePosition=(0.,0.,self.STANCE_HEIGHT * 2),
+                                   childFramePosition=(0., 0., self.STANCE_HEIGHT * 2),
                                    childFrameOrientation=Quaternion.from_rpy((0., 0., 0.)))
         return robot
 
@@ -236,13 +237,14 @@ class Quadruped(object):
     def updateObservation(self):
         self._step_counter += 1
         self._time += 1 / self._frequency
-        self._base_pose = Pose(*self._env.getBasePositionAndOrientation(self._body_id))
+        position, orientation = self._env.getBasePositionAndOrientation(self._body_id)
+        self._rpy = Rpy.from_quaternion(orientation)
+        self._base_pose = Pose(position, orientation, self._rpy)
         self._base_twist = Twist(*self._env.getBaseVelocity(self._body_id))
-        self._base_twist_in_base_frame = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
-                                               self._rotateFromWorldToBase(self._base_twist.angular))
-        self._rpy = Rpy.from_quaternion(self._base_pose.orientation)
+        self._base_twist_Base = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
+                                      self._rotateFromWorldToBase(self._base_twist.angular))
         self._observation = ObservationRaw()
-        self._observation.base_state = BaseState(self._base_pose, self._base_twist_in_base_frame)
+        self._observation.base_state = BaseState(self._base_pose, self._base_twist, self._base_twist_Base)
         joint_states_raw = self._env.getJointStates(self._body_id, range(self._num_joints))
         self._observation.joint_states = JointStates(*zip(*joint_states_raw))
         self._observation.foot_states = self._getFootStates()
@@ -252,7 +254,7 @@ class Quadruped(object):
         self._observation_noisy_history.append(observation_noisy)
         self._motor.update_observation(self.getJointPositions(noisy=True),
                                        self.getJointVelocities(noisy=True))
-        self._updateStepInfos()
+        self._updateLocomotionInfos()
         return self._observation, observation_noisy
 
     def ik(self, leg, pos, frame=BASE_FRAME):
@@ -322,7 +324,12 @@ class Quadruped(object):
         foot_forces = [contact_dict.get(f, TP_ZERO3) for f in self._foot_ids]
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
-    def _updateStepInfos(self):
+    def _updateLocomotionInfos(self):
+        if self._torque_history:
+            mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
+            work = sum(filter(lambda i: i > 0, self._torque_history[-1] * self.getJointVelocities()))
+            self._sum_work += work
+            self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         joint_vel = self.getJointVelocities()
         rolling_vel = joint_vel[(1, 4, 7, 10),] + joint_vel[(2, 5, 8, 11),]
         for i, contact in enumerate(self.getFootContactStates()):
@@ -377,11 +384,11 @@ class Quadruped(object):
     def getBaseOrientation(self, noisy=False):
         return self.getObservation(noisy).base_state.pose.orientation
 
-    def getBaseAxisZ(self, noisy=False):
+    def getGravityVector(self, noisy=False):
         return Rotation.from_quaternion(self.getBaseOrientation(noisy)).Z
 
     def getBaseRpy(self, noisy=False):
-        return Rpy.from_quaternion(self.getBaseOrientation(noisy=True)) if noisy else self._rpy
+        return self.getObservation(noisy).base_state.pose.rpy if noisy else self._rpy
 
     def transformFromHorizontalToBase(self, noisy=False):
         rot = Rotation.from_quaternion(self.getBaseOrientation(noisy))
@@ -401,16 +408,13 @@ class Quadruped(object):
         return self._base_twist.angular
 
     def getBaseLinearVelocityInBaseFrame(self, noisy=False):
-        return self.getObservation(noisy).base_state.twist.linear
+        return self.getObservation(noisy).base_state.twist_Base.linear
 
     def getBaseAngularVelocityInBaseFrame(self, noisy=False):
-        return self.getObservation(noisy).base_state.twist.angular
+        return self.getObservation(noisy).base_state.twist_Base.angular
 
     def getBaseRpyRate(self):
         return get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist.angular)
-
-    def getBaseRpyRateInBaseFrame(self):
-        return get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist_in_base_frame.angular)
 
     def getContactStates(self):
         return self._observation.contact_states
@@ -458,10 +462,6 @@ class Quadruped(object):
         return self._foot_clearances
 
     def getCostOfTransport(self):
-        mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
-        work = sum(filter(lambda i: i > 0, self._torque_history[-1] * self.getJointVelocities()))
-        self._sum_work += work
-        self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         return np.mean(self._cot_buffer)
 
     def getJointStates(self) -> JointStates:
@@ -688,6 +688,7 @@ class AlienGo(A1):
     ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
     P_PARAMS = 100
     D_PARAMS = 2
+
     # P_PARAMS = 150
     # D_PARAMS = 4
 

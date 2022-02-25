@@ -230,7 +230,7 @@ class QuadrupedEnv(object):
             obs = StateSnapshot()
         r = self._robot
         obs.command = self._task.cmd
-        obs.gravity_vector = r.getBaseAxisZ()
+        obs.gravity_vector = r.getGravityVector()
         obs.base_linear = r.getBaseLinearVelocityInBaseFrame()
         obs.base_angular = r.getBaseAngularVelocityInBaseFrame()
         obs.joint_pos = r.getJointPositions()
@@ -247,7 +247,7 @@ class QuadrupedEnv(object):
         eo = ExtendedObservation()
         r = self._robot
         eo.command = self._task.cmd
-        eo.gravity_vector = r.getBaseAxisZ()
+        eo.gravity_vector = r.getGravityVector()
         eo.base_linear = r.getBaseLinearVelocityInBaseFrame()
         eo.base_angular = r.getBaseAngularVelocityInBaseFrame()
         eo.joint_pos = r.getJointPositions()
@@ -351,8 +351,8 @@ class QuadrupedEnv(object):
     def reset(self):
         # completely_reset = self._task.curriculumUpdate(self._sim_step_counter)
         completely_reset = False
-        self._resetStates()
         self._task.reset()
+        self._resetStates()
         if completely_reset:
             self._env.resetSimulation()
             self._setPhysicsParameters()

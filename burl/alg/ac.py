@@ -5,7 +5,8 @@ from torch import nn
 
 
 class Actor(nn.Module):
-    activation = nn.Tanh
+    # activation = nn.Tanh
+    activation = nn.Softsign
 
     def __init__(self, extero_obs_dim, proprio_obs_dim, action_dim,
                  extero_layer_dims=(72, 64),

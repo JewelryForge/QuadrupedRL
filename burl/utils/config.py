@@ -82,8 +82,6 @@ class RuntimeParam(object):
         self.log_dir = f'log/{timestamp()}'
         self.run_name = None
         self.use_mp = True
-        self.ip_address = '127.0.0.1'
-        self.port = '19996'
         self.validation = False
         self.rewards_weights = (('LinearVelocityReward', 0.06),
                                 ('YawRateReward', 0.06),
@@ -97,10 +95,10 @@ class RuntimeParam(object):
                                 # ('TorqueGradientPenalty', 0.04),
                                 ('ClearanceOverTerrainReward', 0.04),
                                 ('BodyCollisionPenalty', 0.04),
-                                ('TorquePenalty', 0.04),
-                                ('CostOfTransportReward', 0.04),
+                                ('TorquePenalty', 0.01),
+                                ('CostOfTransportReward', 0.),
                                 ('BodyHeightReward', 0.),
-                                ('HipAnglePenalty', 0.0),)
+                                ('HipAnglePenalty', 0.),)
 
 
 class TerrainParam(object):

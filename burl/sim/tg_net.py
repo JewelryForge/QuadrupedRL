@@ -84,6 +84,7 @@ if __name__ == '__main__':
             phases = torch.tensor(phases, dtype=torch.float).to(device).unsqueeze(dim=1)
             X = torch.cat((torch.sin(phases), torch.cos(phases)), dim=1)
             Y = torch.tensor(coords, dtype=torch.float).to(device)
+            optim.zero_grad()
             loss = criterion(net(X), Y)
             loss.backward()
             optim.step()
