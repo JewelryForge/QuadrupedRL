@@ -25,11 +25,10 @@ class ActuatorNet(nn.Module):
     def forward(self, state):
         return self.layers(state)
 
-    def calculateTorque(self, error, error_rate, velocity):
+    def calc_torque(self, error, error_rate, velocity):
         device = next(self.parameters()).device
         X = np.array((error, velocity, error_rate), dtype=np.float32).transpose()
-        X = torch.tensor(X).to(device)
-        return self(torch.tensor(X).to(device)).detach().squeeze().cpu().numpy()
+        return self(torch.tensor(X).to(device)).detach().squeeze().cpu().numpy().astype(float)
 
 
 class RobotDataset(Dataset):
@@ -93,7 +92,8 @@ def train_actuator_net(actuator_net, dataset, lr=1e-3, num_epochs=1000, batch_si
         log_info(f'Epoch {i:>4}/{num_epochs} test loss {np.mean(test_loss):.6f}')
         wandb.log({'Train/loss': train_loss, 'Test/loss': test_loss})
         if i % 10 == 0:
-            torch.save({'model': net.state_dict()}, os.path.join(log_dir, f'{i}.pt'))
+            torch.save({'model': net.state_dict(), 'hidden_dims': net.hidden_dims},
+                       os.path.join(log_dir, f'{i}.pt'))
 
 
 if __name__ == '__main__':
@@ -110,21 +110,21 @@ if __name__ == '__main__':
 
     dataset = RobotDataset('/home/jewel/state_cmd_data_252103.npz', max_size=14000)
     device = torch.device('cuda')
-    actuator_net = ActuatorNet(hidden_dims=(32, 32, 32))
-    train = False
+    actuator_net = ActuatorNet(hidden_dims=(16, 16, 16))
+    train = True
     if train:
-        train_actuator_net(actuator_net, dataset, lr=5e-4, num_epochs=1000, device=device)
+        train_actuator_net(actuator_net, dataset, lr=2e-4, num_epochs=1000, device=device)
     else:
         actuator_net = actuator_net.to(device)
         model_path = os.path.join(burl.rsc_path, 'actuator_net.pt')
         actuator_net.load_state_dict(torch.load(model_path)['model'])
 
-    motor_idx = 2
+    motor_idx = 1
     error = dataset.data['angle_error'][:, motor_idx]
     error_rate = dataset.data['angle_error_rate'][:, motor_idx]
     velocity = dataset.data['motor_velocity'][:, motor_idx]
     torque = dataset.data['motor_torque'][:, motor_idx]
-    predicted = actuator_net.calculateTorque(error, error_rate, velocity)
+    predicted = actuator_net.calc_torque(error, error_rate, velocity)
 
     criterion = nn.MSELoss(reduction='sum')
     test_loader = DataLoader(dataset, 10, shuffle=True)

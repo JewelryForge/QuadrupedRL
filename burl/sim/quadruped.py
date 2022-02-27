@@ -13,8 +13,8 @@ from pybullet_utils import bullet_client
 
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
-from burl.sim.motor import MotorSim
-from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos
+from burl.sim.motor import MotorSim, PdMotorSim, ActuatorNetSim
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos, MfTimer
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 TP_ZERO3 = (0., 0., 0.)
@@ -63,10 +63,15 @@ class Quadruped(object):
     def __init__(self, sim_env=pybullet, execution_frequency=500,
                  latency=0., motor_latency=0.,
                  height_addition=0., on_rack=False,
-                 random_dynamics=False, self_collision_enabled=False):
+                 random_dynamics=False, self_collision_enabled=False,
+                 actuator_net=False):
         self._env, self._frequency = sim_env, execution_frequency
-        self._motor: MotorSim = MotorSim(self.P_PARAMS, self.D_PARAMS, int(motor_latency * self._frequency),
-                                         torque_limits=self.TORQUE_LIMITS)
+        if actuator_net:
+            self._motor: MotorSim = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'),
+                                                   frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
+        else:
+            self._motor: MotorSim = PdMotorSim(self.P_PARAMS, self.D_PARAMS, frequency=execution_frequency,
+                                               latency=motor_latency, torque_limits=self.TORQUE_LIMITS)
         self._latency = latency
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
@@ -99,8 +104,7 @@ class Quadruped(object):
         self._strides = [(0., 0.)] * 4
         self._slips = [0.] * 4
         self._observation: ObservationRaw = None
-        self._time = 0.0
-        self._step_counter = 0
+        self._step_counter = -1
         self._sum_work = 0.0
         if isinstance(self._latency, float):
             self._latency_steps = int(self._latency * self._frequency)
@@ -234,9 +238,14 @@ class Quadruped(object):
         self._resetPosture()
         self._motor.reset()
 
+    def updateMinimalObservation(self):
+        joint_states_raw = self._env.getJointStates(self._body_id, range(self._num_joints))
+        joint_states = JointStates(*zip(*joint_states_raw))
+        self._motor.update_observation(joint_states.position[self._motor_ids,],
+                                       joint_states.velocity[self._motor_ids,])
+
     def updateObservation(self):
         self._step_counter += 1
-        self._time += 1 / self._frequency
         position, orientation = self._env.getBasePositionAndOrientation(self._body_id)
         self._rpy = Rpy.from_quaternion(orientation)
         self._base_pose = Pose(position, orientation, self._rpy)
@@ -257,7 +266,7 @@ class Quadruped(object):
         self._updateLocomotionInfos()
         return self._observation, observation_noisy
 
-    def ik(self, leg, pos, frame=BASE_FRAME):
+    def numericalInverseKinematics(self, leg, pos, frame=BASE_FRAME):
         """
         Calculate the inverse kinematic of certain leg by calling pybullet.calculateInverseKinematics.
         :param leg: The number of leg, ranging from [0, 4).
@@ -284,10 +293,10 @@ class Quadruped(object):
 
         return np.array(all_joint_angles[leg * 3: leg * 3 + 3])
 
-    def ik_analytic(self, leg, pos, frame=BASE_FRAME):
+    def analyticalInverseKinematics(self, leg, pos, frame=BASE_FRAME):
         raise NotImplementedError
 
-    def fk(self, leg, angles) -> Odometry:
+    def forwardKinematics(self, leg, angles) -> Odometry:
         raise NotImplementedError
 
     def _rotateFromWorld(self, vector_world, reference):
@@ -336,8 +345,8 @@ class Quadruped(object):
             foot_pos_world = self.getFootPositionInWorldFrame(i)
             if contact:
                 if self._last_stance_states[i]:
-                    t, pos = self._last_stance_states[i]
-                    if (duration := self._time - t) >= 0.05:
+                    step, pos = self._last_stance_states[i]
+                    if (duration := (self._step_counter - step) / self._frequency) >= 0.05:
                         self._strides[i] = (foot_pos_world - pos)[:2]
                         self._slips[i] = 0.
                         self._foot_clearances[i] = self._max_foot_heights[i] - pos[2]
@@ -347,7 +356,7 @@ class Quadruped(object):
                                              self.FOOT_RADIUS * rolling_vel[i] * duration)
                         self._strides[i] = (0., 0.)
                         self._foot_clearances[i] = 0.
-                self._last_stance_states[i] = (self._time, foot_pos_world)
+                self._last_stance_states[i] = (self._step_counter, foot_pos_world)
             else:
                 self._strides[i], self._slips[i], self._foot_clearances[i] = (0., 0.), 0., 0.
                 self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
@@ -373,7 +382,7 @@ class Quadruped(object):
         return self._rpy
 
     def getFootFriction(self):
-        return np.asarray(self._foot_friction)
+        return np.array(self._foot_friction)
 
     def getObservation(self, noisy=False):
         return self._observation_noisy_history[-1] if noisy else self._observation
@@ -433,7 +442,7 @@ class Quadruped(object):
 
     def getFootPositionInBaseFrame(self, leg):
         joint_pos = self.getJointPositions(noisy=False)
-        return self.fk(leg, joint_pos[leg * 3: leg * 3 + 3]).translation
+        return self.forwardKinematics(leg, joint_pos[leg * 3: leg * 3 + 3]).translation
 
     def getFootPositionInHipFrame(self, leg):
         return self.getFootPositionInBaseFrame(leg) - self.HIP_OFFSETS[leg]
@@ -462,7 +471,7 @@ class Quadruped(object):
         return self._foot_clearances
 
     def getCostOfTransport(self):
-        return np.mean(self._cot_buffer)
+        return np.mean(self._cot_buffer).item()
 
     def getJointStates(self) -> JointStates:
         return self._observation.joint_states
@@ -580,7 +589,7 @@ class A1(Quadruped):
     P_PARAMS = 80.
     D_PARAMS = (1., 2., 2.) * 4
 
-    def ik_analytic(self, leg: int | str, pos, frame=Quadruped.BASE_FRAME):
+    def analyticalInverseKinematics(self, leg: int | str, pos, frame=Quadruped.BASE_FRAME):
         """
         Calculate inverse kinematics analytically.
         """
@@ -624,7 +633,7 @@ class A1(Quadruped):
             return _ik_hip_frame(pos + (0, shoulder_len, 0) + self.STANCE_FOOT_POSITIONS[leg])
         raise RuntimeError(f'Unknown Frame {frame}')
 
-    def fk(self, leg: int, angles) -> Odometry:
+    def forwardKinematics(self, leg: int, angles) -> Odometry:
         def _mdh_matrix(alpha, a, d, theta):
             ca, sa, ct, st = np.cos(alpha), np.sin(alpha), np.cos(theta), np.sin(theta)
             return Odometry(((ct, -st, 0),

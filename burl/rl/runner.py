@@ -217,11 +217,10 @@ class Player:
             actor_obs, critic_obs = to_dev(actor_obs, critic_obs)
 
             if any(dones):
-                print(self.env._envs[0].robot._sum_work)
                 reset_ids = torch.nonzero(dones)
                 actor_obs_reset, critic_obs_reset = to_dev(*self.env.reset(reset_ids))
                 actor_obs[reset_ids,], critic_obs[reset_ids,] = actor_obs_reset, critic_obs_reset
-                print(info['episode_reward'])
+                print('episode reward', float(info['episode_reward']))
 
 
 class PolicyPlayer(Player):

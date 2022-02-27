@@ -47,11 +47,19 @@ class BasicTask(RewardRegistry):
         def wrap(reward_type):
             return reward_type().__call__(cmd, env, rob)
 
+        if not hasattr(self, '_torque_sum'):
+            self._torque_sum = 0.
+            self._torque_abs_sum = 0.
+            self._torque_pen_sum = 0.0
+        self._torque_sum += rob.getLastAppliedTorques() ** 2
+        self._torque_abs_sum += abs(rob.getLastAppliedTorques())
+        self._torque_pen_sum += wrap(TorquePenalty)
+
         # print(max(rob.getLastAppliedTorques()))
         # print(wrap(HipAnglePenalty))
         # print(rob.getBaseLinearVelocityInBaseFrame()[2])
 
-        # print(wrap(TorquePenalty))
+        print(wrap(TorquePenalty))
         # r_rate, p_rate, _ = rob.getBaseRpyRate()
         # print(r_rate, p_rate, wrap(RollPitchRatePenalty))
         # r, p, _ = rob.rpy
@@ -69,10 +77,11 @@ class BasicTask(RewardRegistry):
                 'joint_pos': tuple(rob.getJointPositions()),
                 'commands': tuple(rob._command_history[-1]),
                 'joint_vel': tuple(rob.getJointVelocities()),
-                'kp_part': tuple(rob._motor._kp_part),
-                'kd_part': tuple(rob._motor._kd_part),
+                # 'kp_part': tuple(rob._motor._kp_part),
+                # 'kd_part': tuple(rob._motor._kd_part),
                 'torque': tuple(rob.getLastAppliedTorques()),
-                'contact': tuple(rob.getContactStates())},
+                'contact': tuple(rob.getContactStates())
+            },
             'body_height': env.getSafetyHeightOfRobot(),
             'cot': rob.getCostOfTransport(),
             'twist': {
@@ -86,7 +95,12 @@ class BasicTask(RewardRegistry):
     def reset(self):
         if g_cfg.test_mode:
             print('cot', self.robot.getCostOfTransport())
-        pass
+            print('mse torque', np.sqrt(self._torque_sum / self.robot._step_counter))
+            print('abs torque', self._torque_abs_sum / self.robot._step_counter)
+            print('torque pen', self._torque_pen_sum / self.robot._step_counter)
+            self._torque_sum = 0.
+            self._torque_abs_sum = 0.
+            self._torque_pen_sum = 0.0
 
     # def curriculumUpdate(self, episode_len):
     #     distance = np.dot(self.robot.position, self._cmd)

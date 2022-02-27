@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import os
 import time
 from collections import deque
 from itertools import chain
@@ -9,14 +8,11 @@ from itertools import chain
 import numpy as np
 import pybullet
 import pybullet_data
-import torch
 from pybullet_utils import bullet_client
 
-import burl
-from burl.rl.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action, TgPhasesObservation, \
-    SimplifiedObservation
+from burl.rl.state import (StateSnapshot, ProprioObservation, ExtendedObservation, Action, TgPhasesObservation,
+                           SimplifiedObservation)
 from burl.rl.task import BasicTask
-from burl.sim.motor import MotorSim
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.terrain import makeTerrain
 from burl.sim.tg import TgStateMachine, vertical_tg, PhaseRoller
@@ -48,9 +44,10 @@ class QuadrupedEnv(object):
             self._prepareRendering()
         self._terrain = makeTerrain(self._env)
         self._robot: Quadruped = make_robot(self._env, execution_frequency=g_cfg.execution_frequency,
-                                            on_rack=g_cfg.on_rack,
-                                            random_dynamics=g_cfg.random_dynamics, motor_latency=0.0,
-                                            height_addition=self._terrain.getPeakInRegion(*make_robot.ROBOT_SIZE)[2])
+                                            on_rack=g_cfg.on_rack, random_dynamics=g_cfg.random_dynamics,
+                                            motor_latency=0.,
+                                            height_addition=self._terrain.getPeakInRegion(*make_robot.ROBOT_SIZE)[2],
+                                            actuator_net=g_cfg.actuator_net)
         self._task = make_task(self)
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
@@ -264,7 +261,7 @@ class QuadrupedEnv(object):
         eo.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
         eo.contact_states = r.getContactStates()[1:]
         eo.foot_contact_forces = r.getFootContactForces()
-        eo.foot_friction_coeffs = [self.getTerrainFrictionCoeff(x, y) for x, y in foot_xy] * r.getFootFriction()
+        eo.foot_friction_coeffs = r.getFootFriction()
         eo.external_disturbance = self._external_force
         return eo
 
@@ -412,19 +409,16 @@ class QuadrupedEnv(object):
     def getTerrainNormal(self, x, y) -> np.ndarray:
         return self._terrain.getNormal(x, y)
 
-    def getTerrainFrictionCoeff(self, x, y) -> float:
-        return 1.0  # TODO
-
 
 class IkEnv(QuadrupedEnv):
     def __init__(self, make_robot=A1, make_task=BasicTask, observation_type=('extended', 'extended'),
-                 ik_type='analytic', horizontal_frame=False):
+                 ik_type='analytical', horizontal_frame=False):
         super().__init__(make_robot, make_task, observation_type)
         self._commands = None
-        if ik_type == 'analytic':
-            self._ik = self._robot.ik_analytic
-        elif ik_type == 'numeric':
-            self._ik = self._robot.ik
+        if ik_type == 'analytical':
+            self._ik = self._robot.analyticalInverseKinematics
+        elif ik_type == 'numerical':
+            self._ik = self._robot.numericalInverseKinematics
         else:
             raise RuntimeError(f'Unknown IK Type {ik_type}')
         self._horizontal_frame = horizontal_frame
@@ -556,7 +550,7 @@ class FixedTgEnv(IkEnv):
 
     def _initSimulation(self):  # for the stability of the beginning
         for _ in range(500):
-            self._robot.updateObservation()
+            self._robot.updateMinimalObservation()
             self._robot.applyCommand(self._robot.STANCE_POSTURE)
             self._env.stepSimulation()
 
@@ -573,19 +567,19 @@ if __name__ == '__main__':
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
-    make_motor = make_cls(MotorSim)
     tg, external = True, False
     if tg and external:
-        g_cfg.action_frequency = 500
-        g_cfg.execution_frequency = 500
-        g_cfg.sim_frequency = 500
-        env = ExternalTgEnv(AlienGo)
-        tg = WholeBodyTgNet(os.path.join(burl.rsc_path, 'tg_base.pt'))
-        obs, _ = env.initObservation()
-        for i in range(1, 100000):
-            X = torch.tensor(obs)
-            action = tg(X).detach().cpu().numpy().reshape(-1)
-            obs, *_ = env.step(action)
+        pass
+        # g_cfg.action_frequency = 500
+        # g_cfg.execution_frequency = 500
+        # g_cfg.sim_frequency = 500
+        # env = ExternalTgEnv(AlienGo)
+        # tg = WholeBodyTgNet(os.path.join(burl.rsc_path, 'tg_base.pt'))
+        # obs, _ = env.initObservation()
+        # for i in range(1, 100000):
+        #     X = torch.tensor(obs)
+        #     action = tg(X).detach().cpu().numpy().reshape(-1)
+        #     obs, *_ = env.step(action)
     elif tg and not external:
         env = FixedTgEnv(AlienGo)
         env.initObservation()
