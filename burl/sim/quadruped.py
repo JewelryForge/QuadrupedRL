@@ -14,7 +14,7 @@ from pybullet_utils import bullet_client
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import MotorSim, PdMotorSim, ActuatorNetSim
-from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos, MfTimer
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 TP_ZERO3 = (0., 0., 0.)
@@ -61,17 +61,19 @@ class Quadruped(object):
     INIT_FRAME = 3
 
     def __init__(self, sim_env=pybullet, execution_frequency=500,
-                 latency=0., motor_latency=0.,
+                 latency=0., motor_latencies=(0., 0.),
                  height_addition=0., on_rack=False,
                  random_dynamics=False, self_collision_enabled=False,
                  actuator_net=False):
         self._env, self._frequency = sim_env, execution_frequency
         if actuator_net:
             self._motor: MotorSim = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'),
+                                                   input_latency=motor_latencies[0], output_latency=motor_latencies[1],
                                                    frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
         else:
             self._motor: MotorSim = PdMotorSim(self.P_PARAMS, self.D_PARAMS, frequency=execution_frequency,
-                                               latency=motor_latency, torque_limits=self.TORQUE_LIMITS)
+                                               input_latency=motor_latencies[0], output_latency=motor_latencies[1],
+                                               torque_limits=self.TORQUE_LIMITS)
         self._latency = latency
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
@@ -101,6 +103,7 @@ class Quadruped(object):
         self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
         self._max_foot_heights: np.ndarray = np.zeros(4)
         self._foot_clearances: np.ndarray = np.zeros(4)
+        self._torque: np.ndarray = None
         self._strides = [(0., 0.)] * 4
         self._slips = [0.] * 4
         self._observation: ObservationRaw = None
@@ -202,6 +205,7 @@ class Quadruped(object):
     def applyTorques(self, torques):
         self._env.setJointMotorControlArray(self._body_id, self._motor_ids,
                                             self._env.TORQUE_CONTROL, forces=torques)
+        self._torque = torques
         self._torque_history.append(torques)
 
     def reset(self, height_addition=0.0, reload=False, in_situ=False):
@@ -334,9 +338,9 @@ class Quadruped(object):
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
     def _updateLocomotionInfos(self):
-        if self._torque_history:
+        if self._torque is not None:
             mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
-            work = sum(filter(lambda i: i > 0, self._torque_history[-1] * self.getJointVelocities()))
+            work = sum(filter(lambda i: i > 0, self._torque * self.getJointVelocities()))
             self._sum_work += work
             self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         joint_vel = self.getJointVelocities()
@@ -364,10 +368,17 @@ class Quadruped(object):
     def _estimateObservation(self):
         idx = 0 if len(self._observation_history) <= self._latency_steps else -self._latency_steps - 1
         observation = self._observation_history[idx]
-        return self._addNoiseOnObservation(observation)
-
-    def _addNoiseOnObservation(self, observation):
-        return observation
+        # return observation
+        observation_noisy = ObservationRaw(BaseState(), JointStates())
+        add_noise = np.random.normal
+        observation_noisy.base_state.pose = Pose()
+        observation_noisy.base_state.pose.rpy = add_noise(observation.base_state.pose.rpy, 1e-2)
+        observation_noisy.base_state.pose.orientation = Quaternion.from_rpy(observation_noisy.base_state.pose.rpy)
+        observation_noisy.base_state.twist_Base = Twist(add_noise(observation.base_state.twist_Base.linear, 5e-2),
+                                                        add_noise(observation.base_state.twist_Base.angular, 5e-2))
+        observation_noisy.joint_states.position = add_noise(observation.joint_states.position, 5e-3)
+        observation_noisy.joint_states.velocity = add_noise(observation.joint_states.velocity, 1e-1)
+        return observation_noisy
 
     @property
     def position(self):  # without latency and noise
@@ -471,7 +482,7 @@ class Quadruped(object):
         return self._foot_clearances
 
     def getCostOfTransport(self):
-        return np.mean(self._cot_buffer).item()
+        return np.mean(self._cot_buffer).item() if self._cot_buffer else 0
 
     def getJointStates(self) -> JointStates:
         return self._observation.joint_states
@@ -483,11 +494,11 @@ class Quadruped(object):
         return self.getObservation(noisy).joint_states.velocity[self._motor_ids,]
 
     def getLastAppliedTorques(self):
-        return self._torque_history[-1]
+        return self._torque
 
     def getTorqueGradients(self):
         if len(self._torque_history) > 2:
-            return (self._torque_history[-1] - self._torque_history[-2]) * self._frequency
+            return (self._torque - self._torque_history[-2]) * self._frequency
         return np.zeros(12)
 
     def getCmdHistoryFromIndex(self, idx):

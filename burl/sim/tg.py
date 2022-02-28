@@ -98,11 +98,6 @@ class PhaseRoller(object):
     base_frequency = 2.0  # TODO: COMPLETE THE STATE MACHINE
 
     def __init__(self, time_step):
-        # We set the base frequency f0 to zero when the zero command is given for 0.5s,
-        # which stops FTGs, and the robot stands still on the terrain.
-        # f0 is set to 1.25 Hz when the direction command is given
-        # or the linear velocity of the base exceeds 0.3 m/s for the disturbance rejection.
-        # The state machine is included in the training environment.
         self._time_step = time_step
         self._init_phases()
         self._frequency = np.ones(4) * self.base_frequency

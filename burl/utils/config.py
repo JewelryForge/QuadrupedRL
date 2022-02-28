@@ -21,7 +21,7 @@ class Options(object):
 class PhysicsParam(object):
     def __init__(self):
         self.self_collision_enabled = False
-        self.latency = 0.
+        self.motor_latencies = (0., 0.)
         self.joint_friction = 0.025
         self.foot_lateral_friction = 0.4
         self.foot_spinning_friction = 0.2
@@ -83,7 +83,6 @@ class RuntimeParam(object):
         self.log_dir = f'log/{timestamp()}'
         self.run_name = None
         self.use_mp = True
-        self.validation = False
         self.rewards_weights = (('LinearVelocityReward', 0.06),
                                 ('YawRateReward', 0.06),
                                 ('VerticalLinearPenalty', 0.04),

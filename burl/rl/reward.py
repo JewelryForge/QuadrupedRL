@@ -211,7 +211,8 @@ class BodyCollisionPenalty(Reward):
 
 class TorquePenalty(Reward):
     def __init__(self, upper=900):
-        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
+        # self.reshape = np.vectorize(quadratic_linear_reshape(upper))
+        self.reshape = lambda x: x / upper
 
     def __call__(self, cmd, env, robot):
         return -sum(self.reshape(robot.getLastAppliedTorques() ** 2))
@@ -304,7 +305,8 @@ if __name__ == '__main__':
 
     print(tanh_reverse(0.0, 2.0, -0.7))
     # print(tanh_reverse(-0.4, 0.8, 0.9))
-    r1 = tanh2_reshape(0.0, 1.0)
+    # r1 = tanh2_reshape(0.0, 1.0)
+    r1 = lambda x: x / 1
     r2 = quadratic_linear_reshape(1)
     x = np.linspace(-2, 2, 1000)
     plt.plot(x, [-r1(x) for x in x])

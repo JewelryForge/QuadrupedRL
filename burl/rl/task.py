@@ -59,7 +59,7 @@ class BasicTask(RewardRegistry):
         # print(wrap(HipAnglePenalty))
         # print(rob.getBaseLinearVelocityInBaseFrame()[2])
 
-        print(wrap(TorquePenalty))
+        # print(wrap(TorquePenalty))
         # r_rate, p_rate, _ = rob.getBaseRpyRate()
         # print(r_rate, p_rate, wrap(RollPitchRatePenalty))
         # r, p, _ = rob.rpy

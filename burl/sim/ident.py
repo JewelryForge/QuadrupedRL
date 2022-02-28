@@ -32,7 +32,7 @@ class ActuatorNet(nn.Module):
 
 
 class RobotDataset(Dataset):
-    def __init__(self, path='/home/jewel/state_cmd_data.npz', max_size=None):
+    def __init__(self, path, max_size=None):
         self.data = np.load(path)
         if max_size:
             self.error = self.data['angle_error'][:max_size, :].flatten().astype(np.float32)
@@ -55,7 +55,7 @@ class RobotDataset(Dataset):
         return self.X[idx], self.Y[idx]
 
 
-def train_actuator_net(actuator_net, dataset, lr=1e-3, num_epochs=1000, batch_size=2000, device='cuda'):
+def train_actuator_net(actuator_net, dataset, lr=1e-3, num_epochs=1000, batch_size=1000, device='cuda'):
     wandb.init(project='actuator_net', name=str((actuator_net.hidden_dims, lr)), mode=None)
     device = torch.device(device)
     train_len = int(0.8 * len(dataset))
@@ -108,18 +108,18 @@ if __name__ == '__main__':
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
 
-    dataset = RobotDataset('/home/jewel/state_cmd_data_252103.npz', max_size=14000)
+    dataset = RobotDataset('/home/jewel/state_cmd_data_281557.npz')
     device = torch.device('cuda')
     actuator_net = ActuatorNet(hidden_dims=(16, 16, 16))
-    train = True
+    train = False
     if train:
-        train_actuator_net(actuator_net, dataset, lr=2e-4, num_epochs=1000, device=device)
+        train_actuator_net(actuator_net, dataset, lr=1e-4, num_epochs=1000, device=device)
     else:
         actuator_net = actuator_net.to(device)
         model_path = os.path.join(burl.rsc_path, 'actuator_net.pt')
         actuator_net.load_state_dict(torch.load(model_path)['model'])
 
-    motor_idx = 1
+    motor_idx = 0
     error = dataset.data['angle_error'][:, motor_idx]
     error_rate = dataset.data['angle_error_rate'][:, motor_idx]
     velocity = dataset.data['motor_velocity'][:, motor_idx]
@@ -146,7 +146,7 @@ if __name__ == '__main__':
     plt.plot(velocity)
     plt.ylabel('velocity')
     plt.subplot(4, 1, 4)
-    plt.plot(torque)
+    plt.plot(torque, linewidth=1)
     plt.ylabel('torque')
-    plt.plot(predicted, 'r', linewidth=0.5)
+    plt.plot(predicted, 'r', linewidth=0.3)
     plt.show()
