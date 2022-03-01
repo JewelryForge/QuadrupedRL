@@ -5,7 +5,7 @@ import collections
 import numpy as np
 import torch
 
-from burl.sim.ident import ActuatorNet
+from burl.sim.ident import ActuatorNet, ActuatorNetWithHistory
 
 
 class MotorSim(object):
@@ -26,9 +26,9 @@ class MotorSim(object):
         self._frequency = frequency
         self._input_latency_steps = int(input_latency * frequency)
         self._output_latency_steps = int(output_latency * frequency)
-        self._torque_history = collections.deque(maxlen=10)
-        self._residue_history = collections.deque(maxlen=10)
-        self._observation_history = collections.deque(maxlen=100)
+        self._torque_history = collections.deque(maxlen=11)
+        self._residue_history = collections.deque(maxlen=11)
+        self._observation_history = collections.deque(maxlen=11)
 
     def reset(self):
         self._observe_done = False
@@ -92,6 +92,32 @@ class ActuatorNetSim(MotorSim):
         last_residue = self._residue_history[-2] if len(self._residue_history) > 1 else self._residue
         residue_rate = (self._residue - last_residue) * self._frequency
         return self.net.calc_torque(self._residue, residue_rate, self._vel)
+
+
+class ActuatorNetWithHistorySim(MotorSim):
+    def __init__(self, model_path, device='cpu', frequency=500, input_latency=0., output_latency=0.,
+                 torque_limits=None, cmd_clip=0.2):
+        super().__init__(frequency, input_latency, output_latency, torque_limits, cmd_clip)
+        model_info = torch.load(model_path, map_location={'cuda:0': device})
+        self.net = ActuatorNetWithHistory(hidden_dims=model_info['hidden_dims']).to(device)
+        self.net.load_state_dict(model_info['model'])
+
+    def calc_torque(self):
+        return self.net.calc_torque(self._residue,
+                                    self.safely_getitem(self._residue_history, -6),
+                                    self.safely_getitem(self._residue_history, -11),
+                                    self._vel,
+                                    self.safely_getitem(self._observation_history, -6)[1],
+                                    self.safely_getitem(self._observation_history, -11)[1])
+
+    @staticmethod
+    def safely_getitem(seq, idx):
+        if idx < 0:
+            if len(seq) < -idx:
+                return seq[0]
+        elif len(seq) <= idx:
+            return seq[-1]
+        return seq[idx]
 
 
 if __name__ == '__main__':

@@ -15,7 +15,7 @@ class Options(object):
         self.tg_init = 'fixed'
         self.schedule = 'fixed'
         self.random_dynamics = False
-        self.actuator_net = False
+        self.actuator_net = None
 
 
 class PhysicsParam(object):

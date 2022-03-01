@@ -485,7 +485,7 @@ if __name__ == '__main__':
     g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
-    g_cfg.actuator_net = True
+    g_cfg.actuator_net = 'history'
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
     init_logger()
@@ -508,7 +508,9 @@ if __name__ == '__main__':
         env = FixedTgEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
-            env.step(Action())
+            *_, reset, _ = env.step(Action())
+            if reset:
+                env.reset()
     else:
         env = QuadrupedEnv(AlienGo)
         env.initObservation()

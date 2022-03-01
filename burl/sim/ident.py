@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, random_split
 
-__all__ = ['ActuatorNet']
+__all__ = ['ActuatorNet', 'ActuatorNetWithHistory']
 
 
 class ActuatorNet(nn.Module):
@@ -31,25 +31,66 @@ class ActuatorNet(nn.Module):
         return self(torch.tensor(X).to(device)).detach().squeeze().cpu().numpy().astype(float)
 
 
+class ActuatorNetWithHistory(ActuatorNet):
+    activation = nn.Softsign
+
+    def __init__(self, input_dim=6, output_dim=1, hidden_dims=(32, 32, 32)):
+        super().__init__(input_dim, output_dim, hidden_dims)
+
+    def calc_torque(self, error, error_his1, error_his2,
+                    velocity, velocity_his1, velocity_his2):
+        device = next(self.parameters()).device
+        X = np.array((error, error_his1, error_his2,
+                      velocity, velocity_his1, velocity_his2), dtype=np.float32).transpose()
+        return self(torch.tensor(X).to(device)).detach().squeeze().cpu().numpy().astype(float)
+
+
 class RobotDataset(Dataset):
-    def __init__(self, path, max_size=None):
+    def __init__(self, path, slices=None):
         self.data = np.load(path)
-        if max_size:
-            self.error = self.data['angle_error'][:max_size, :].flatten().astype(np.float32)
-            self.velocity = self.data['motor_velocity'][:max_size, :].flatten().astype(np.float32)
-            self.error_rate = self.data['angle_error_rate'][:max_size, :].flatten().astype(np.float32)
-            self.torque = self.data['motor_torque'][:max_size, :].flatten().astype(np.float32)
+        if slices:
+            self.error = self.data['angle_error'][slices, :].astype(np.float32)
+            self.velocity = self.data['motor_velocity'][slices, :].astype(np.float32)
+            self.error_rate = self.data['angle_error_rate'][slices, :].astype(np.float32)
+            self.torque = self.data['motor_torque'][slices, :].astype(np.float32)
         else:
-            self.error = self.data['angle_error'].flatten().astype(np.float32)
-            self.velocity = self.data['motor_velocity'].flatten().astype(np.float32)
-            self.error_rate = self.data['angle_error_rate'].flatten().astype(np.float32)
-            self.torque = self.data['motor_torque'].flatten().astype(np.float32)
-        self.X = np.stack((self.error, self.velocity, self.error_rate), axis=1)
-        self.Y = np.expand_dims(self.torque, axis=1)
-        self.size = min(len(self.error), len(self.velocity), len(self.error_rate), len(self.torque))
+            self.error = self.data['angle_error'].astype(np.float32)
+            self.velocity = self.data['motor_velocity'].astype(np.float32)
+            self.error_rate = self.data['angle_error_rate'].astype(np.float32)
+            self.torque = self.data['motor_torque'].astype(np.float32)
+        self.X = np.stack((self.error.flatten(), self.velocity.flatten(), self.error_rate.flatten()), axis=1)
+        self.Y = np.expand_dims(self.torque.flatten(), axis=1)
+        self.size = len(self.error)
 
     def __len__(self):
-        return self.size
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.Y[idx]
+
+
+class RobotDatasetWithHistory(Dataset):
+    def __init__(self, path, slices=None):
+        self.data = np.load(path)
+        if slices:
+            self.error = self.data['angle_error'][slices, :].astype(np.float32)
+            self.velocity = self.data['motor_velocity'][slices, :].astype(np.float32)
+            self.torque = self.data['motor_torque'][slices, :].astype(np.float32)
+        else:
+            self.error = self.data['angle_error'].astype(np.float32)
+            self.velocity = self.data['motor_velocity'].astype(np.float32)
+            self.torque = self.data['motor_torque'].astype(np.float32)
+        self.X = np.stack((self.error[10:, ].flatten(),
+                           self.error[5:-5, ].flatten(),
+                           self.error[:-10, ].flatten(),
+                           self.velocity[10:, ].flatten(),
+                           self.velocity[5:-5, ].flatten(),
+                           self.velocity[:-10, ].flatten(),), axis=1)
+        self.Y = np.expand_dims(self.torque[10:, ].flatten(), axis=1)
+        self.size = len(self.error)
+
+    def __len__(self):
+        return (self.size - 10) * 12
 
     def __getitem__(self, idx):
         return self.X[idx], self.Y[idx]
@@ -107,33 +148,53 @@ if __name__ == '__main__':
     from burl.utils import timestamp, log_info, init_logger
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
-
-    dataset = RobotDataset('/home/jewel/state_cmd_data_281557.npz')
-    device = torch.device('cuda')
-    actuator_net = ActuatorNet(hidden_dims=(16, 16, 16))
+    use_history_info = True
     train = False
-    if train:
-        train_actuator_net(actuator_net, dataset, lr=1e-4, num_epochs=1000, device=device)
+    robot_data_path = '/home/jewel/state_cmd_data_011050T0.4.npz'
+    if not use_history_info:
+        dataset = RobotDataset(robot_data_path)
     else:
-        actuator_net = actuator_net.to(device)
-        model_path = os.path.join(burl.rsc_path, 'actuator_net.pt')
-        actuator_net.load_state_dict(torch.load(model_path)['model'])
+        dataset = RobotDatasetWithHistory(robot_data_path)
+    ActuatorNetClass = ActuatorNetWithHistory if use_history_info else ActuatorNet
+    device = 'cuda'
+    if train:
+        actuator_net = ActuatorNetClass(hidden_dims=(32, 32, 32))
+        train_actuator_net(actuator_net, dataset, lr=2e-4, num_epochs=2000, device=device)
+    else:
+        file_name = 'actuator_net_with_history.pt' if use_history_info else 'actuator_net.pt'
+        model_path = os.path.join(burl.rsc_path, file_name)
+        model_info = torch.load(model_path, map_location={'cuda:0': device})
+        actuator_net = ActuatorNetClass(hidden_dims=model_info['hidden_dims']).to(device)
+        actuator_net.load_state_dict(model_info['model'])
 
-    motor_idx = 0
-    error = dataset.data['angle_error'][:, motor_idx]
-    error_rate = dataset.data['angle_error_rate'][:, motor_idx]
-    velocity = dataset.data['motor_velocity'][:, motor_idx]
-    torque = dataset.data['motor_torque'][:, motor_idx]
-    predicted = actuator_net.calc_torque(error, error_rate, velocity)
+    motor_idx = 1
+    slices = slice(5000, 10000)
+    if not use_history_info:
+        error = dataset.error[slices, motor_idx]
+        error_rate = dataset.error_rate[slices, motor_idx]
+        velocity = dataset.velocity[slices, motor_idx]
+        torque = dataset.torque[slices, motor_idx]
+        predicted = actuator_net.calc_torque(error, error_rate, velocity)
+    else:
+        error = dataset.error[slices, motor_idx]
+        error_his1 = dataset.error[slice(slices.start - 5, slices.stop - 5), motor_idx]
+        error_his2 = dataset.error[slice(slices.start - 10, slices.stop - 10), motor_idx]
+        velocity = dataset.velocity[slices, motor_idx]
+        velocity_his1 = dataset.velocity[slice(slices.start - 5, slices.stop - 5), motor_idx]
+        velocity_his2 = dataset.velocity[slice(slices.start - 10, slices.stop - 10), motor_idx]
+        error_rate = dataset.data['angle_error_rate'][slices, motor_idx].astype(np.float32)
+        torque = dataset.torque[slices, motor_idx]
+        predicted = actuator_net.calc_torque(error, error_his1, error_his2, velocity, velocity_his1, velocity_his2)
 
     criterion = nn.MSELoss(reduction='sum')
-    test_loader = DataLoader(dataset, 10, shuffle=True)
+    test_loader = DataLoader(dataset, 1000, shuffle=True)
     test_loss = 0.
     for X, Y in test_loader:
         X, Y = X.to(device), Y.to(device)
         loss = criterion(actuator_net(X), Y)
         test_loss += loss.item()
-    print(test_loss, test_loss / len(dataset))
+    print(test_loss / len(dataset))
+
     import matplotlib.pyplot as plt
 
     plt.subplot(4, 1, 1)

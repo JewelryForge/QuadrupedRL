@@ -21,7 +21,7 @@ if __name__ == '__main__':
         # model_path = find_log_remote(time=None, epoch=None, log_dir='python_ws/ts-dev/log',
         #                         host='jewelry@10.192.119.171', port=22)
     else:
-        model_path = find_log(time='1948', epoch=None)
+        model_path = find_log(time=None, epoch=None)
     player = PolicyPlayer(model_path)
     # player = PolicyPlayer('/data/teacher-student-backup/log/Feb15_13-59-29/model_2200.pt')
     player.play()

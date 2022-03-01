@@ -13,7 +13,7 @@ from pybullet_utils import bullet_client
 
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
-from burl.sim.motor import MotorSim, PdMotorSim, ActuatorNetSim
+from burl.sim.motor import PdMotorSim, ActuatorNetSim, ActuatorNetWithHistorySim
 from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
@@ -64,16 +64,22 @@ class Quadruped(object):
                  latency=0., motor_latencies=(0., 0.),
                  height_addition=0., on_rack=False,
                  random_dynamics=False, self_collision_enabled=False,
-                 actuator_net=False):
+                 actuator_net=None):
         self._env, self._frequency = sim_env, execution_frequency
-        if actuator_net:
-            self._motor: MotorSim = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'),
-                                                   input_latency=motor_latencies[0], output_latency=motor_latencies[1],
-                                                   frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
+        if not actuator_net:
+            self._motor = PdMotorSim(self.P_PARAMS, self.D_PARAMS, frequency=execution_frequency,
+                                     input_latency=motor_latencies[0], output_latency=motor_latencies[1],
+                                     torque_limits=self.TORQUE_LIMITS)
+        elif actuator_net == 'single':
+            self._motor = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'),
+                                         input_latency=motor_latencies[0], output_latency=motor_latencies[1],
+                                         frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
+        elif actuator_net == 'history':
+            self._motor = ActuatorNetWithHistorySim(os.path.join(burl.rsc_path, 'actuator_net_with_history.pt'),
+                                                    input_latency=motor_latencies[0], output_latency=motor_latencies[1],
+                                                    frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
         else:
-            self._motor: MotorSim = PdMotorSim(self.P_PARAMS, self.D_PARAMS, frequency=execution_frequency,
-                                               input_latency=motor_latencies[0], output_latency=motor_latencies[1],
-                                               torque_limits=self.TORQUE_LIMITS)
+            raise NotImplementedError(f'Unknown Actuator Net Type {actuator_net}')
         self._latency = latency
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()

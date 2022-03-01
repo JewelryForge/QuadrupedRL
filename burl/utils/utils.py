@@ -1,54 +1,7 @@
-import math
 import os
 import sys
 import time
 from datetime import datetime
-
-import numpy as np
-
-M_PI = np.pi
-M_2_PI = 2 * M_PI
-
-
-def ang_norm(x):  # [-pi, pi)
-    return x - ((x + M_PI) // M_2_PI) * M_2_PI
-
-
-def unit(x) -> np.ndarray:
-    return np.asarray(x) / math.hypot(*x)
-
-
-def sign(x: float) -> int:
-    return 1 if x > 0 else -1 if x < 0 else 0
-
-
-def vec_cross(vec3_1, vec3_2) -> np.ndarray:
-    """
-    A much faster alternative for np.cross.
-    """
-    (x1, y1, z1), (x2, y2, z2) = vec3_1, vec3_2
-    return np.array((y1 * z2 - y2 * z1, z1 * x2 - z2 * x1, x1 * y2 - x2 * y1))
-
-
-def truncate(value: float, lower: float, upper: float) -> float:
-    return upper if value > upper else lower if value < lower else value
-
-
-def safe_asin(value):
-    return math.asin(truncate(value, -1., 1.))
-
-
-def safe_acos(value):
-    return math.acos(truncate(value, -1., 1.))
-
-
-def included_angle(vec1, vec2) -> float:
-    return safe_acos(np.dot(unit(vec1), unit(vec2)))
-
-
-def tuple_compact_string(_tuple, precision=1):
-    fmt = f'.{precision}f'
-    return '(' + ' '.join(f'{f:{fmt}}' for f in _tuple) + ')'
 
 
 class make_cls(object):
@@ -75,14 +28,6 @@ def _make_class(cls, **properties):
             super().__init__(*args, **properties)
 
     return TemporaryClass
-
-
-def get_const_variables(cls):
-    var = {}
-    for key, item in cls.__dict__:
-        if key.isupper():
-            var[key] = item
-    return var
 
 
 class MfTimer:
@@ -168,16 +113,6 @@ def str2time(time_str):
         return datetime(1900, 1, 1)
 
 
-def random_sample(indices, batch_size):
-    indices = np.asarray(np.random.permutation(indices))
-    batches = indices[:len(indices) // batch_size * batch_size].reshape(-1, batch_size)
-    for batch in batches:
-        yield batch
-    r = len(indices) % batch_size
-    if r:
-        yield indices[-r:]
-
-
 def find_log(log_dir='log', time=None, epoch=None):
     folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
     if not time:
@@ -248,16 +183,15 @@ def parse_args(argv=None):
         if '=' in name:
             name, value = name.split('=')
         else:
-            value = True
-            # try:
-            #     value = next(args)
-            #     assert not value.startswith('--')
-            # except (StopIteration, AssertionError):
-            #     raise RuntimeError(f"Parameter '{name}' has no corresponding value")
+            if name.startswith('no-'):
+                name = name.removeprefix('no-')
+                value = False
+            else:
+                value = True
         name = name.replace('-', '_')
         kwargs[name] = value
     return kwargs
 
 
 if __name__ == '__main__':
-    print(truncate(-0.6, -1, 1))
+    pass
