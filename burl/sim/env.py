@@ -64,29 +64,24 @@ class QuadrupedEnv(object):
     def _resetStates(self):
         self._sim_step_counter = 0
         self._episode_reward = 0.0
+        self._is_failed = False
         self._est_X = None
         self._est_Y = None
         self._est_Z = None
         self._est_height = 0.0
         self._external_force = np.array((0., 0., 0.))
+        self._external_torque = np.array((0., 0., 0.))
 
-    @property
-    def client(self):
-        return self._env
-
-    @property
-    def robot(self):
-        return self._robot
-
-    @property
-    def terrain(self):
-        return self._terrain
-
-    @property
-    def task(self):
-        return self._task
+    sim_time = property(lambda self: self._sim_step_counter / g_cfg.sim_frequency)
+    sim_step = property(lambda self: self._sim_step_counter)
+    client = property(lambda self: self._env)
+    robot = property(lambda self: self._robot)
+    terrain = property(lambda self: self._terrain)
+    task = property(lambda self: self._task)
+    is_failed = property(lambda self: self._is_failed)
 
     def initObservation(self):
+        self._task.onInit()
         self._robot.updateObservation()
         return self.makeObservation()
 
@@ -186,6 +181,10 @@ class QuadrupedEnv(object):
             for idc, pos in zip(self._terrain_indicators, positions):
                 self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
 
+    def setDisturbance(self, force=(0.,) * 3, torque=(0.,) * 3):
+        self._external_force = np.asarray(force)
+        self._external_torque = np.asarray(torque)
+
     def makeObservation(self):
         if isinstance(self._observation_type, str):
             return getattr(self, self.ALLOWED_OBSERVATION_TYPES[self._observation_type])()
@@ -247,7 +246,8 @@ class QuadrupedEnv(object):
         action = np.asarray(action)
         self._action_buffer.append(action)
         for i in range(self._num_action_repeats):
-            update_execution = self._sim_step_counter % self._num_execution_repeats == 0
+            # update_execution = self._sim_step_counter % self._num_execution_repeats == 0
+            update_execution = True  # FIXME: task.calculateReward needs robot.updateObservation
             if update_execution:
                 if g_cfg.use_action_interpolation:
                     weight = (i + 1) / self._num_action_repeats
@@ -256,16 +256,16 @@ class QuadrupedEnv(object):
                 else:
                     torques = self._robot.applyCommand(action)
 
-            if g_cfg.add_disturbance:
-                self._addRandomDisturbanceOnRobot()
+            self._addRandomDisturbanceOnRobot()
             self._env.stepSimulation()
             self._sim_step_counter += 1
             self._estimateTerrain()
-            rewards.append(self._task.calculateReward())
-            for n, r in self._task.getRewardDetails().items():
-                reward_details[n] = reward_details.get(n, 0) + r
             if update_execution:
                 self._robot.updateObservation()
+            rewards.append(self._task.calculateReward())
+            self._task.onSimulationStep()
+            for n, r in self._task.getRewardDetails().items():
+                reward_details[n] = reward_details.get(n, 0) + r
             if self._gui and g_cfg.single_step_rendering:
                 self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
                 self._updateRendering()
@@ -273,38 +273,34 @@ class QuadrupedEnv(object):
             self._updateRendering()
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats
-        is_failed = self._task.isFailed()
-        time_out = not is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
+        self._is_failed = self._task.isFailed()
+        time_out = not self._is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
         self._episode_reward += (mean_reward := np.mean(rewards))
-        info = {'time_out': time_out, 'torques': torques, 'reward_details': reward_details,
+        info = {'time_out': time_out,
+                'reward_details': reward_details,
                 'episode_reward': self._episode_reward}
-        if hasattr(self._terrain, 'difficulty'):
-            info['difficulty'] = self._terrain.difficulty
+        # if hasattr(self._terrain, 'difficulty'):
+        #     info['difficulty'] = self._terrain.difficulty
+        if task_info := self._task.onStep():
+            info['task_info'] = task_info
         # log_debug(f'Step time: {time.time() - start}')
         return (*self.makeObservation(),
                 mean_reward,
-                is_failed or time_out,
+                self.is_failed or time_out,
                 info)
 
     def _addRandomDisturbanceOnRobot(self):
-        if self._sim_step_counter % g_cfg.disturbance_interval_steps == 0:
-            self._applied_link_id = 0
-            # self._applied_link_id = base_link_ids[np.random.randint(0, len(base_link_ids))]
-            horizontal_force_magnitude = np.random.uniform(*g_cfg.horizontal_force_bounds)
-            theta = np.random.uniform(0, 2 * math.pi)
-            vertical_force_magnitude = np.random.uniform(*g_cfg.vertical_force_bounds)
-            self._external_force = np.array((
-                horizontal_force_magnitude * np.cos(theta),
-                horizontal_force_magnitude * np.sin(theta),
-                vertical_force_magnitude * np.random.choice((-1, 1))
-            ))
-            # print('Apply:', self._external_force)
+        self._applied_link_id = 0
 
         self._env.applyExternalForce(objectUniqueId=self._robot.id,
                                      linkIndex=self._applied_link_id,
                                      forceObj=self._external_force,
                                      posObj=(0.0, 0.0, 0.0),
                                      flags=pybullet.LINK_FRAME)
+        self._env.applyExternalTorque(objectUniqueId=self._robot.id,
+                                      linkIndex=self._applied_link_id,
+                                      torqueObj=self._external_torque,
+                                      flags=pybullet.LINK_FRAME)
 
     def reset(self):
         # completely_reset = self._task.curriculumUpdate(self._sim_step_counter)
@@ -434,7 +430,7 @@ class FixedTgEnv(IkEnv):
     def makeExtendedObservation(self, obs=None, noisy=False):
         if obs is None:
             obs = ExtendedObservation()
-        obs = self.makeProprioObservation(obs, noisy=noisy)
+        obs: ExtendedObservation = self.makeProprioObservation(obs, noisy=noisy)
         r = self._robot
         foot_xy = r.getFootXYsInWorldFrame()
         obs.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.rpy.y) for x, y in foot_xy])
@@ -442,7 +438,8 @@ class FixedTgEnv(IkEnv):
         obs.contact_states = r.getContactStates()[1:]
         obs.foot_contact_forces = r.getFootContactForces()
         obs.foot_friction_coeffs = r.getFootFriction()
-        obs.external_disturbance = self._external_force
+        obs.external_force = self._external_force
+        obs.external_torque = self._external_torque
         return obs
 
     def step(self, action: Action | np.ndarray):
@@ -483,28 +480,17 @@ if __name__ == '__main__':
 
     g_cfg.on_rack = False
     g_cfg.trn_type = 'plain'
-    g_cfg.add_disturbance = False
+    g_cfg.add_disturbance = True
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
+    # g_cfg.motor_latencies = (2e-3, 0.)
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
-    tg, external = True, False
-    if tg and external:
-        pass
-        # g_cfg.action_frequency = 500
-        # g_cfg.execution_frequency = 500
-        # g_cfg.sim_frequency = 500
-        # env = ExternalTgEnv(AlienGo)
-        # tg = WholeBodyTgNet(os.path.join(burl.rsc_path, 'tg_base.pt'))
-        # obs, _ = env.initObservation()
-        # for i in range(1, 100000):
-        #     X = torch.tensor(obs)
-        #     action = tg(X).detach().cpu().numpy().reshape(-1)
-        #     obs, *_ = env.step(action)
-    elif tg and not external:
+    tg = True,
+    if tg:
         env = FixedTgEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):

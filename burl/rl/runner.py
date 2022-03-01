@@ -77,8 +77,7 @@ class OnPolicyRunner:
                         cur_reward_sum[reset_ids] = 0
                         cur_episode_length[reset_ids] = 0
 
-                if 'difficulty' in infos:
-                    difficulty = np.mean(infos['difficulty'])
+                task_infos = infos.get('task_info', {})
                 collection_time = timer.end()
 
                 timer.start()
@@ -108,6 +107,7 @@ class OnPolicyRunner:
                 'Perform/learning_time': locs['learning_time']}
         logs.update(self.get_policy_info())
         logs.update({f'Reward/{k}': v for k, v in locs['accountant'].report().items()})
+        logs.update({f'Task/{k}': v.numpy().mean() for k, v in locs['task_infos'].items()})
         locs['accountant'].clear()
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
         if 'difficulty' in locs:

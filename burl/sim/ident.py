@@ -1,9 +1,8 @@
 from __future__ import annotations
-
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, random_split, ConcatDataset
 
 __all__ = ['ActuatorNet', 'ActuatorNetWithHistory']
 
@@ -90,25 +89,27 @@ class RobotDatasetWithHistory(Dataset):
         self.size = len(self.error)
 
     def __len__(self):
-        return (self.size - 10) * 12
+        return len(self.X)
 
     def __getitem__(self, idx):
         return self.X[idx], self.Y[idx]
 
 
-def train_actuator_net(actuator_net, dataset, lr=1e-3, num_epochs=1000, batch_size=1000, device='cuda'):
-    wandb.init(project='actuator_net', name=str((actuator_net.hidden_dims, lr)), mode=None)
+def train_actuator_net(actuator_net, dataset_class, lr=1e-3, num_epochs=1000, batch_size=1000, device='cuda'):
     device = torch.device(device)
+    dataset_dir = os.path.join(burl.rsc_path, 'motor_data')
+    dataset_paths = [os.path.join(dataset_dir, filename) for filename in os.listdir(dataset_dir)]
+    dataset = ConcatDataset([dataset_class(path) for path in dataset_paths])
     train_len = int(0.8 * len(dataset))
     test_len = len(dataset) - train_len
     train_data, test_data = random_split(dataset, (train_len, test_len))
     train_loader = DataLoader(train_data, batch_size, shuffle=True)
     test_loader = DataLoader(test_data, batch_size, shuffle=True)
-
     net = actuator_net.to(device)
     optim = torch.optim.AdamW(net.parameters(), lr=lr)
     criterion = nn.MSELoss(reduction='sum')
 
+    wandb.init(project='actuator_net', name=str((actuator_net.hidden_dims, lr)), mode=None)
     init_logger()
     log_dir = f'ident/{timestamp()}'
     os.makedirs(log_dir, exist_ok=True)
@@ -145,28 +146,28 @@ if __name__ == '__main__':
 
     sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
     import burl
-    from burl.utils import timestamp, log_info, init_logger
+    from burl.utils import timestamp, log_info, init_logger, find_log
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
     use_history_info = True
     train = False
-    robot_data_path = '/home/jewel/state_cmd_data_011050T0.4.npz'
-    if not use_history_info:
-        dataset = RobotDataset(robot_data_path)
-    else:
-        dataset = RobotDatasetWithHistory(robot_data_path)
+    DatasetClass = RobotDatasetWithHistory if use_history_info else RobotDataset
     ActuatorNetClass = ActuatorNetWithHistory if use_history_info else ActuatorNet
     device = 'cuda'
     if train:
         actuator_net = ActuatorNetClass(hidden_dims=(32, 32, 32))
-        train_actuator_net(actuator_net, dataset, lr=2e-4, num_epochs=2000, device=device)
+        train_actuator_net(actuator_net, DatasetClass, lr=1e-4, num_epochs=2000, device=device)
     else:
         file_name = 'actuator_net_with_history.pt' if use_history_info else 'actuator_net.pt'
         model_path = os.path.join(burl.rsc_path, file_name)
+        # model_path = find_log('/home/jewel/Workspaces/teacher-student/ident', fmt='*.pt')
         model_info = torch.load(model_path, map_location={'cuda:0': device})
         actuator_net = ActuatorNetClass(hidden_dims=model_info['hidden_dims']).to(device)
         actuator_net.load_state_dict(model_info['model'])
+        # print(actuator_net)
 
+    robot_data_path = os.path.join(burl.rsc_path, 'motor_data', 'state_cmd_data_T0.6.npz')
+    dataset = DatasetClass(robot_data_path)
     motor_idx = 1
     slices = slice(5000, 10000)
     if not use_history_info:
@@ -209,5 +210,5 @@ if __name__ == '__main__':
     plt.subplot(4, 1, 4)
     plt.plot(torque, linewidth=1)
     plt.ylabel('torque')
-    plt.plot(predicted, 'r', linewidth=0.3)
+    plt.plot(predicted, 'r', linewidth=0.5)
     plt.show()

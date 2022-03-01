@@ -1,6 +1,8 @@
 import random
 
 import numpy as np
+
+from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum
 from burl.rl.reward import *
 from burl.utils import g_cfg
 
@@ -10,32 +12,42 @@ __all__ = ['BasicTask', 'RandomForwardBackTask', 'RandomCmdTask']
 class BasicTask(RewardRegistry):
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
         super().__init__(np.asarray(cmd), env, env.robot)
-        # from burl.rl.curriculum import BasicTerrainManager
-        # self._terrain: BasicTerrainManager = None
         for reward, weight in g_cfg.rewards_weights:
             self.register(reward, weight)
 
         self.setCoefficient(0.25)
+        self.curriculums: list[GameInspiredCurriculum] = []
+        if g_cfg.add_disturbance:
+            self.addCurriculum(DisturbanceCurriculum(aggressive=True))
         # self.setCoefficient(0.1 / self._weight_sum)
 
-    @property
-    def cmd(self):
-        return self._cmd
+    cmd = property(lambda self: self._cmd)
+    env = property(lambda self: self._env)
+    robot = property(lambda self: self._robot)
 
-    @property
-    def env(self):
-        return self._env
-
-    @property
-    def robot(self):
-        return self._robot
-
-    def calculateReward(self):
+    def addCurriculum(self, curriculum: GameInspiredCurriculum):
+        self.curriculums.append(curriculum)
         if g_cfg.test_mode:
-            self.sendAndPrint()
-        return super().calculateReward()
+            curriculum.maxLevel()
 
-    def sendAndPrint(self):
+    def onInit(self):
+        for cur in self.curriculums:
+            cur.onReset(self._cmd, self._robot, self._env)
+
+    def onSimulationStep(self):
+        for cur in self.curriculums:
+            cur.onSimulationStep(self._cmd, self._robot, self._env)
+        if g_cfg.test_mode:
+            self.collectStatistics()
+
+    def onStep(self):
+        info = {}
+        for cur in self.curriculums:
+            cur.onStep(self._cmd, self._robot, self._env)
+            info[cur.__class__.__name__] = cur.difficulty_degree
+        return info
+
+    def collectStatistics(self):
         from burl.sim import Quadruped, FixedTgEnv
 
         from burl.utils import udp_pub
@@ -93,6 +105,8 @@ class BasicTask(RewardRegistry):
         udp_pub.send(data)
 
     def reset(self):
+        for cur in self.curriculums:
+            cur.onReset(self._cmd, self._robot, self._env)
         if g_cfg.test_mode:
             print('cot', self.robot.getCostOfTransport())
             print('mse torque', np.sqrt(self._torque_sum / self.robot._step_counter))

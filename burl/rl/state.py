@@ -172,7 +172,7 @@ class ProprioObservation(StateSnapshot):
 
 
 class ExteroObservation(ObservationBase):
-    dim = 79
+    dim = 82
     _init = False
 
     def __init__(self):
@@ -182,7 +182,8 @@ class ExteroObservation(ObservationBase):
         self.contact_states = zero12
         self.foot_contact_forces = zero12
         self.foot_friction_coeffs = zero4
-        self.external_disturbance = zero3
+        self.external_force = zero3
+        self.external_torque = zero3
 
     @classmethod
     def _wb_init(cls):
@@ -194,14 +195,16 @@ class ExteroObservation(ObservationBase):
         contact_states_bias, contact_states_weight = (0.5,) * 12, (2.,) * 12
         foot_contact_forces_bias, foot_contact_forces_weight = (0., 0., 30.) * 4, (0.01, 0.01, 0.02) * 4
         foot_friction_coeffs_bias, foot_friction_coeffs_weight = zero4, (1.,) * 4
-        external_disturbance_bias, external_disturbance_weight = zero3, (0.1,) * 3
+        external_force_bias, external_force_weight = zero3, (0.1,) * 3
+        external_torque_bias, external_torque_weight = zero3, (0.2, 0.1, 0.2)
         cls.biases = np.concatenate((
             terrain_scan_bias,
             terrain_normal_bias,
             contact_states_bias,
             foot_contact_forces_bias,
             foot_friction_coeffs_bias,
-            external_disturbance_bias
+            external_force_bias,
+            external_torque_bias
         ))
 
         cls.weights = np.concatenate((
@@ -210,7 +213,8 @@ class ExteroObservation(ObservationBase):
             contact_states_weight,
             foot_contact_forces_weight,
             foot_friction_coeffs_weight,
-            external_disturbance_weight
+            external_force_weight,
+            external_torque_weight
         ))
 
     def to_array(self):
@@ -220,7 +224,8 @@ class ExteroObservation(ObservationBase):
             self.contact_states,
             self.foot_contact_forces,
             self.foot_friction_coeffs,
-            self.external_disturbance
+            self.external_force,
+            self.external_torque
         ))
 
 

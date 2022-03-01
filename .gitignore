@@ -4,3 +4,4 @@ log
 wandb
 *.pyc
 tg_net
+ident

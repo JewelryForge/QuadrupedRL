@@ -90,7 +90,6 @@ class HeightFieldTerrain(Terrain):
     def yIdx2Coord(self, y_idx):
         return y_idx * self.y_rsl - self.y_size / 2 + self.offset[1]
 
-    @lru_cache(maxsize=20)
     def getNearestVertices(self, x, y):
         x_idx, y_idx = self.xCoord2Idx(x), self.yCoord2Idx(y)
         x_rnd, y_rnd = self.xIdx2Coord(x_idx), self.yIdx2Coord(y_idx)

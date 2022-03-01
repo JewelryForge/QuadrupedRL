@@ -113,7 +113,7 @@ def str2time(time_str):
         return datetime(1900, 1, 1)
 
 
-def find_log(log_dir='log', time=None, epoch=None):
+def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
     folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
     if not time:
         folder = folders[0]
@@ -124,14 +124,14 @@ def find_log(log_dir='log', time=None, epoch=None):
         else:
             raise RuntimeError(f'Record with time {time} not found')
     folder = os.path.join(log_dir, folder)
-    final_epoch = max(int(m.removeprefix('model_').removesuffix('.pt'))
-                      for m in os.listdir(folder) if m.startswith('model'))
+    prefix, suffix = fmt.split('*')
+    final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in os.listdir(folder))
     if epoch:
         if epoch > final_epoch:
             raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
     else:
         epoch = final_epoch
-    return os.path.join(folder, f'model_{epoch}.pt')
+    return os.path.join(folder, prefix + f'{epoch}' + suffix)
 
 
 def find_log_remote(host='jewel@61.153.52.71', port=10022, log_dir='teacher-student-dev/log', time=None, epoch=None):

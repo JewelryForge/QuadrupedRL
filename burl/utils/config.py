@@ -123,8 +123,8 @@ class TerrainCurriculumParam(object):
 class DisturbanceParam(object):
     def __init__(self):
         self.disturbance_interval_steps = 500
-        self.horizontal_force_bounds = (0., 20.)
-        self.vertical_force_bounds = (0., 20.)
+        self.force_magnitude = (20., 20.)  # horizontal vertical
+        self.torque_magnitude = (5., 10., 5.)  # x y z
 
 
 class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, DisturbanceParam,
