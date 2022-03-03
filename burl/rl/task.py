@@ -1,3 +1,4 @@
+import math
 import random
 
 import numpy as np
@@ -6,7 +7,7 @@ from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum
 from burl.rl.reward import *
 from burl.utils import g_cfg
 
-__all__ = ['BasicTask', 'RandomForwardBackTask', 'RandomCmdTask']
+__all__ = ['BasicTask', 'RandomForwardBackTask', 'RandomCmdTask', 'get_task']
 
 
 class BasicTask(RewardRegistry):
@@ -136,18 +137,44 @@ class BasicTask(RewardRegistry):
 class RandomForwardBackTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
-        super().__init__(env, (random.choice((1., -1.)), 0., 0.))
+        self.update_interval = 500
+        super().__init__(env, self.random_cmd())
+
+    @staticmethod
+    def random_cmd():
+        return np.array((random.choice((1., -1.)), 0., 0.))
 
     def reset(self):
-        self._cmd = np.array((random.choice((1., -1.)), 0., 0.))
+        self._cmd = self.random_cmd()
+
+    def onStep(self):
+        if self._env.sim_step % self.update_interval == 0:
+            self.reset()
+        super().onStep()
 
 
-class RandomCmdTask(BasicTask):
-    def __init__(self, env, seed=None):
-        np.random.seed(seed)
-        angle = np.random.random() * 2 * np.pi
-        super().__init__(env, (np.cos(angle), np.sin(angle), 0))
+class RandomLinearCmdTask(RandomForwardBackTask):
+    @staticmethod
+    def random_cmd():
+        yaw = random.uniform(0, 2 * np.pi)
+        return np.array((math.cos(yaw), math.sin(yaw), 0))
 
-    def reset(self):
-        angle = np.random.random() * 2 * np.pi
-        self._cmd = (np.cos(angle), np.sin(angle), 0)
+
+class RandomCmdTask(RandomForwardBackTask):
+    @staticmethod
+    def random_cmd():
+        yaw = random.uniform(0, 2 * np.pi)
+        return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 1.))))
+
+
+def get_task(task_type: str):
+    if task_type == 'basic':
+        return BasicTask
+    elif task_type == 'randFB':
+        return RandomForwardBackTask
+    elif task_type == 'randLn':
+        return RandomLinearCmdTask
+    elif task_type == 'randCmd':
+        return RandomCmdTask
+    else:
+        raise RuntimeError(f"Unknown task type '{task_type}'")

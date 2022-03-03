@@ -14,6 +14,7 @@ class Options(object):
         self.trn_type = 'plain'
         self.tg_init = 'fixed'
         self.schedule = 'fixed'
+        self.task_type = 'basic'
         self.random_dynamics = False
         self.actuator_net = None
 

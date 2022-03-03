@@ -5,10 +5,9 @@ import numpy as np
 import torch
 import wandb
 
-import burl
 from burl.alg import ActorCritic, Actor, Critic, PPO
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
-from burl.rl.task import BasicTask, RandomForwardBackTask
+from burl.rl.task import get_task
 from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, SingleEnvContainer
 from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
 
@@ -158,7 +157,8 @@ class OnPolicyRunner:
 
 
 class PolicyTrainer(OnPolicyRunner):
-    def __init__(self, task_class=BasicTask):
+    def __init__(self, task_type='basic'):
+        task_class = get_task(task_type)
         make_actor_critic = make_cls(
             ActorCritic,
             actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
@@ -201,7 +201,8 @@ class Player:
 
 
 class PolicyPlayer(Player):
-    def __init__(self, model_path):
+    def __init__(self, model_path, task_type='basic'):
+        task_class = get_task(task_type)
         make_actor_critic = make_cls(
             ActorCritic,
             actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
@@ -211,7 +212,6 @@ class PolicyPlayer(Player):
         )
         super().__init__(
             model_path,
-            # make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=RandomForwardBackTask),
-            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=BasicTask),
+            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
             make_actor_critic=make_actor_critic,
         )

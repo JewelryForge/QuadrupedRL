@@ -25,7 +25,7 @@ def update_cfg_from_args():
             if name in abbrs:
                 name = abbrs[name]
             if not hasattr(g_cfg, name):
-                print(f"g_cfg has no attribute named '{name}'")
+                raise RuntimeError(f"g_cfg has no attribute named '{name}'")
             setattr(g_cfg, name, value)
             value = getattr(g_cfg, name)
             if isinstance(value, bool):
@@ -49,7 +49,7 @@ def main():
     log_warn(f'Training on {g_cfg.device}')
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
-    runner = PolicyTrainer()
+    runner = PolicyTrainer(g_cfg.task_type)
     runner.learn()
 
 
