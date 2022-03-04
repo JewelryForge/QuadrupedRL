@@ -1,6 +1,8 @@
+from itertools import chain
+
 import torch
 
-from burl.alg.ac import ActorCritic
+from burl.alg.ac import Actor, Critic
 from burl.utils import g_cfg
 
 
@@ -98,8 +100,8 @@ class RolloutStorage(object):
         mini_batch_size = batch_size // num_mini_batches
         indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)
 
-        actor_observations = self.actor_obs.flatten(0, 1)
-        critic_observations = self.critic_obs.flatten(0, 1)
+        actor_obs = self.actor_obs.flatten(0, 1)
+        critic_obs = self.critic_obs.flatten(0, 1)
 
         actions = self.actions.flatten(0, 1)
         values = self.values.flatten(0, 1)
@@ -115,8 +117,8 @@ class RolloutStorage(object):
                 end = (i + 1) * mini_batch_size
                 batch_idx = indices[start:end]
 
-                obs_batch = actor_observations[batch_idx]
-                critic_observations_batch = critic_observations[batch_idx]
+                actor_obs_batch = actor_obs[batch_idx]
+                critic_obs_batch = critic_obs[batch_idx]
                 actions_batch = actions[batch_idx]
                 target_values_batch = values[batch_idx]
                 returns_batch = returns[batch_idx]
@@ -124,14 +126,16 @@ class RolloutStorage(object):
                 advantages_batch = advantages[batch_idx]
                 old_mu_batch = old_mu[batch_idx]
                 old_sigma_batch = old_sigma[batch_idx]
-                yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
-                      old_actions_log_prob_batch, old_mu_batch, old_sigma_batch
+                yield (actor_obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch,
+                       returns_batch, old_actions_log_prob_batch, old_mu_batch, old_sigma_batch)
 
 
 class PPO(object):
-    actor_critic: ActorCritic
+    Optim = torch.optim.AdamW
 
-    def __init__(self, actor_critic):
+    # Criterion = torch.nn.SmoothL1Loss
+
+    def __init__(self, actor: Actor, critic: Critic):
         self.device = torch.device(g_cfg.dev)
         self.learning_rate = g_cfg.learning_rate
         self.num_envs = g_cfg.num_envs
@@ -147,29 +151,37 @@ class PPO(object):
         self.entropy_coef = g_cfg.entropy_coef
         self.max_grad_norm = g_cfg.max_grad_norm
 
-        self.actor_critic = actor_critic.to(self.device)
-        self.optimizer = torch.optim.AdamW(self.actor_critic.parameters(), lr=self.learning_rate,
-                                           weight_decay=1e-2)
-        if self.schedule == 'linearLR':
-            self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1.0, end_factor=0.5,
-                                                               total_iters=5000)
+        self.actor, self.critic = actor.to(self.device), critic.to(self.device)
+        self.optim = self.Optim(self.parameters(), lr=self.learning_rate, weight_decay=1e-2)
+        # self.criterion = self.Criterion()
+        if self.schedule == 'adaptive':
+            self.adaptive = True
+            self.desired_kl = g_cfg.desired_kl
+        else:
+            self.adaptive = False
+            if self.schedule == 'linearLR':
+                self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optim, 1.0, 0.5, 5000)
+
         self.transition = RolloutStorage.Transition()
         self.storage = RolloutStorage(self.device,
                                       self.num_envs, self.storage_len,
-                                      (self.actor_critic.actor.input_dim,),
-                                      (self.actor_critic.critic.input_dim,),
-                                      (self.actor_critic.actor.output_dim,),
-                                      (self.actor_critic.critic.output_dim,))
+                                      (self.actor.input_dim,),
+                                      (self.critic.input_dim,),
+                                      (self.actor.output_dim,),
+                                      (self.critic.output_dim,))
 
-    def act(self, obs, critic_obs):
+    def parameters(self):
+        return chain(self.actor.parameters(), self.critic.parameters())
+
+    def act(self, actor_obs, critic_obs):
         # Compute the actions and values
-        self.transition.actions = self.actor_critic.act(obs).detach()
-        self.transition.values = self.actor_critic.evaluate(critic_obs).detach()
-        self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
-        self.transition.action_mean = self.actor_critic.action_mean.detach()
-        self.transition.action_sigma = self.actor_critic.action_std.detach()
+        self.transition.actions = self.actor.get_action(actor_obs).detach()
+        self.transition.values = self.critic(critic_obs).detach()
+        self.transition.actions_log_prob = self.actor.get_actions_log_prob(self.transition.actions).detach()
+        self.transition.action_mean = self.actor.action_mean.detach()
+        self.transition.action_sigma = self.actor.action_std.detach()
         # need to record obs and critic_obs before env.step()
-        self.transition.actor_obs = obs
+        self.transition.actor_obs = actor_obs
         self.transition.critic_obs = critic_obs
         return self.transition.actions
 
@@ -183,47 +195,45 @@ class PPO(object):
         self.transition.clear()
 
     def compute_returns(self, last_critic_obs):
-        last_values = self.actor_critic.evaluate(last_critic_obs).detach()
+        last_values = self.critic(last_critic_obs).detach()
         self.storage.compute_returns(last_values, self.gamma, self.lambda_gae)
+
+    def adaptively_modify_lr(self, sigma_batch, mu_batch, old_sigma_batch, old_mu_batch):
+        with torch.inference_mode():
+            kl = torch.sum((sigma_batch / old_sigma_batch + 1e-5).log() - 0.5 +
+                           (old_sigma_batch.square() + (old_mu_batch - mu_batch).square())
+                           / (2.0 * sigma_batch.square()), axis=-1)
+            kl_mean = torch.mean(kl)
+
+            if kl_mean > self.desired_kl * 2.0:
+                self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+            elif 0.0 < kl_mean < self.desired_kl / 2.0:
+                self.learning_rate = min(1e-3, self.learning_rate * 1.5)
+
+            for param_group in self.optim.param_groups:
+                param_group['lr'] = self.learning_rate
 
     def update(self):
         mean_value_loss = 0
         mean_surrogate_loss = 0
-        cfg = g_cfg
         generator = self.storage.mini_batch_generator(self.num_mini_batches, self.repeat_times)
         for (obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch,
              old_actions_log_prob_batch, old_mu_batch, old_sigma_batch) in generator:
 
-            self.actor_critic.act(obs_batch)
-            actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
-            value_batch = self.actor_critic.evaluate(critic_obs_batch)
-            # mu_batch = self.actor_critic.action_mean
-            # sigma_batch = self.actor_critic.action_std
-            entropy_batch = self.actor_critic.entropy
-
-            # KL
-            # if cfg.desired_kl is not None and cfg.schedule == 'adaptive':
-            #     with torch.inference_mode():
-            #         kl = torch.sum(
-            #             torch.log(sigma_batch / old_sigma_batch + 1.e-5) + (
-            #                     torch.square(old_sigma_batch) + torch.square(old_mu_batch - mu_batch)) / (
-            #                     2.0 * torch.square(sigma_batch)) - 0.5, axis=-1)
-            #         kl_mean = torch.mean(kl)
-            #
-            #         if kl_mean > cfg.desired_kl * 2.0:
-            #             learning_rate = max(1e-5, self.learning_rate / 1.5)
-            #         elif 0.0 < kl_mean < cfg.desired_kl / 2.0:
-            #             learning_rate = min(1e-3, self.learning_rate * 1.5)
-            #
-            #         for param_group in self.optimizer.param_groups:
-            #             param_group['lr'] = learning_rate
+            self.actor.get_action(obs_batch)
+            actions_log_prob_batch = self.actor.get_actions_log_prob(actions_batch)
+            value_batch = self.critic(critic_obs_batch)
+            entropy_batch = self.actor.entropy
+            if self.adaptive:
+                self.adaptively_modify_lr(self.actor.action_std, self.actor.action_mean,
+                                          old_sigma_batch, old_mu_batch)
 
             # Surrogate loss
             ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-            surrogate = -torch.squeeze(advantages_batch) * ratio
-            surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio, 1.0 - self.clip_ratio,
-                                                                               1.0 + self.clip_ratio)
-            surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
+            surrogate = advantages_batch.squeeze() * ratio
+            surrogate_clipped = advantages_batch.squeeze() * ratio.clamp(1.0 - self.clip_ratio,
+                                                                         1.0 + self.clip_ratio)
+            surrogate_loss = -torch.min(surrogate, surrogate_clipped).mean()
 
             # Value function loss
             if self.use_clipped_value_loss:
@@ -238,17 +248,17 @@ class PPO(object):
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
 
             # Gradient step
-            self.optimizer.zero_grad()
+            self.optim.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
-            self.learning_rate = self.optimizer.param_groups[0]['lr']
-            self.optimizer.step()
+            torch.nn.utils.clip_grad_norm_(self.parameters(), self.max_grad_norm)
+            self.optim.step()
 
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
 
         if hasattr(self, 'scheduler'):
             self.scheduler.step()
+            self.learning_rate = self.optim.param_groups[0]['lr']
         num_updates = self.repeat_times * self.num_mini_batches
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import wandb
 
-from burl.alg import ActorCritic, Actor, Critic, PPO
+from burl.alg import Actor, Critic, PPO
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 from burl.rl.task import get_task
 from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, SingleEnvContainer
@@ -38,16 +38,14 @@ class Accountant:
 
 
 class OnPolicyRunner:
-    def __init__(self, make_env, make_actor_critic):
+    def __init__(self, make_env, make_actor, make_critic):
         self.env = (EnvContainerMp2 if g_cfg.use_mp else EnvContainer)(make_env, g_cfg.num_envs)
-        actor_critic = make_actor_critic().to(g_cfg.dev)
-        self.alg = PPO(actor_critic)
+        self.alg = PPO(make_actor(), make_critic())
 
         self.current_iter = 0
 
     def learn(self):
         actor_obs, critic_obs = to_dev(*self.env.init_observations())
-        self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         reward_buffer, eps_len_buffer = deque(maxlen=10), deque(maxlen=10)
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
@@ -129,83 +127,82 @@ class OnPolicyRunner:
         if not os.path.exists(d := os.path.dirname(path)):
             os.makedirs(d)
         torch.save({
-            'model_state_dict': self.alg.actor_critic.state_dict(),
-            'optimizer_state_dict': self.alg.optimizer.state_dict(),
+            'actor_state_dict': self.alg.actor.state_dict(),
+            'critic_state_dict': self.alg.critic.state_dict(),
+            'optimizer_state_dict': self.alg.optim.state_dict(),
             'iter': self.current_iter,
             'infos': infos,
         }, path)
 
     def load(self, path, load_optimizer=True):
         loaded_dict = torch.load(path)
-        self.alg.actor_critic.load_state_dict(loaded_dict['model_state_dict'])
+        self.alg.actor.load_state_dict(loaded_dict['actor_state_dict'])
+        self.alg.critic.load_state_dict(loaded_dict['critic_state_dict'])
         if load_optimizer:
-            self.alg.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
+            self.alg.optim.load_state_dict(loaded_dict['optimizer_state_dict'])
         self.current_iter = loaded_dict['iter']
         return loaded_dict['infos']
-
-    def get_inference_policy(self, device=None):
-        self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
-        if device is not None:
-            self.alg.actor_critic.to(device)
-        return self.alg.actor_critic.act_inference
 
 
 class PolicyTrainer(OnPolicyRunner):
     def __init__(self, task_type='basic'):
         task_class = get_task(task_type)
-        make_actor_critic = make_cls(
-            ActorCritic,
-            actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
-                        g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
-            critic=Critic(ExtendedObservation.dim, 1),
-            init_noise_std=g_cfg.init_noise_std
-        )
         super().__init__(
             make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
-            make_actor_critic=make_actor_critic,
+            make_actor=make_cls(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                                g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims,
+                                g_cfg.init_noise_std),
+            make_critic=make_cls(Critic, ExtendedObservation.dim, 1),
         )
 
     def get_policy_info(self):
-        return {'Policy/freq_noise_std': self.alg.actor_critic.std.cpu()[:4].mean().item(),
-                'Policy/X_noise_std': self.alg.actor_critic.std.cpu()[(4, 7, 10, 13),].mean().item(),
-                'Policy/Y_noise_std': self.alg.actor_critic.std.cpu()[(5, 8, 11, 14),].mean().item(),
-                'Policy/Z_noise_std': self.alg.actor_critic.std.cpu()[(6, 9, 12, 15),].mean().item()}
+        std = self.alg.actor.std.cpu()
+        return {'Policy/freq_noise_std': std[:4].mean().item(),
+                'Policy/X_noise_std': std[(4, 7, 10, 13),].mean().item(),
+                'Policy/Y_noise_std': std[(5, 8, 11, 14),].mean().item(),
+                'Policy/Z_noise_std': std[(6, 9, 12, 15),].mean().item()}
 
 
 class Player:
-    def __init__(self, model_path, make_env, make_actor_critic):
+    def __init__(self, model_path, make_env, make_actor):
         self.env = SingleEnvContainer(make_env)
-        self.actor_critic = make_actor_critic().to(g_cfg.dev)
+        self.actor = make_actor().to(g_cfg.dev)
         log_info(f'Loading model {model_path}')
-        self.actor_critic.load_state_dict(torch.load(model_path)['model_state_dict'])
+        model_info = torch.load(model_path)
+        try:
+            self.actor.load_state_dict(model_info['actor_state_dict'])
+        except KeyError:
+            model_state_dict = model_info['model_state_dict']
+            actor_state_dict = {}
+            for k, v in model_state_dict.items():
+                if k.startswith('actor.'):
+                    actor_state_dict[k.removeprefix('actor.')] = v
+            actor_state_dict['log_std'] = torch.zeros_like(self.actor.log_std, device=g_cfg.dev)
+            self.actor.load_state_dict(actor_state_dict)
 
     def play(self):
-        actor_obs, critic_obs = to_dev(*self.env.init_observations())
+        with torch.inference_mode():
+            actor_obs = to_dev(self.env.init_observations()[0])
 
-        for _ in range(20000):
-            actions = self.actor_critic.act_inference(critic_obs)
-            actor_obs, critic_obs, _, dones, info = self.env.step(actions)
-            actor_obs, critic_obs = to_dev(actor_obs, critic_obs)
+            for _ in range(20000):
+                actions = self.actor(actor_obs)
+                actor_obs, _, _, dones, info = self.env.step(actions)
+                actor_obs = actor_obs.to(g_cfg.dev)
 
-            if any(dones):
-                reset_ids = torch.nonzero(dones)
-                actor_obs_reset, critic_obs_reset = to_dev(*self.env.reset(reset_ids))
-                actor_obs[reset_ids,], critic_obs[reset_ids,] = actor_obs_reset, critic_obs_reset
-                print('episode reward', float(info['episode_reward']))
+                if any(dones):
+                    reset_ids = torch.nonzero(dones)
+                    actor_obs_reset = self.env.reset(reset_ids)[0].to(g_cfg.dev)
+                    actor_obs[reset_ids,] = actor_obs_reset
+                    print('episode reward', float(info['episode_reward']))
 
 
 class PolicyPlayer(Player):
     def __init__(self, model_path, task_type='basic'):
         task_class = get_task(task_type)
-        make_actor_critic = make_cls(
-            ActorCritic,
-            actor=Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim,
-                        g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims),
-            critic=Critic(ExtendedObservation.dim, 1),
-            init_noise_std=g_cfg.init_noise_std
-        )
+
         super().__init__(
             model_path,
             make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
-            make_actor_critic=make_actor_critic,
+            make_actor=make_cls(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                                g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
         )

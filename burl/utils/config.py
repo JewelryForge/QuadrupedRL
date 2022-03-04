@@ -71,7 +71,7 @@ class TrainParam(object):
     def __init__(self):
         self.num_iterations = 10000
         self.num_envs = 8
-        self.init_noise_std = (.05,) * 4 + (.1, .05, .05) * 4
+        self.init_noise_std = 0.1
         self.save_interval = 50
         self.device = torch.device('cuda')
         self.extero_layer_dims = (72, 64)

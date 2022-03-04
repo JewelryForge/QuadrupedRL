@@ -9,13 +9,12 @@ class make_cls(object):
     Predefine some init parameters of a class without creating an object.
     """
 
-    def __init__(self, cls, **properties):
-        self.cls, self.properties = cls, properties
+    def __init__(self, cls, *args, **kwargs):
+        self.cls, self.args, self.kwargs = cls, args, kwargs
 
     def __call__(self, *args, **kwargs):
-        properties = self.properties.copy()
-        properties.update(**kwargs)
-        return self.cls(*args, **properties)
+        kwargs.update(self.kwargs)
+        return self.cls(*self.args, *args, **kwargs)
 
     def __getattr__(self, item):
         return getattr(self.cls, item)

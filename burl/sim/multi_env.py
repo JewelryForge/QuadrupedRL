@@ -45,7 +45,7 @@ class EnvContainer(object):
 
     def init_observations(self):
         # TO MY ASTONISHMENT, A LIST COMPREHENSION IS FASTER THAN A GENERATOR!!!
-        return (torch.Tensor(np.asarray(o)) for o in zip(*[env.initObservation() for env in self._envs]))
+        return [torch.Tensor(np.asarray(o)) for o in zip(*[env.initObservation() for env in self._envs])]
 
     def close(self):
         pass

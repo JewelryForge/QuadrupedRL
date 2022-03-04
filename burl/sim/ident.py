@@ -27,7 +27,7 @@ class ActuatorNet(nn.Module):
     def calc_torque(self, error, error_rate, velocity):
         device = next(self.parameters()).device
         X = np.array((error, velocity, error_rate), dtype=np.float32).transpose()
-        return self(torch.tensor(X).to(device)).detach().squeeze().cpu().numpy().astype(float)
+        return self(torch.as_tensor(X, device=device)).detach().squeeze().cpu().numpy().astype(float)
 
 
 class ActuatorNetWithHistory(ActuatorNet):
@@ -41,7 +41,7 @@ class ActuatorNetWithHistory(ActuatorNet):
         device = next(self.parameters()).device
         X = np.array((error, error_his1, error_his2,
                       velocity, velocity_his1, velocity_his2), dtype=np.float32).transpose()
-        return self(torch.tensor(X).to(device)).detach().squeeze().cpu().numpy().astype(float)
+        return self(torch.as_tensor(X, device=device)).detach().squeeze().cpu().numpy().astype(float)
 
 
 class RobotDataset(Dataset):
