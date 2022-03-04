@@ -62,7 +62,7 @@ class OnPolicyRunner:
                     actions = self.alg.act(actor_obs, critic_obs)
                     actor_obs, critic_obs, rewards, dones, infos = self.env.step(actions)
                     actor_obs, critic_obs, rewards, dones = to_dev(actor_obs, critic_obs, rewards, dones)
-                    self.alg.process_env_step(rewards, dones, infos['time_out'])
+                    self.alg.process_env_step(rewards, dones, infos['time_out'].to(g_cfg.dev))
                     cur_reward_sum += rewards
                     cur_episode_length += 1
                     accountant.register(infos['reward_details'])
@@ -124,12 +124,6 @@ class OnPolicyRunner:
 
     def get_policy_info(self):
         return {}
-
-    # def log_eval(self, it, locs, width=25):
-    #     log_info(f"{'#' * width}")
-    #     log_info(f"Evaluation {it}")
-    #     logs = {f'Eval/{k}': v for k, v in locs['accountant'].report().items()}
-    #     wandb.log(logs, step=it)
 
     def save(self, path, infos=None):
         if not os.path.exists(d := os.path.dirname(path)):

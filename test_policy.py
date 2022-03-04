@@ -10,7 +10,7 @@ if __name__ == '__main__':
     g_cfg.trn_roughness = 0.05
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
-    g_cfg.add_disturbance = True
+    g_cfg.add_disturbance = False
     g_cfg.actuator_net = 'history'
     g_cfg.tg_init = 'symmetric'
     init_logger()
@@ -22,6 +22,6 @@ if __name__ == '__main__':
         #                         host='jewelry@10.192.119.171', port=22)
     else:
         model_path = find_log(time=None, epoch=None)
-    player = PolicyPlayer(model_path)
+    player = PolicyPlayer(model_path, 'randLn')
     # player = PolicyPlayer('/data/teacher-student-backup/log/Feb15_13-59-29/model_2200.pt')
     player.play()

@@ -7,7 +7,7 @@ from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum
 from burl.rl.reward import *
 from burl.utils import g_cfg
 
-__all__ = ['BasicTask', 'RandomForwardBackTask', 'RandomCmdTask', 'get_task']
+__all__ = ['BasicTask', 'RandomCmdTask', 'get_task']
 
 
 class BasicTask(RewardRegistry):
@@ -134,33 +134,33 @@ class BasicTask(RewardRegistry):
         return False
 
 
-class RandomForwardBackTask(BasicTask):
+class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
-        self.update_interval = 500
+        self.interval_range = (1000, 2500)
+        self.update_interval = random.uniform(*self.interval_range)
+        self.last_update = 0
         super().__init__(env, self.random_cmd())
 
-    @staticmethod
-    def random_cmd():
-        return np.array((random.choice((1., -1.)), 0., 0.))
-
-    def reset(self):
-        self._cmd = self.random_cmd()
-
-    def onStep(self):
-        if self._env.sim_step % self.update_interval == 0:
-            self.reset()
-        super().onStep()
-
-
-class RandomLinearCmdTask(RandomForwardBackTask):
     @staticmethod
     def random_cmd():
         yaw = random.uniform(0, 2 * np.pi)
         return np.array((math.cos(yaw), math.sin(yaw), 0))
 
+    def reset(self):
+        self.update_interval = random.uniform(*self.interval_range)
+        self.last_update = 0
+        self._cmd = self.random_cmd()
 
-class RandomCmdTask(RandomForwardBackTask):
+    def onStep(self):
+        if self._env.sim_step >= self.last_update + self.update_interval:
+            self._cmd = self.random_cmd()
+            self.last_update = self._env.sim_step
+            self.update_interval = random.uniform(*self.interval_range)
+        super().onStep()
+
+
+class RandomCmdTask(RandomLinearCmdTask):
     @staticmethod
     def random_cmd():
         yaw = random.uniform(0, 2 * np.pi)
@@ -170,8 +170,6 @@ class RandomCmdTask(RandomForwardBackTask):
 def get_task(task_type: str):
     if task_type == 'basic':
         return BasicTask
-    elif task_type == 'randFB':
-        return RandomForwardBackTask
     elif task_type == 'randLn':
         return RandomLinearCmdTask
     elif task_type == 'randCmd':

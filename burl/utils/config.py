@@ -13,7 +13,7 @@ class Options(object):
         self.add_disturbance = True
         self.trn_type = 'plain'
         self.tg_init = 'fixed'
-        self.schedule = 'fixed'
+        self.lr_scheduler = 'fixed'
         self.task_type = 'basic'
         self.random_dynamics = False
         self.actuator_net = None
@@ -54,13 +54,13 @@ class RenderParam(object):
 class PPOParam(object):
     def __init__(self):
         self.storage_len = 256
-        self.num_learning_epochs = 4
+        self.repeat_times = 4
         self.num_mini_batches = 1
-        self.clip_param = 0.2
+        self.clip_ratio = 0.2
         self.gamma = 0.995
-        self.lambda_ = 0.95
+        self.lambda_gae = 0.95
         self.value_loss_coef = 1.0
-        self.entropy_coef = 0.
+        self.entropy_coef = 3e-3
         self.learning_rate = 1e-4
         self.max_grad_norm = 1.0
         self.use_clipped_value_loss = True
@@ -77,6 +77,7 @@ class TrainParam(object):
         self.extero_layer_dims = (72, 64)
         self.proprio_layer_dims = ()
         self.action_layer_dims = (256, 128, 64)
+        # self.action_layer_dims = (512, 256, 128)
 
 
 class RuntimeParam(object):
@@ -84,7 +85,7 @@ class RuntimeParam(object):
         self.log_dir = f'log/{timestamp()}'
         self.run_name = None
         self.use_mp = True
-        self.rewards_weights = (('LinearVelocityReward', 0.06),
+        self.rewards_weights = (('LinearVelocityReward', 0.12),
                                 ('YawRateReward', 0.06),
                                 ('VerticalLinearPenalty', 0.04),
                                 ('AliveReward', 0.12),

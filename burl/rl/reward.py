@@ -121,12 +121,13 @@ class VerticalLinearPenalty(Reward):
 
 
 class BodyPosturePenalty(Reward):
-    def __init__(self, roll_upper=np.pi / 12, pitch_upper=np.pi / 12):
+    def __init__(self, roll_upper=np.pi / 12, pitch_upper=np.pi / 24):
         self.roll_reshape = quadratic_linear_reshape(roll_upper)
         self.pitch_reshape = quadratic_linear_reshape(pitch_upper)
 
     def __call__(self, cmd, env, robot):
         r, p, _ = env.getSafetyRpyOfRobot()
+        # print(np.array([r, self.roll_reshape(r), p, self.pitch_reshape(p)]))
         return -(self.roll_reshape(r) + self.pitch_reshape(p)) / 2
 
 
@@ -210,9 +211,9 @@ class BodyCollisionPenalty(Reward):
 
 
 class TorquePenalty(Reward):
-    def __init__(self, upper=900):
-        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
-        # self.reshape = lambda x: x / upper
+    def __init__(self, upper=1600):
+        # self.reshape = np.vectorize(quadratic_linear_reshape(upper))
+        self.reshape = lambda x: x / upper
 
     def __call__(self, cmd, env, robot):
         return -sum(self.reshape(robot.getLastAppliedTorques() ** 2))
