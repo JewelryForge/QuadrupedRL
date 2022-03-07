@@ -2,14 +2,26 @@ import sys
 
 sys.path.append('.')
 from burl.rl.runner import PolicyTrainer
-from burl.utils import g_cfg, log_warn, init_logger, parse_args, timestamp
+from burl.utils import g_cfg, log_warn, init_logger, parse_args, find_log
 import wandb
 
+resume_params = {'run_id': None, 'time': None, 'epoch': None}
 
-def update_cfg_from_args():
+
+def update_cfg_from_wandb_and_args():
     abbrs = {'num_iters': 'num_iterations',
              'rand_dyn': 'random_dynamics'}
-    for name, value in parse_args():
+    resume_args = dict(parse_args())
+    try:
+        resume_params['run_id'] = resume_args.pop('run_id')
+        resume_params['time'] = resume_args.pop('time')
+        resume_params['epoch'] = resume_args.pop('epoch')
+    except KeyError:
+        raise RuntimeError('Args must contain `run_id`, `time` and `epoch` to resume')
+
+    wandb.init(project='teacher-student', resume="allow", id=resume_params['run_id'])
+    g_cfg.update(wandb.config)
+    for name, value in resume_args.items():
         if name == 'mp_train':
             g_cfg.use_wandb = True
             g_cfg.use_mp = True
@@ -36,22 +48,10 @@ def update_cfg_from_args():
 
 def main():
     init_logger()
-    if len(sys.argv) > 1:
-        update_cfg_from_args()
-    else:
-        g_cfg.num_envs = 1
-        g_cfg.trn_type = 'plain'
-        g_cfg.rendering = True
-        g_cfg.use_mp = False
-        g_cfg.use_wandb = False
-        g_cfg.sleeping_enabled = False
-        g_cfg.lr_scheduler = 'fixed'
+    update_cfg_from_wandb_and_args()
     log_warn(f'Training on {g_cfg.device}')
-    wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
-               mode=None if g_cfg.use_wandb else 'disabled')
-    if not g_cfg.log_dir:
-        g_cfg.log_dir = f'log/{timestamp()}:{wandb.run.id}'
     runner = PolicyTrainer(g_cfg.task_type)
+    runner.load(find_log(time=resume_params['time'], epoch=resume_params['epoch']))
     runner.learn()
 
 

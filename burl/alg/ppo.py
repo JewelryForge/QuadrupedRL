@@ -146,7 +146,7 @@ class PPO(object):
         self.num_mini_batches = g_cfg.num_mini_batches
         self.repeat_times = g_cfg.repeat_times
         self.clip_ratio = g_cfg.clip_ratio
-        self.use_clipped_value_loss = g_cfg.use_clipped_value_loss
+        self.clip_value_loss = g_cfg.clip_value_loss
         self.value_loss_coef = g_cfg.value_loss_coef
         self.entropy_coef = g_cfg.entropy_coef
         self.max_grad_norm = g_cfg.max_grad_norm
@@ -236,7 +236,7 @@ class PPO(object):
             surrogate_loss = -torch.min(surrogate, surrogate_clipped).mean()
 
             # Value function loss
-            if self.use_clipped_value_loss:
+            if self.clip_value_loss:
                 value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_ratio,
                                                                                                 self.clip_ratio)
                 value_losses = (value_batch - returns_batch).pow(2)

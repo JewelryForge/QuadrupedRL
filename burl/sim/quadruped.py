@@ -9,12 +9,11 @@ from typing import Deque
 import numpy as np
 import pybullet
 import pybullet_data
-from pybullet_utils import bullet_client
 
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import PdMotorSim, ActuatorNetSim, ActuatorNetWithHistorySim
-from burl.utils import ang_norm, JointInfo, DynamicsInfo, vec_cross, sign, included_angle, safe_asin, safe_acos
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, safe_asin, safe_acos
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 TP_ZERO3 = (0., 0., 0.)
@@ -44,10 +43,11 @@ class Quadruped(object):
     JOINT_SUFFIX: tuple[str]
     URDF_FILE: str
     LINK_LENGTHS: tuple
-    HIP_OFFSETS: tuple[tuple[float]]  # 4 * 3, hip joint coordinates in base frame
+    HIP_OFFSETS: tuple[tuple[float]]  # 4x3, hip joint coordinates in base frame
     STANCE_HEIGHT: float  # base height to foot joints when standing
     STANCE_FOOT_POSITIONS: tuple[tuple[float]]
     STANCE_POSTURE: tuple
+    JOINT_LIMITS: tuple[tuple[float]]  # 2x3x4
     FOOT_RADIUS: float
     TORQUE_LIMITS: tuple
     ROBOT_SIZE: tuple
@@ -66,18 +66,17 @@ class Quadruped(object):
                  random_dynamics=False, self_collision_enabled=False,
                  actuator_net=None):
         self._env, self._frequency = sim_env, execution_frequency
+        motor_common_param = dict(frequency=execution_frequency,
+                                  input_latency=motor_latencies[0], output_latency=motor_latencies[1],
+                                  joint_limits=np.array(getattr(self, 'JOINT_LIMITS', None)).reshape(-1, 2),
+                                  torque_limits=self.TORQUE_LIMITS)
         if not actuator_net:
-            self._motor = PdMotorSim(self.P_PARAMS, self.D_PARAMS, frequency=execution_frequency,
-                                     input_latency=motor_latencies[0], output_latency=motor_latencies[1],
-                                     torque_limits=self.TORQUE_LIMITS)
+            self._motor = PdMotorSim(self.P_PARAMS, self.D_PARAMS, **motor_common_param)
         elif actuator_net == 'single':
-            self._motor = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'),
-                                         input_latency=motor_latencies[0], output_latency=motor_latencies[1],
-                                         frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
+            self._motor = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'), **motor_common_param)
         elif actuator_net == 'history':
             self._motor = ActuatorNetWithHistorySim(os.path.join(burl.rsc_path, 'actuator_net_with_history.pt'),
-                                                    input_latency=motor_latencies[0], output_latency=motor_latencies[1],
-                                                    frequency=execution_frequency, torque_limits=self.TORQUE_LIMITS)
+                                                    **motor_common_param)
         else:
             raise NotImplementedError(f'Unknown Actuator Net Type {actuator_net}')
         self._latency = latency
@@ -582,8 +581,8 @@ class Quadruped(object):
                   f"{float_e(dyn.inertia[0])} {float_e(dyn.inertia[1])} {float_e(dyn.inertia[2])}")
 
     def analyseDynamicsInfos(self):
-        for i in range(p.getNumJoints(self._body_id)):
-            print(p.getDynamicsInfo(self._body_id, i))
+        for i in range(self._env.getNumJoints(self._body_id)):
+            print(self._env.getDynamicsInfo(self._body_id, i))
 
 
 class A1(Quadruped):
@@ -612,30 +611,23 @@ class A1(Quadruped):
         """
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
-        shoulder_len, thigh_len, shank_len = self.LINK_LENGTHS
+        l_shoulder, l_thigh, l_shank = self.LINK_LENGTHS
         if self.LEG_NAMES[leg].endswith('R'):
-            shoulder_len *= -1
+            l_shoulder *= -1
 
         def _ik_hip_frame(_pos):
-            dx, dy, dz = _pos
-            distance = math.hypot(*_pos)
-            hip_angle_bias = math.atan2(dy, dz)
-            _sin = distance * shoulder_len / math.hypot(dy, dz) / distance
-            _sum = safe_asin(_sin)
-            hip_angle = min(ang_norm(_sum - hip_angle_bias), ang_norm(np.pi - _sum - hip_angle_bias), key=abs)
-            shoulder_vector = np.array((0, math.cos(hip_angle), math.sin(hip_angle))) * shoulder_len
-            foot_position_shoulder = _pos - shoulder_vector
-            dist_foot_shoulder = math.hypot(*foot_position_shoulder)
-            thigh_len_2, shank_len_2, dist_foot_shoulder_2 = \
-                thigh_len ** 2, shank_len ** 2, dist_foot_shoulder ** 2
-            _cos = (thigh_len_2 + shank_len_2 - dist_foot_shoulder_2) / (2 * thigh_len * shank_len)
-            angle_shank = safe_acos(_cos) - np.pi
-
-            _cos = (thigh_len_2 + dist_foot_shoulder_2 - shank_len_2) / (2 * thigh_len * dist_foot_shoulder)
-            angle_thigh = safe_acos(_cos)
-            normal = vec_cross(shoulder_vector, vec_cross((0, 0, -1), shoulder_vector))
-            angle_thigh -= included_angle(normal, foot_position_shoulder) * sign(dx)
-            return hip_angle, ang_norm(angle_thigh), ang_norm(angle_shank)
+            dx, dy, dz = _pos  # dz must lower than shoulder length
+            l_stretch = math.sqrt((_pos ** 2).sum() - l_shoulder ** 2)
+            a_hip_bias = math.atan2(dy, dz)
+            _sum = safe_asin(l_shoulder / math.hypot(dy, dz))
+            a_hip = min(ang_norm(_sum - a_hip_bias), ang_norm(np.pi - _sum - a_hip_bias), key=abs)
+            a_stretch = -safe_asin(dx / l_stretch)
+            a_shank = safe_acos((l_shank ** 2 + l_thigh ** 2 - l_stretch ** 2) / (2 * l_shank * l_thigh)) - math.pi
+            a_thigh = a_stretch - safe_asin(l_shank * math.sin(a_shank) / l_stretch)
+            if hasattr(self, 'JOINT_LIMITS'):
+                limits = self.JOINT_LIMITS[leg * 3: leg * 3 + 3]
+                return np.clip((a_hip, a_thigh, a_shank), *zip(*limits))
+            return np.array((a_hip, a_thigh, a_shank))
 
         pos = np.asarray(pos)
         if frame == Quadruped.WORLD_FRAME:  # FIXME: COORDINATE TRANSFORMATION SEEMS TO BE WRONG
@@ -645,9 +637,9 @@ class A1(Quadruped):
         if frame == Quadruped.HIP_FRAME:
             return _ik_hip_frame(pos)
         if frame == Quadruped.SHOULDER_FRAME:
-            return _ik_hip_frame(pos + (0, shoulder_len, 0))
+            return _ik_hip_frame(pos + (0, l_shoulder, 0))
         if frame == Quadruped.INIT_FRAME:
-            return _ik_hip_frame(pos + (0, shoulder_len, 0) + self.STANCE_FOOT_POSITIONS[leg])
+            return _ik_hip_frame(pos + (0, l_shoulder, 0) + self.STANCE_FOOT_POSITIONS[leg])
         raise RuntimeError(f'Unknown Frame {frame}')
 
     def forwardKinematics(self, leg: int, angles) -> Odometry:
@@ -710,6 +702,7 @@ class AlienGo(A1):
     FOOT_RADIUS = 0.02649
     STANCE_FOOT_POSITIONS = ((0., 0., -STANCE_HEIGHT),) * 4
     STANCE_POSTURE = (0., 0.6435, -1.287) * 4
+    JOINT_LIMITS = ((-1.22, 1.22), (-np.inf, np.inf), (-2.77, -0.7)) * 4
     TORQUE_LIMITS = ((-44.4,) * 12, (44.4,) * 12)
     ROBOT_SIZE = ((-0.325, 0.325), (-0.155, 0.155))
     P_PARAMS = 100
@@ -731,20 +724,18 @@ class AlienGo(A1):
 
 
 if __name__ == '__main__':
-    import time
     from burl.sim.terrain import PlainTerrain
 
-    p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
-    p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    terrain = PlainTerrain(p)
-    q = AlienGo(sim_env=p, on_rack=False)
-    q.analyseJointInfos()
-    p.setGravity(0, 0, -9.8)
+    pybullet.connect(pybullet.GUI)
+    pybullet.setTimeStep(2e-3)
+    pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
+    terrain = PlainTerrain(pybullet)
+    robot = AlienGo(on_rack=True)
+    # robot.analyseJointInfos()
+    pybullet.setGravity(0, 0, -9.8)
 
     for _ in range(100000):
-        p.stepSimulation()
-        q.updateObservation()
-        time.sleep(1. / 240)
-        tq = q.applyCommand(q.STANCE_POSTURE)
-        # print(q.position, q.rpy)
-        # print(q.getHorizontalFrameInBaseFrame())
+        pybullet.stepSimulation()
+        robot.updateObservation()
+        # time.sleep(1. / 500)
+        tq = robot.applyCommand(robot.STANCE_POSTURE)

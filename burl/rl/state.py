@@ -260,8 +260,12 @@ class Action:
         self.foot_pos_residuals = np.zeros(12)
 
     biases = np.zeros(16)
+    # weights = np.concatenate((
+    #     (0.01,) * 4, (0.1, 0.1, 0.025) * 4
+    # ))
+
     weights = np.concatenate((
-        (0.01,) * 4, (0.1, 0.1, 0.025) * 4
+        (0.1,) * 4, (0.25, 0.15, 0.1) * 4
     ))
 
     @classmethod

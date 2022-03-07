@@ -493,7 +493,7 @@ if __name__ == '__main__':
 
     g_cfg.on_rack = False
     g_cfg.trn_type = 'plain'
-    g_cfg.add_disturbance = True
+    g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
     g_cfg.test_profile()
@@ -502,14 +502,14 @@ if __name__ == '__main__':
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
-    tg = True,
+    tg = True
     if tg:
         env = FixedTgEnv(AlienGo)
         env.initObservation()
         for i in range(1, 100000):
             *_, reset, _ = env.step(Action())
-            if reset:
-                env.reset()
+            # if reset:
+            #     env.reset()
     else:
         env = QuadrupedEnv(AlienGo)
         env.initObservation()

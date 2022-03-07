@@ -105,8 +105,10 @@ def timestamp():
     return datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
 
-def str2time(time_str):
+def str2time(time_str: str):
     try:
+        if ':' in time_str:
+            time_str, _ = time_str.split(':')
         return datetime.strptime(time_str, '%y-%m-%d_%H-%M-%S')
     except ValueError:
         return datetime(1900, 1, 1)
@@ -171,12 +173,12 @@ def find_log_remote(host='jewel@61.153.52.71', port=10022, log_dir='teacher-stud
 def parse_args(argv=None):
     if argv is None:
         argv = sys.argv[1:]
-    args, kwargs = iter(argv), {}
+    args = iter(argv)
     while True:
         try:
             name = next(args)
         except StopIteration:
-            break
+            return
         assert name.startswith('--'), ValueError(f"{name} doesn't start with --")
         name = name.removeprefix('--')
         if '=' in name:
@@ -188,8 +190,7 @@ def parse_args(argv=None):
             else:
                 value = True
         name = name.replace('-', '_')
-        kwargs[name] = value
-    return kwargs
+        yield name, value
 
 
 if __name__ == '__main__':

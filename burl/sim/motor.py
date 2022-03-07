@@ -9,7 +9,14 @@ from burl.sim.ident import ActuatorNet, ActuatorNetWithHistory
 
 
 class MotorSim(object):
-    def __init__(self, frequency=500, input_latency=0., output_latency=0., torque_limits=None, cmd_clip=None):
+    def __init__(self, frequency=500, input_latency=0., output_latency=0.,
+                 joint_limits=None, torque_limits=None, cmd_clip=None):
+        if joint_limits is not None:
+            joint_limits = np.asarray(joint_limits)
+            self._joint_lower = np.asarray(joint_limits[:, 0])
+            self._joint_upper = np.asarray(joint_limits[:, 1])
+            assert all(self._joint_lower < self._joint_upper)
+
         if torque_limits:
             torque_limits = np.asarray(torque_limits)
             if not torque_limits.shape:
@@ -19,7 +26,6 @@ class MotorSim(object):
                 self._min_torque = np.asarray(torque_limits[0])
                 self._max_torque = np.asarray(torque_limits[1])
                 assert all(self._min_torque < self._max_torque)
-
         self._cmd_clip = cmd_clip
         self._observe_done = False
         self._pos, self._vel, self._residue = 0., 0., None
@@ -45,6 +51,8 @@ class MotorSim(object):
         self._pos, self._vel = observation
 
     def apply_hybrid(self, des_pos, ff_torque):
+        if hasattr(self, '_joint_lower'):
+            des_pos = np.clip(des_pos, self._joint_lower, self._joint_upper)
         self._residue = des_pos - self._pos
         if self._cmd_clip:
             self._residue = np.clip(self._residue, -self._cmd_clip, self._cmd_clip)
@@ -70,8 +78,9 @@ class MotorSim(object):
 
 
 class PdMotorSim(MotorSim):
-    def __init__(self, kp, kd, frequency=500, input_latency=0., output_latency=0., torque_limits=None, cmd_clip=None):
-        super().__init__(frequency, input_latency, output_latency, torque_limits, cmd_clip)
+    def __init__(self, kp, kd, frequency=500, input_latency=0., output_latency=0.,
+                 joint_limits=None, torque_limits=None, cmd_clip=None):
+        super().__init__(frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
         self._kp, self._kd = np.asarray(kp), np.asarray(kd)
         self._kp_part, self._kd_part = 0., 0.
 
@@ -82,8 +91,8 @@ class PdMotorSim(MotorSim):
 
 class ActuatorNetSim(MotorSim):
     def __init__(self, model_path, device='cpu', frequency=500, input_latency=0., output_latency=0.,
-                 torque_limits=None, cmd_clip=0.2):
-        super().__init__(frequency, input_latency, output_latency, torque_limits, cmd_clip)
+                 joint_limits=None, torque_limits=None, cmd_clip=0.2):
+        super().__init__(frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
         model_info = torch.load(model_path, map_location={'cuda:0': device})
         self.net = ActuatorNet(hidden_dims=model_info['hidden_dims']).to(device)
         self.net.load_state_dict(model_info['model'])
@@ -96,8 +105,8 @@ class ActuatorNetSim(MotorSim):
 
 class ActuatorNetWithHistorySim(MotorSim):
     def __init__(self, model_path, device='cpu', frequency=500, input_latency=0., output_latency=0.,
-                 torque_limits=None, cmd_clip=0.2):
-        super().__init__(frequency, input_latency, output_latency, torque_limits, cmd_clip)
+                 joint_limits=None, torque_limits=None, cmd_clip=0.2):
+        super().__init__(frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
         model_info = torch.load(model_path, map_location={'cuda:0': device})
         self.net = ActuatorNetWithHistory(hidden_dims=model_info['hidden_dims']).to(device)
         self.net.load_state_dict(model_info['model'])

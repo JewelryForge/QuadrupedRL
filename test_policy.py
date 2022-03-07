@@ -10,7 +10,7 @@ if __name__ == '__main__':
     g_cfg.trn_roughness = 0.05
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
-    g_cfg.add_disturbance = False
+    g_cfg.add_disturbance = True
     g_cfg.actuator_net = 'history'
     g_cfg.tg_init = 'symmetric'
     init_logger()

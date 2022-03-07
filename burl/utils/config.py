@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 
-from burl.utils import timestamp
-
 
 class Options(object):
     def __init__(self):
@@ -13,7 +11,7 @@ class Options(object):
         self.add_disturbance = True
         self.trn_type = 'plain'
         self.tg_init = 'fixed'
-        self.lr_scheduler = 'fixed'
+        self.lr_scheduler = ''
         self.task_type = 'basic'
         self.random_dynamics = False
         self.actuator_net = None
@@ -63,7 +61,7 @@ class PPOParam(object):
         self.entropy_coef = 3e-3
         self.learning_rate = 1e-4
         self.max_grad_norm = 1.0
-        self.use_clipped_value_loss = True
+        self.clip_value_loss = True
         self.desired_kl = 0.01
 
 
@@ -73,7 +71,7 @@ class TrainParam(object):
         self.num_envs = 8
         self.init_noise_std = 0.1
         self.save_interval = 50
-        self.device = torch.device('cuda')
+        self.device = 'cuda'
         self.extero_layer_dims = (72, 64)
         self.proprio_layer_dims = ()
         self.action_layer_dims = (256, 128, 64)
@@ -82,7 +80,7 @@ class TrainParam(object):
 
 class RuntimeParam(object):
     def __init__(self):
-        self.log_dir = f'log/{timestamp()}'
+        self.log_dir = ''
         self.run_name = None
         self.use_mp = True
         self.rewards_weights = (('LinearVelocityReward', 0.12),
@@ -165,8 +163,6 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, Disturbanc
     def __setattr__(self, key, value):
         if not hasattr(self, '_init'):
             return object.__setattr__(self, key, value)
-        if key == 'device':
-            value = torch.device(value)
         if (default_value := getattr(self, key)) is not None:
             if not isinstance(default_value, str) and isinstance(value, str):
                 value = eval(value)
