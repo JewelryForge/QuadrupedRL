@@ -236,14 +236,15 @@ class PPO(object):
             surrogate_loss = -torch.min(surrogate, surrogate_clipped).mean()
 
             # Value function loss
-            if self.clip_value_loss:
-                value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_ratio,
-                                                                                                self.clip_ratio)
-                value_losses = (value_batch - returns_batch).pow(2)
-                value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped).mean()
-            else:
-                value_loss = (returns_batch - value_batch).pow(2).mean()
+            # if self.clip_value_loss:
+            #     value_clipped = target_values_batch + (value_batch - target_values_batch).clamp(-self.clip_ratio,
+            #                                                                                     self.clip_ratio)
+            #     value_losses = (value_batch - returns_batch).pow(2)
+            #     value_losses_clipped = (value_clipped - returns_batch).pow(2)
+            #     value_loss = torch.max(value_losses, value_losses_clipped).mean()
+            # else:
+
+            value_loss = (returns_batch - value_batch).pow(2).mean() / (value_batch.std() + 1e-6)
 
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
 

@@ -93,7 +93,7 @@ class RuntimeParam(object):
                                 ('FootSlipPenalty', 0.04),
                                 # ('TrivialStridePenalty', 0.06),
                                 # ('TorqueGradientPenalty', 0.04),
-                                ('ClearanceOverTerrainReward', 0.04),
+                                ('ClearanceOverTerrainReward', 0.0),
                                 ('BodyCollisionPenalty', 0.04),
                                 ('TorquePenalty', 0.01),
                                 ('CostOfTransportReward', 0.),

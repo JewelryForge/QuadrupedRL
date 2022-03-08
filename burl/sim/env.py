@@ -60,6 +60,8 @@ class QuadrupedEnv(object):
         if self._gui:
             self._initRendering()
         self._action_buffer = deque(maxlen=10)
+        self._external_force = np.array((0., 0., 0.))
+        self._external_torque = np.array((0., 0., 0.))
 
     def _resetStates(self):
         self._sim_step_counter = 0
@@ -69,8 +71,6 @@ class QuadrupedEnv(object):
         self._est_Y = None
         self._est_Z = None
         self._est_height = 0.0
-        self._external_force = np.array((0., 0., 0.))
-        self._external_torque = np.array((0., 0., 0.))
 
     sim_time = property(lambda self: self._sim_step_counter / g_cfg.sim_frequency)
     sim_step = property(lambda self: self._sim_step_counter)

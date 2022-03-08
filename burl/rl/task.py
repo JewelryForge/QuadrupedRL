@@ -33,7 +33,7 @@ class BasicTask(RewardRegistry):
 
     def onInit(self):
         for cur in self.curriculums:
-            cur.onReset(self._cmd, self._robot, self._env)
+            cur.onInit(self._cmd, self._robot, self._env)
 
     def onSimulationStep(self):
         for cur in self.curriculums:
@@ -151,6 +151,7 @@ class RandomLinearCmdTask(BasicTask):
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
         self._cmd = self.random_cmd()
+        super().reset()
 
     def onStep(self):
         if self._env.sim_step >= self.last_update + self.update_interval:

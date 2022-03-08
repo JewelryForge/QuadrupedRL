@@ -8,6 +8,9 @@ __all__ = ['LinearVelocityReward', 'OrthogonalLinearPenalty', 'YawRateReward', '
            'FootSlipPenalty', 'ClearanceOverTerrainReward', 'CostOfTransportReward', 'TrivialStridePenalty',
            'AliveReward', 'RewardRegistry']
 
+ATANH0_95 = math.atanh(0.95)
+ATANH0_9 = math.atanh(0.9)
+
 
 class Reward(ABC):
     def __call__(self, cmd, env, robot):
@@ -15,7 +18,7 @@ class Reward(ABC):
 
 
 def tanh2_reshape(lower, upper):
-    w = np.sqrt(np.arctanh(0.95)) / (upper - lower)
+    w = np.sqrt(ATANH0_95) / (upper - lower)
 
     def _reshape(v):
         return np.tanh(np.power((v - lower) * w, 2)) if v > lower else 0
@@ -24,7 +27,7 @@ def tanh2_reshape(lower, upper):
 
 
 def tanh2_reverse(lower, upper, value):
-    w = np.sqrt(np.arctanh(0.95)) / (upper - lower)
+    w = np.sqrt(ATANH0_95) / (upper - lower)
     return np.sqrt(np.arctanh(value)) / w + lower
 
 
@@ -34,7 +37,7 @@ def tanh_reshape(lower, upper):
     :return: function f
     """
     middle = (lower + upper) / 2
-    w = np.arctanh(0.9) / (upper - middle)
+    w = ATANH0_9 / (upper - middle)
 
     def _reshape(v):
         return np.tanh((v - middle) * w)
@@ -44,7 +47,7 @@ def tanh_reshape(lower, upper):
 
 def tanh_reverse(lower, upper, value):
     middle = (lower + upper) / 2
-    w = np.arctanh(0.9) / (upper - middle)
+    w = ATANH0_9 / (upper - middle)
     return np.arctanh(value) / w + middle
 
 
@@ -67,13 +70,21 @@ def quadratic_linear_reshape(upper):
 
 
 class LinearVelocityReward(Reward):
-    def __init__(self, lower=-0.8, upper=0.8):
-        self.reshape = tanh_reshape(lower, upper)
+    def __init__(self, forward=0.8, lateral=0.4):
+        self.forward, self.lateral = forward, lateral
+        self.forward_lateral = forward * lateral
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()
         projected_velocity = np.dot(cmd[:2], linear[:2])
-        return self.reshape(projected_velocity)
+        return self.reshape(self.get_desired_velocity(cmd), projected_velocity)
+
+    def get_desired_velocity(self, cmd):
+        return self.forward_lateral / math.hypot(self.lateral * cmd[0], self.forward * cmd[1])
+
+    @staticmethod
+    def reshape(scale, value):
+        return math.tanh(value * ATANH0_9 / scale)
 
 
 class YawRateReward(Reward):

@@ -1,4 +1,5 @@
 import math
+import random
 
 import numpy as np
 
@@ -43,6 +44,9 @@ class GameInspiredCurriculum(object):
         if self.difficulty < self.max_difficulty:
             self.difficulty += 1
 
+    def onInit(self, cmd, robot, env):
+        pass
+
     def onSimulationStep(self, cmd, robot, env):
         pass
 
@@ -65,7 +69,9 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
         super().__init__(10, 5, aggressive)
         self.force_magnitude = np.array(g_cfg.force_magnitude)
         self.torque_magnitude = np.array(g_cfg.torque_magnitude)
-        self.update_interval = g_cfg.disturbance_interval_steps
+        self.interval_range = (500, 1000)
+        self.update_interval = random.uniform(*self.interval_range)
+        self.last_update = 0
 
     def updateDisturbance(self, env):
         if self.difficulty:
@@ -84,13 +90,20 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
             # external_torque = np.random.uniform(-torque_magnitude, torque_magnitude)
             env.setDisturbance(external_force, external_torque)
 
+    def onInit(self, cmd, robot, env):
+        self.updateDisturbance(env)
+
     def onReset(self, cmd, robot, env):
+        self.update_interval = random.uniform(*self.interval_range)
+        self.last_update = 0
         self.register(not env.is_failed)
         self.updateDisturbance(env)
 
     def onSimulationStep(self, cmd, robot, env):
-        if env.sim_step % self.update_interval == 0:
+        if env.sim_step >= self.last_update + self.update_interval:
             self.updateDisturbance(env)
+            self.update_interval = random.uniform(*self.interval_range)
+            self.last_update = env.sim_step
 
 # class TerrainCurriculum(GameInspiredCurriculum):
 #     def __init__(self, bullet_client):
