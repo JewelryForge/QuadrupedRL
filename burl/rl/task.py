@@ -17,7 +17,7 @@ class BasicTask(RewardRegistry):
             self.register(reward, weight)
 
         self.setCoefficient(0.25)
-        self.curriculums: list[GameInspiredCurriculum] = []
+        self.curricula: list[GameInspiredCurriculum] = []
         if g_cfg.add_disturbance:
             self.addCurriculum(DisturbanceCurriculum(aggressive=True))
         # self.setCoefficient(0.1 / self._weight_sum)
@@ -27,23 +27,23 @@ class BasicTask(RewardRegistry):
     robot = property(lambda self: self._robot)
 
     def addCurriculum(self, curriculum: GameInspiredCurriculum):
-        self.curriculums.append(curriculum)
+        self.curricula.append(curriculum)
         if g_cfg.test_mode:
             curriculum.maxLevel()
 
     def onInit(self):
-        for cur in self.curriculums:
+        for cur in self.curricula:
             cur.onInit(self._cmd, self._robot, self._env)
 
     def onSimulationStep(self):
-        for cur in self.curriculums:
+        for cur in self.curricula:
             cur.onSimulationStep(self._cmd, self._robot, self._env)
         if g_cfg.test_mode:
             self.collectStatistics()
 
     def onStep(self):
         info = {}
-        for cur in self.curriculums:
+        for cur in self.curricula:
             cur.onStep(self._cmd, self._robot, self._env)
             info[cur.__class__.__name__] = cur.difficulty_degree
         return info
@@ -106,7 +106,7 @@ class BasicTask(RewardRegistry):
         udp_pub.send(data)
 
     def reset(self):
-        for cur in self.curriculums:
+        for cur in self.curricula:
             cur.onReset(self._cmd, self._robot, self._env)
         if g_cfg.test_mode:
             print('cot', self.robot.getCostOfTransport())

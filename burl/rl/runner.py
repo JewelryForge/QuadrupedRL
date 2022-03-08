@@ -181,11 +181,12 @@ class Player:
             self.actor.load_state_dict(actor_state_dict)
 
     def play(self):
+        policy = self.actor.get_policy()
         with torch.inference_mode():
             actor_obs = to_dev(self.env.init_observations()[0])
 
             for _ in range(20000):
-                actions = self.actor(actor_obs)
+                actions = policy(actor_obs)
                 actor_obs, _, _, dones, info = self.env.step(actions)
                 actor_obs = actor_obs.to(g_cfg.dev)
 

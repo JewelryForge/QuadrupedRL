@@ -223,8 +223,8 @@ class BodyCollisionPenalty(Reward):
 
 class TorquePenalty(Reward):
     def __init__(self, upper=1600):
-        # self.reshape = np.vectorize(quadratic_linear_reshape(upper))
-        self.reshape = lambda x: x / upper
+        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
+        # self.reshape = lambda x: x / upper
 
     def __call__(self, cmd, env, robot):
         return -sum(self.reshape(robot.getLastAppliedTorques() ** 2))

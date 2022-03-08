@@ -48,27 +48,27 @@ class Actor(nn.Module):
 
         layer_norm(self.action_layers[-1], std=0.1)  # output layer for action
 
-        if isinstance(init_noise_std, Iterable):
-            self.log_std = nn.Parameter(torch.Tensor(init_noise_std).log(), requires_grad=True)
-        else:
-            self.log_std = nn.Parameter(torch.full((action_dim,), math.log(init_noise_std), dtype=torch.float32),
-                                        requires_grad=True)
-
         # if isinstance(init_noise_std, Iterable):
-        #     self.std = nn.Parameter(torch.Tensor(init_noise_std), requires_grad=True)
+        #     self.log_std = nn.Parameter(torch.Tensor(init_noise_std).log(), requires_grad=True)
         # else:
-        #     self.std = nn.Parameter(torch.full((action_dim,), init_noise_std, dtype=torch.float32), requires_grad=True)
+        #     self.log_std = nn.Parameter(torch.full((action_dim,), math.log(init_noise_std), dtype=torch.float32),
+        #                                 requires_grad=True)
+
+        if isinstance(init_noise_std, Iterable):
+            self.std = nn.Parameter(torch.Tensor(init_noise_std), requires_grad=True)
+        else:
+            self.std = nn.Parameter(torch.full((action_dim,), init_noise_std, dtype=torch.float32), requires_grad=True)
 
         self.distribution = None
 
     def forward(self, x):
         extero_obs, proprio_obs = x[:, :self.extero_obs_dim], x[:, self.extero_obs_dim:]
         extero_features, proprio_features = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
-        return self.action_layers(torch.concat((extero_features, proprio_features), dim=-1)).tanh()
+        return self.action_layers(torch.concat((extero_features, proprio_features), dim=-1))
 
-    @property
-    def std(self):
-        return self.log_std.exp()
+    # @property
+    # def std(self):
+    #     return self.log_std.exp()
 
     @property
     def action_mean(self):
@@ -82,10 +82,13 @@ class Actor(nn.Module):
     def entropy(self):
         return self.distribution.entropy().sum(dim=-1)
 
+    def get_policy(self):
+        return lambda x: self(x).tanh()
+
     def get_action(self, actor_obs):
-        mean = self(actor_obs)
-        self.distribution = torch.distributions.Normal(mean, self.std)
-        return self.distribution.sample()
+        mean = self(actor_obs).tanh()
+        self.distribution = torch.distributions.Normal(mean, torch.clip(self.std, 0.01))
+        return self.distribution.sample()  # .tanh()
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1)

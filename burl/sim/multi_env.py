@@ -1,5 +1,5 @@
 from collections import Iterable
-from multiprocessing import Process, Pipe
+import torch.multiprocessing as mp
 
 import numpy as np
 import torch
@@ -33,11 +33,14 @@ class EnvContainer(object):
                 if isinstance(_v, dict):
                     _infos_merged[_k] = _merge_dict_recursively([_info[_k] for _info in _infos])
                 else:
-                    _infos_merged[_k] = torch.tensor(np.array([_info[_k] for _info in _infos]))
+                    _infos_merged[_k] = torch.as_tensor(np.array([_info[_k] for _info in _infos], dtype=np.float32))
             return _infos_merged
 
-        return (torch.Tensor(np.array(actor_obs)), torch.Tensor(np.array(critic_obs)),
-                torch.Tensor(np.array(rewards)), torch.Tensor(np.array(dones)), _merge_dict_recursively(infos))
+        return (torch.as_tensor(np.array(actor_obs, dtype=np.float32)),
+                torch.as_tensor(np.array(critic_obs, dtype=np.float32)),
+                torch.as_tensor(np.array(rewards, dtype=np.float32)),
+                torch.as_tensor(np.array(dones, dtype=np.float32)),
+                _merge_dict_recursively(infos))
 
     def reset(self, ids):
         actor_obs, critic_obs = zip(*[self._envs[i].reset() for i in ids])
@@ -89,8 +92,9 @@ class EnvContainerMp2(EnvContainer):
 
     def __init__(self, make_env, num_envs=None):
         super().__init__(make_env, num_envs)
-        self._conn1, self._conn2 = zip(*[Pipe(duplex=True) for _ in range(self.num_envs)])
-        self._processes = [Process(target=self.step_in_process, args=(env, conn,))
+        # mp.set_start_method(method='spawn', force=True)
+        self._conn1, self._conn2 = zip(*[mp.Pipe(duplex=True) for _ in range(self.num_envs)])
+        self._processes = [mp.Process(target=self.step_in_process, args=(env, conn,))
                            for env, conn in zip(self._envs, self._conn1)]
         for p in self._processes:
             p.start()

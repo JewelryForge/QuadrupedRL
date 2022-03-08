@@ -184,8 +184,8 @@ class QuadrupedEnv(object):
                     lineWidth=5, lifeTime=0,
                     parentObjectUniqueId=self._robot.id,
                     replaceItemUniqueId=self._cmd_indicator)
-                if self._cmd_indicator != -1 and _cmd_indicator != self._force_indicator:
-                    self._env.removeUserDebugItem(self._force_indicator)
+                if self._cmd_indicator != -1 and _cmd_indicator != self._cmd_indicator:
+                    self._env.removeUserDebugItem(self._cmd_indicator)
                 self._cmd_indicator = _cmd_indicator
                 self._cmd_buffer = cmd
 
