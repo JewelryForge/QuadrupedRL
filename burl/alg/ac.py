@@ -88,7 +88,7 @@ class Actor(nn.Module):
     def get_action(self, actor_obs):
         mean = self(actor_obs).tanh()
         self.distribution = torch.distributions.Normal(mean, torch.clip(self.std, 0.01))
-        return self.distribution.sample()  # .tanh()
+        return torch.clip(self.distribution.sample(), -1, 1)  # .tanh()
 
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1)

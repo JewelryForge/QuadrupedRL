@@ -83,7 +83,7 @@ class RuntimeParam(object):
         self.log_dir = ''
         self.run_name = None
         self.use_mp = True
-        self.rewards_weights = (('LinearVelocityReward', 0.12),
+        self.rewards_weights = (('LinearVelocityReward', 0.16),
                                 ('YawRateReward', 0.06),
                                 ('OrthogonalLinearPenalty', 0.04),
                                 ('VerticalLinearPenalty', 0.04),

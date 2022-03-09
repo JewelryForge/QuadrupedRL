@@ -125,11 +125,6 @@ class BasicTask(RewardRegistry):
             self._torque_pen_sum = 0.0
             self._joint_motion_sum = 0.0
 
-
-    # def curriculumUpdate(self, episode_len):
-    #     distance = np.dot(self.robot.position, self._cmd)
-    #     return self._terrain.register(episode_len, distance)
-
     def isFailed(self):  # TODO: CHANGE TIME_OUT TO NORMALLY FINISH
         r, _, _ = self._robot.rpy
         safety_h = self._env.getSafetyHeightOfRobot()
@@ -146,13 +141,15 @@ class BasicTask(RewardRegistry):
 class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
+        self.stop_prob = 0.2
         self.interval_range = (1000, 2500)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
         super().__init__(env, self.random_cmd())
 
-    @staticmethod
-    def random_cmd():
+    def random_cmd(self):
+        # if random.random() < self.stop_prob:
+        #     return np.array((0., 0., 0.))
         yaw = random.uniform(0, 2 * np.pi)
         return np.array((math.cos(yaw), math.sin(yaw), 0))
 
@@ -171,8 +168,7 @@ class RandomLinearCmdTask(BasicTask):
 
 
 class RandomCmdTask(RandomLinearCmdTask):
-    @staticmethod
-    def random_cmd():
+    def random_cmd(self):
         yaw = random.uniform(0, 2 * np.pi)
         return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 1.))))
 

@@ -50,7 +50,7 @@ def main():
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     if not g_cfg.log_dir:
-        g_cfg.log_dir = f'log/{timestamp()}:{wandb.run.id}'
+        g_cfg.log_dir = f'log/{timestamp()}#{wandb.run.name}@{wandb.run.id}'
     runner = PolicyTrainer(g_cfg.task_type)
     runner.learn()
 

@@ -77,6 +77,8 @@ class LinearVelocityReward(Reward):
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()
         projected_velocity = np.dot(cmd[:2], linear[:2])
+        if (cmd[:2] == 0.).all():
+            return 1.
         return self.reshape(self.get_desired_velocity(cmd), projected_velocity)
 
     def get_desired_velocity(self, cmd):

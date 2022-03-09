@@ -107,8 +107,8 @@ def timestamp():
 
 def str2time(time_str: str):
     try:
-        if ':' in time_str:
-            time_str, _ = time_str.split(':')
+        if '#' in time_str:
+            time_str, *_ = time_str.split('#')
         return datetime.strptime(time_str, '%y-%m-%d_%H-%M-%S')
     except ValueError:
         return datetime(1900, 1, 1)
