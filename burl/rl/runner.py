@@ -170,7 +170,7 @@ class Player:
         log_info(f'Loading model {model_path}')
         model_info = torch.load(model_path)
         try:
-            self.actor.load_state_dict(model_info['actor_state_dict'])
+            self.actor.load_state_dict(model_info['actor_state_dict'], strict=False)
         except KeyError:
             model_state_dict = model_info['model_state_dict']
             actor_state_dict = {}

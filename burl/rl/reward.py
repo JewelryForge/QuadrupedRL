@@ -6,7 +6,7 @@ import numpy as np
 __all__ = ['LinearVelocityReward', 'OrthogonalLinearPenalty', 'YawRateReward', 'RollPitchRatePenalty',
            'VerticalLinearPenalty', 'BodyPosturePenalty', 'TorquePenalty',
            'FootSlipPenalty', 'ClearanceOverTerrainReward', 'CostOfTransportReward', 'TrivialStridePenalty',
-           'AliveReward', 'RewardRegistry']
+           'AliveReward', 'RewardRegistry', 'JointMotionPenalty']
 
 ATANH0_95 = math.atanh(0.95)
 ATANH0_9 = math.atanh(0.9)
@@ -151,6 +151,15 @@ class BodyHeightReward(Reward):
         return env.getSafetyHeightOfRobot()
         height = env.getSafetyHeightOfRobot()
         return 1 - self.reshape(abs(height - self.des))
+
+
+class JointMotionPenalty(Reward):
+    def __init__(self, vel_upper=6, acc_upper=500):
+        self.vel_reshape = np.vectorize(quadratic_linear_reshape(vel_upper))
+        self.acc_reshape = np.vectorize(quadratic_linear_reshape(acc_upper))
+
+    def __call__(self, cmd, env, robot):
+        return -self.vel_reshape(robot.getJointVelocities()) - self.acc_reshape(robot.getJointAccelerations())
 
 
 class TorqueGradientPenalty(Reward):

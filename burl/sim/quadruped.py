@@ -498,6 +498,12 @@ class Quadruped(object):
     def getJointVelocities(self, noisy=False):
         return self.getObservation(noisy).joint_states.velocity[self._motor_ids,]
 
+    def getJointAccelerations(self):
+        if len(self._observation_history) > 2:
+            return (self._observation.joint_states.velocity[self._motor_ids,] -
+                    self._observation_history[-2].joint_states.velocity[self._motor_ids,]) * self._frequency
+        return np.zeros(12)
+
     def getLastAppliedTorques(self):
         return self._torque
 

@@ -64,10 +64,15 @@ class BasicTask(RewardRegistry):
             self._torque_sum = 0.
             self._torque_abs_sum = 0.
             self._torque_pen_sum = 0.0
+            self._joint_motion_sum = 0.0
         self._torque_sum += rob.getLastAppliedTorques() ** 2
         self._torque_abs_sum += abs(rob.getLastAppliedTorques())
         self._torque_pen_sum += wrap(TorquePenalty)
-
+        self._joint_motion_sum += wrap(JointMotionPenalty)
+        # print(wrap(LinearVelocityReward))
+        # print(rob.getJointVelocities())
+        # print(rob.getJointAccelerations())
+        # print()
         # print(max(rob.getLastAppliedTorques()))
         # print(wrap(HipAnglePenalty))
         # print(rob.getBaseLinearVelocityInBaseFrame()[2])
@@ -90,6 +95,7 @@ class BasicTask(RewardRegistry):
                 'joint_pos': tuple(rob.getJointPositions()),
                 'commands': tuple(rob._command_history[-1]),
                 'joint_vel': tuple(rob.getJointVelocities()),
+                'joint_acc': tuple(rob.getJointAccelerations()),
                 # 'kp_part': tuple(rob._motor._kp_part),
                 # 'kd_part': tuple(rob._motor._kd_part),
                 'torque': tuple(rob.getLastAppliedTorques()),
@@ -113,9 +119,12 @@ class BasicTask(RewardRegistry):
             print('mse torque', np.sqrt(self._torque_sum / self.robot._step_counter))
             print('abs torque', self._torque_abs_sum / self.robot._step_counter)
             print('torque pen', self._torque_pen_sum / self.robot._step_counter)
+            print('joint motion pen', self._joint_motion_sum / self.robot._step_counter)
             self._torque_sum = 0.
             self._torque_abs_sum = 0.
             self._torque_pen_sum = 0.0
+            self._joint_motion_sum = 0.0
+
 
     # def curriculumUpdate(self, episode_len):
     #     distance = np.dot(self.robot.position, self._cmd)
