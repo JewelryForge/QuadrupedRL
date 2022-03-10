@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader, Dataset, random_split, ConcatDataset
 
 __all__ = ['ActuatorNet', 'ActuatorNetWithHistory']
 
+RSC_DIR = '/home/jewel/Workspaces/motor_data'
+
 
 class ActuatorNet(nn.Module):
     activation = nn.Softsign
@@ -20,14 +22,24 @@ class ActuatorNet(nn.Module):
             input_dim = dim
         layers.append(nn.Linear(input_dim, output_dim))
         self.layers = nn.Sequential(*layers)
+        self.device = torch.device('cuda')
 
     def forward(self, state):
         return self.layers(state)
 
+    def to(self, device, *args, **kwargs):
+        self.device = torch.device(device)
+        return super().to(device, *args, **kwargs)
+
     def calc_torque(self, error, error_rate, velocity):
-        device = next(self.parameters()).device
-        X = np.array((error, velocity, error_rate), dtype=np.float32).transpose()
-        return self(torch.as_tensor(X, device=device)).detach().squeeze().cpu().numpy().astype(float)
+        with torch.inference_mode():
+            X = np.array((error, velocity, error_rate), dtype=np.float32).transpose()
+            try:
+                Y = self(torch.as_tensor(X, device=self.device))
+            except RuntimeError:
+                self.device = next(self.parameters()).device
+                Y = self(torch.as_tensor(X, device=self.device))
+            return Y.double().squeeze().cpu().numpy()
 
 
 class ActuatorNetWithHistory(ActuatorNet):
@@ -38,10 +50,15 @@ class ActuatorNetWithHistory(ActuatorNet):
 
     def calc_torque(self, error, error_his1, error_his2,
                     velocity, velocity_his1, velocity_his2):
-        device = next(self.parameters()).device
-        X = np.array((error, error_his1, error_his2,
-                      velocity, velocity_his1, velocity_his2), dtype=np.float32).transpose()
-        return self(torch.as_tensor(X, device=device)).detach().squeeze().cpu().numpy().astype(float)
+        with torch.inference_mode():
+            X = np.array((error, error_his1, error_his2,
+                          velocity, velocity_his1, velocity_his2), dtype=np.float32).transpose()
+            try:
+                Y = self(torch.as_tensor(X, device=self.device))
+            except RuntimeError:
+                self.device = next(self.parameters()).device
+                Y = self(torch.as_tensor(X, device=self.device))
+            return Y.double().squeeze().cpu().numpy()
 
 
 class RobotDataset(Dataset):
@@ -97,8 +114,7 @@ class RobotDatasetWithHistory(Dataset):
 
 def train_actuator_net(actuator_net, dataset_class, lr=1e-3, num_epochs=1000, batch_size=1000, device='cuda'):
     device = torch.device(device)
-    dataset_dir = os.path.join(burl.rsc_path, 'motor_data')
-    dataset_paths = [os.path.join(dataset_dir, filename) for filename in os.listdir(dataset_dir)]
+    dataset_paths = [os.path.join(RSC_DIR, filename) for filename in os.listdir(RSC_DIR)]
     dataset = ConcatDataset([dataset_class(path) for path in dataset_paths])
     train_len = int(0.8 * len(dataset))
     test_len = len(dataset) - train_len
@@ -146,7 +162,7 @@ if __name__ == '__main__':
 
     sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
     import burl
-    from burl.utils import timestamp, log_info, init_logger, find_log
+    from burl.utils import timestamp, log_info, init_logger, find_log, MfTimer
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
     use_history_info = True
@@ -160,16 +176,17 @@ if __name__ == '__main__':
     else:
         file_name = 'actuator_net_with_history.pt' if use_history_info else 'actuator_net.pt'
         model_path = os.path.join(burl.rsc_path, file_name)
-        # model_path = find_log('/home/jewel/Workspaces/teacher-student/ident', fmt='*.pt')
+        # model_path = find_log('/home/jewel/Workspaces/teacher-student/ident', fmt='*.pt', time='1646')
         model_info = torch.load(model_path, map_location={'cuda:0': device})
         actuator_net = ActuatorNetClass(hidden_dims=model_info['hidden_dims']).to(device)
         actuator_net.load_state_dict(model_info['model'])
         # print(actuator_net)
 
-    robot_data_path = os.path.join(burl.rsc_path, 'motor_data', 'state_cmd_data_T0.6.npz')
+    robot_data_path = os.path.join(RSC_DIR, 'state_cmd_data_NoLoadT0.4.npz')
     dataset = DatasetClass(robot_data_path)
-    motor_idx = 1
-    slices = slice(5000, 10000)
+    motor_idx = 2
+    # slices = slice(10, -10)
+    slices = slice(5000, 6000)
     if not use_history_info:
         error = dataset.error[slices, motor_idx]
         error_rate = dataset.error_rate[slices, motor_idx]

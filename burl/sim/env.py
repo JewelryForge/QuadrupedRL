@@ -121,8 +121,10 @@ class QuadrupedEnv(object):
             self._terrain_indicators = [self._env.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
                                         for _ in range(36)]
             self._force_indicator = -1
+            self._torque_indicator = -1
             self._cmd_indicator = -1
             self._external_force_buffer = None
+            self._external_torque_buffer = None
             self._cmd_buffer = None
             self._time_ratio_indicator = -1
 
@@ -177,6 +179,17 @@ class QuadrupedEnv(object):
                     self._env.removeUserDebugItem(self._force_indicator)
                 self._force_indicator = _force_indicator
                 self._external_force_buffer = self._external_force
+
+            if self._external_torque_buffer is not self._external_torque:
+                _torque_indicator = self._env.addUserDebugLine(
+                    lineFromXYZ=(0., 0., 0.), lineToXYZ=self._external_torque / 10, lineColorRGB=(0., 0., 1.),
+                    lineWidth=5, lifeTime=0,
+                    parentObjectUniqueId=self._robot.id,
+                    replaceItemUniqueId=self._torque_indicator)
+                if self._torque_indicator != -1 and _torque_indicator != self._torque_indicator:
+                    self._env.removeUserDebugItem(self._torque_indicator)
+                self._torque_indicator = _torque_indicator
+                self._external_torque_buffer = self._external_torque
 
             if self._cmd_buffer is not (cmd := self._task.cmd):
                 _cmd_indicator = self._env.addUserDebugLine(

@@ -66,7 +66,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
 
 class DisturbanceCurriculum(GameInspiredCurriculum):
     def __init__(self, aggressive=False):
-        super().__init__(20, 1, aggressive)
+        super().__init__(50, 1, aggressive)
         self.force_magnitude = np.array(g_cfg.force_magnitude)
         self.torque_magnitude = np.array(g_cfg.torque_magnitude)
         self.interval_range = (500, 1000)
@@ -99,7 +99,7 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
                 vertical_force * np.random.choice((-1, 1))
             ))
 
-        external_torque = (0., 0., 0.)
+        # external_torque = (0., 0., 0.)
         env.setDisturbance(external_force, external_torque)
 
     def onInit(self, cmd, robot, env):

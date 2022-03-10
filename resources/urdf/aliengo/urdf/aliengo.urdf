@@ -5,7 +5,7 @@
 <!-- =================================================================================== -->
 <robot name="aliengo_description" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <material name="black">
-    <color rgba="0.0 0.0 0.0 1.0"/>
+    <color rgba="0.0 0.0 0.0 0.6"/>
   </material>
   <material name="blue">
     <color rgba="0.0 0.0 0.8 1.0"/>
@@ -20,7 +20,7 @@
     <color rgba="0.913725490196 0.913725490196 0.847058823529 1.0"/>
   </material>
   <material name="orange">
-    <color rgba="1.0 0.423529411765 0.0392156862745 1.0"/>
+    <color rgba="1.0 0.423529411765 0.0392156862745 0.6"/>
   </material>
   <material name="brown">
     <color rgba="0.870588235294 0.811764705882 0.764705882353 1.0"/>
