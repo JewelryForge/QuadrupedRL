@@ -138,6 +138,26 @@ class BasicTask(RewardRegistry):
         return False
 
 
+class RandomLeftRightTask(BasicTask):
+    def __init__(self, env):
+        self.update_interval = 1500
+        self.last_update = 0
+        self.last_cmd = 0
+        super().__init__(env, (0., 1., 0.))
+
+    def reset(self):
+        self.last_update = 0
+        self._cmd = np.array((0., 1., 0.))
+        super().reset()
+
+    def onStep(self):
+        if self._env.sim_step >= self.last_update + self.update_interval:
+            self._cmd = np.array((0., 1., 0.) if self.last_cmd else (0., -1., 0.))
+            self.last_cmd = 1 - self.last_cmd
+            self.last_update = self._env.sim_step
+        super().onStep()
+
+
 class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
@@ -180,5 +200,7 @@ def get_task(task_type: str):
         return RandomLinearCmdTask
     elif task_type == 'randCmd':
         return RandomCmdTask
+    # elif task_type == 'randLR':
+    #     return RandomLeftRightTask
     else:
         raise RuntimeError(f"Unknown task type '{task_type}'")

@@ -51,24 +51,24 @@ class RenderParam(object):
 
 class PPOParam(object):
     def __init__(self):
-        self.storage_len = 256
-        self.repeat_times = 4
+        self.storage_len = 128
+        self.repeat_times = 8
         self.num_mini_batches = 1
         self.clip_ratio = 0.2
         self.gamma = 0.995
         self.lambda_gae = 0.95
         self.value_loss_coef = 1.0
-        self.entropy_coef = 3e-3
+        self.entropy_coef = 4e-3
         self.learning_rate = 1e-4
         self.max_grad_norm = 1.0
-        self.clip_value_loss = True
+        # self.clip_value_loss = True
         self.desired_kl = 0.01
 
 
 class TrainParam(object):
     def __init__(self):
         self.num_iterations = 10000
-        self.num_envs = 8
+        self.num_envs = 16
         self.init_noise_std = 0.1
         self.save_interval = 50
         self.device = 'cuda'
