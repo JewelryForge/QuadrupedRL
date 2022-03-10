@@ -107,9 +107,6 @@ class OnPolicyRunner:
         logs.update({f'Task/{k}': v.numpy().mean() for k, v in locs['task_infos'].items()})
         locs['accountant'].clear()
         reward_buffer, eps_len_buffer = locs['reward_buffer'], locs['eps_len_buffer']
-        if 'difficulty' in locs:
-            logs.update({'Train/difficulty': locs['difficulty']}),
-            log_info(f"{'Difficulty:'} {locs['difficulty']:.3f}")
         if len(reward_buffer) > 0:
             reward_mean, eps_len_mean = np.mean(reward_buffer), np.mean(eps_len_buffer)
             logs.update({'Train/mean_reward': reward_mean,

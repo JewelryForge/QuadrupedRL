@@ -19,7 +19,7 @@ class BasicTask(RewardRegistry):
         self.setCoefficient(0.25)
         self.curricula: list[GameInspiredCurriculum] = []
         if g_cfg.add_disturbance:
-            self.addCurriculum(DisturbanceCurriculum(aggressive=True))
+            self.addCurriculum(DisturbanceCurriculum(aggressive=False))
         # self.setCoefficient(0.1 / self._weight_sum)
 
     cmd = property(lambda self: self._cmd)
@@ -184,7 +184,7 @@ class RandomLinearCmdTask(BasicTask):
             self._cmd = self.random_cmd()
             self.last_update = self._env.sim_step
             self.update_interval = random.uniform(*self.interval_range)
-        super().onStep()
+        return super().onStep()
 
 
 class RandomCmdTask(RandomLinearCmdTask):

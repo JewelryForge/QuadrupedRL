@@ -66,7 +66,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
 
 class DisturbanceCurriculum(GameInspiredCurriculum):
     def __init__(self, aggressive=False):
-        super().__init__(10, 5, aggressive)
+        super().__init__(20, 1, aggressive)
         self.force_magnitude = np.array(g_cfg.force_magnitude)
         self.torque_magnitude = np.array(g_cfg.torque_magnitude)
         self.interval_range = (500, 1000)
@@ -74,21 +74,33 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
         self.last_update = 0
 
     def updateDisturbance(self, env):
-        if self.difficulty:
-            force_magnitude = self.force_magnitude * self.difficulty_degree
-            torque_magnitude = self.torque_magnitude * self.difficulty_degree
-            horizontal_force = np.random.uniform(0, force_magnitude[0] * self.difficulty_degree)
+        if not self.difficulty:
+            external_force = external_torque = (0., 0., 0.)
+        else:
+            if self.difficulty < self.max_difficulty:
+                last_difficulty_degree = (self.difficulty - 1) / self.max_difficulty
+                horizontal_force = np.random.uniform(self.force_magnitude[0] * last_difficulty_degree,
+                                                     self.force_magnitude[0] * self.difficulty_degree)
+                vertical_force = np.random.uniform(self.force_magnitude[1] * last_difficulty_degree,
+                                                   self.force_magnitude[1] * self.difficulty_degree)
+                external_torque = np.random.uniform(self.torque_magnitude * last_difficulty_degree,
+                                                    self.torque_magnitude * self.difficulty_degree)
+                external_torque *= np.random.choice((1, -1), 3)
+            else:
+                # avoid catastrophic forgetting
+                horizontal_force = np.random.uniform(0, self.force_magnitude[0])
+                vertical_force = np.random.uniform(0, self.force_magnitude[1])
+                external_torque = np.random.uniform(-self.torque_magnitude, self.torque_magnitude)
+
             yaw = np.random.uniform(0, 2 * math.pi)
-            vertical_force = np.random.uniform(0, force_magnitude[1] * self.difficulty_degree)
             external_force = np.array((
                 horizontal_force * np.cos(yaw),
                 horizontal_force * np.sin(yaw),
                 vertical_force * np.random.choice((-1, 1))
             ))
 
-            external_torque = (0., 0., 0.)
-            # external_torque = np.random.uniform(-torque_magnitude, torque_magnitude)
-            env.setDisturbance(external_force, external_torque)
+        external_torque = (0., 0., 0.)
+        env.setDisturbance(external_force, external_torque)
 
     def onInit(self, cmd, robot, env):
         self.updateDisturbance(env)

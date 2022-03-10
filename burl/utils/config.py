@@ -125,7 +125,7 @@ class DisturbanceParam(object):
     def __init__(self):
         self.disturbance_interval_steps = 500
         self.force_magnitude = (20., 20.)  # horizontal vertical
-        self.torque_magnitude = (5., 10., 5.)  # x y z
+        self.torque_magnitude = (2.5, 5., 5.)  # x y z
 
 
 class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, DisturbanceParam,

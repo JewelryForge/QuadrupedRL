@@ -196,7 +196,7 @@ class ExteroObservation(ObservationBase):
         foot_contact_forces_bias, foot_contact_forces_weight = (0., 0., 30.) * 4, (0.01, 0.01, 0.02) * 4
         foot_friction_coeffs_bias, foot_friction_coeffs_weight = zero4, (1.,) * 4
         external_force_bias, external_force_weight = zero3, (0.1,) * 3
-        external_torque_bias, external_torque_weight = zero3, (0.2, 0.1, 0.2)
+        external_torque_bias, external_torque_weight = zero3, (0.4, 0.2, 0.2)
         cls.biases = np.concatenate((
             terrain_scan_bias,
             terrain_normal_bias,
