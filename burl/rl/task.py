@@ -5,7 +5,7 @@ import numpy as np
 
 from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum
 from burl.rl.reward import *
-from burl.utils import g_cfg
+from burl.utils import g_cfg, clip
 
 __all__ = ['BasicTask', 'RandomCmdTask', 'get_task']
 
@@ -191,6 +191,7 @@ class RandomCmdTask(RandomLinearCmdTask):
     def random_cmd(self):
         yaw = random.uniform(0, 2 * np.pi)
         return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 1.))))
+        # return np.array((math.cos(yaw), math.sin(yaw), clip(random.gauss(0, 0.5), -1, 1)))
 
 
 def get_task(task_type: str):

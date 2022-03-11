@@ -91,13 +91,13 @@ class LinearVelocityReward(Reward):
 
 class YawRateReward(Reward):
     def __init__(self, upper_pos=0.6, upper_neg=0.6):
-        self.reshape_pos = tanh2_reshape(0.0, upper_pos)
+        self.reshape_pos = tanh_reshape(-upper_pos, upper_pos)
         self.reshape_neg = tanh2_reshape(0.0, upper_neg)
 
     def __call__(self, cmd, env, robot):
         yaw_cmd, yaw_rate = cmd[2], robot.getBaseRpyRate()[2]
         if yaw_cmd != 0.0:
-            return self.reshape_pos(yaw_rate * yaw_cmd)
+            return self.reshape_pos(yaw_rate / yaw_cmd)
         else:
             return 1 - self.reshape_neg(abs(yaw_rate))
 

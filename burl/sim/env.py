@@ -120,13 +120,22 @@ class QuadrupedEnv(object):
             self._contact_obj_ids = []
             self._terrain_indicators = [self._env.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
                                         for _ in range(36)]
+
+        if g_cfg.show_time_ratio:
+            self._last_time_ratio = 0.
+            self._time_ratio_indicator = -1
+
+        if g_cfg.show_indicators:
             self._force_indicator = -1
             self._torque_indicator = -1
-            self._cmd_indicator = -1
+            self._tip_axis_x = None  # torque indicator plane
+            self._tip_axis_y = None
+            self._tip_last_end = None
+            self._tip_phase = 0
+            self._cmd_indicators = [-1] * 7
             self._external_force_buffer = None
             self._external_torque_buffer = None
             self._cmd_buffer = None
-            self._time_ratio_indicator = -1
 
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
@@ -158,6 +167,18 @@ class QuadrupedEnv(object):
             yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
             (x, y, _), z = self._robot.position, self._robot.STANCE_HEIGHT
             self._env.resetDebugVisualizerCamera(dist, yaw, pitch, (x, y, z))
+
+        if g_cfg.show_time_ratio:
+            if self._last_time_ratio != time_ratio:
+                _time_ratio_indicator = self._env.addUserDebugText(
+                    f'{time_ratio: .2f}', textPosition=(0., 0., 0.), textColorRGB=(1., 1., 1.),
+                    textSize=1, lifeTime=0, parentObjectUniqueId=self._robot.id,
+                    replaceItemUniqueId=self._time_ratio_indicator)
+                if self._time_ratio_indicator != -1 and _time_ratio_indicator != self._time_ratio_indicator:
+                    self._env.removeUserDebugItem(self._time_ratio_indicator)
+                self._time_ratio_indicator = _time_ratio_indicator
+                self._last_time_ratio = time_ratio
+
         self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
         if g_cfg.extra_visualization:
             for obj in self._contact_obj_ids:
@@ -169,10 +190,15 @@ class QuadrupedEnv(object):
                     obj = self._env.createMultiBody(baseVisualShapeIndex=self._contact_visual_shape,
                                                     basePosition=pos)
                     self._contact_obj_ids.append(obj)
+            positions = chain(*[self.getAbundantTerrainInfo(x, y, self._robot.rpy.y)
+                                for x, y in self._robot.getFootXYsInWorldFrame()])
+            for idc, pos in zip(self._terrain_indicators, positions):
+                self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
+        if g_cfg.show_indicators:
             if self._external_force_buffer is not self._external_force:
                 _force_indicator = self._env.addUserDebugLine(
                     lineFromXYZ=(0., 0., 0.), lineToXYZ=self._external_force / 50, lineColorRGB=(1., 0., 0.),
-                    lineWidth=5, lifeTime=0,
+                    lineWidth=3, lifeTime=1,
                     parentObjectUniqueId=self._robot.id,
                     replaceItemUniqueId=self._force_indicator)
                 if self._force_indicator != -1 and _force_indicator != self._force_indicator:
@@ -180,32 +206,47 @@ class QuadrupedEnv(object):
                 self._force_indicator = _force_indicator
                 self._external_force_buffer = self._external_force
 
-            if self._external_torque_buffer is not self._external_torque:
+            if (self._external_torque != 0).all():
+                magnitude = math.hypot(*self._external_torque)
+                axis_z = self._external_torque / magnitude
+                assistant = np.array((0., 0., 1.) if any(axis_z != (0., 0., 1.)) else (1., 0., 0.))
+                self._tip_axis_x = unit(vec_cross(axis_z, assistant))
+                self._tip_axis_y = vec_cross(axis_z, self._tip_axis_x)
+                if self._tip_last_end is None:
+                    self._tip_last_end = self._tip_axis_x * magnitude / 20
+                self._tip_phase += math.pi / 36
+                tip_end = (self._tip_axis_x * math.cos(self._tip_phase) +
+                           self._tip_axis_y * math.sin(self._tip_phase)) * magnitude / 20
                 _torque_indicator = self._env.addUserDebugLine(
-                    lineFromXYZ=(0., 0., 0.), lineToXYZ=self._external_torque / 10, lineColorRGB=(0., 0., 1.),
-                    lineWidth=5, lifeTime=0,
+                    lineFromXYZ=self._tip_last_end, lineToXYZ=tip_end, lineColorRGB=(0., 0., 1.),
+                    lineWidth=5, lifeTime=0.1,
                     parentObjectUniqueId=self._robot.id,
                     replaceItemUniqueId=self._torque_indicator)
-                if self._torque_indicator != -1 and _torque_indicator != self._torque_indicator:
-                    self._env.removeUserDebugItem(self._torque_indicator)
-                self._torque_indicator = _torque_indicator
-                self._external_torque_buffer = self._external_torque
+                self._tip_last_end = tip_end
 
-            if self._cmd_buffer is not (cmd := self._task.cmd):
-                _cmd_indicator = self._env.addUserDebugLine(
-                    lineFromXYZ=(0., 0., 0.), lineToXYZ=cmd / 2, lineColorRGB=(0., 1., 0.),
-                    lineWidth=5, lifeTime=0,
-                    parentObjectUniqueId=self._robot.id,
-                    replaceItemUniqueId=self._cmd_indicator)
-                if self._cmd_indicator != -1 and _cmd_indicator != self._cmd_indicator:
-                    self._env.removeUserDebugItem(self._cmd_indicator)
-                self._cmd_indicator = _cmd_indicator
-                self._cmd_buffer = cmd
-
-            positions = chain(*[self.getAbundantTerrainInfo(x, y, self._robot.rpy.y)
-                                for x, y in self._robot.getFootXYsInWorldFrame()])
-            for idc, pos in zip(self._terrain_indicators, positions):
-                self._env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
+            if self._cmd_buffer is not (cmd := self._task.cmd.copy()):
+                axis_x = np.array((*cmd[:2], 0))
+                axis_y = np.array((-axis_x[1], axis_x[0], 0))
+                last_end = axis_x * 0.1
+                phase, phase_inc = 0, cmd[2] / 3
+                for i, cmd_ind in enumerate(self._cmd_indicators):
+                    if i < 5:
+                        phase += phase_inc
+                    elif i == 5:
+                        phase += math.pi / 12
+                    else:
+                        phase -= math.pi / 6
+                    inc = ((axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15) * (1 if i < 5 else -1)
+                    end = last_end + inc
+                    _cmd_indicator = self._env.addUserDebugLine(
+                        lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
+                        lineWidth=5, lifeTime=1, parentObjectUniqueId=self._robot.id,
+                        replaceItemUniqueId=cmd_ind)
+                    if cmd_ind != -1 and _cmd_indicator != cmd_ind:
+                        self._env.removeUserDebugItem(cmd_ind)
+                    self._cmd_indicators[i] = _cmd_indicator
+                    if i < 5:
+                        last_end = end
 
     def setDisturbance(self, force=(0.,) * 3, torque=(0.,) * 3):
         self._external_force = np.asarray(force)
@@ -509,6 +550,7 @@ if __name__ == '__main__':
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
+    g_cfg.extra_visualization = False
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
     # g_cfg.motor_latencies = (2e-3, 0.)

@@ -45,6 +45,8 @@ class RenderParam(object):
         self.time_ratio = 1.
         self.moving_camera = True
         self.extra_visualization = True
+        self.show_indicators = True
+        self.show_time_ratio = True
         self.plot_trajectory = False
         self.single_step_rendering = False
 
