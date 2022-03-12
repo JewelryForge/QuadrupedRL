@@ -80,8 +80,8 @@ class Rotation(NDArrayBased):
         return self[:, 2].view(np.ndarray)
 
 
-ARR_ZERO3 = np.zeros(3)
-ARR_EYE3 = np.eye(3)
+ARR_ZERO3 = (0., 0., 0.)
+ARR_EYE3 = (ARR_ZERO3,) * 3
 
 
 class Odometry(object):

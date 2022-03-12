@@ -1,4 +1,4 @@
-from collections import Iterable
+from collections.abc import Iterable
 import torch.multiprocessing as mp
 
 import numpy as np

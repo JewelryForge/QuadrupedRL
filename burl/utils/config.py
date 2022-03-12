@@ -169,8 +169,11 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, Disturbanc
         if (default_value := getattr(self, key)) is not None:
             if not isinstance(default_value, str) and isinstance(value, str):
                 value = eval(value)
-            if not isinstance(value, type(default_value)):
-                raise RuntimeError(f'Value type {value} of key {key} is not {type(default_value)}')
+            if not isinstance(value, default_type := type(default_value)):
+                try:
+                    value = default_type(value)
+                except ValueError:
+                    raise RuntimeError(f'Value type {value} of key {key} is not {type(default_value)}')
         return object.__setattr__(self, key, value)
 
     def __new__(cls, *args, **kwargs):

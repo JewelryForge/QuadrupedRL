@@ -141,8 +141,7 @@ def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
 def find_log_remote(host='jewel@61.153.52.71', port=10022,
                     log_dir='teacher-student/log', fmt='model_*.pt',
                     time=None, epoch=None):
-    cmd = f'ssh -p {port} {host} ls {log_dir}'
-    print(cmd)
+    print(cmd := f'ssh -p {port} {host} ls {log_dir}')
     remote_logs = os.popen(cmd).read().split('\n')
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
@@ -150,8 +149,7 @@ def find_log_remote(host='jewel@61.153.52.71', port=10022,
     folder = _get_folder_with_specific_time(folders, time)
     dst_dir = os.path.join(log_dir, folder).replace('\\', '/')
 
-    cmd = f'ssh -p {port} {host} ls {dst_dir}'
-    print(cmd)
+    print(cmd := f'ssh -p {port} {host} ls {dst_dir}')
     models = os.popen(cmd).read().split('\n')
     prefix, suffix = fmt.split('*')
     final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in models if m)

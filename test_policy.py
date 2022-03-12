@@ -20,6 +20,5 @@ if __name__ == '__main__':
         model_path = find_log_remote(time=None, epoch=None, log_dir='teacher-student/log')
     else:
         model_path = find_log(time=None, epoch=None)
-    player = PolicyPlayer(model_path, 'randLn')
-    # player = PolicyPlayer('/data/teacher-student-backup/log/Feb15_13-59-29/model_2200.pt')
+    player = PolicyPlayer(model_path, 'randCmd')
     player.play()

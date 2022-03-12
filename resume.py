@@ -14,10 +14,10 @@ def update_cfg_from_wandb_and_args():
     resume_args = dict(parse_args())
     try:
         resume_params['run_id'] = resume_args.pop('run_id')
-        resume_params['time'] = resume_args.pop('time')
-        resume_params['epoch'] = resume_args.pop('epoch')
+        resume_params['time'] = resume_args.pop('time', None)
+        resume_params['epoch'] = resume_args.pop('epoch', None)
     except KeyError:
-        raise RuntimeError('Args must contain `run_id`, `time` and `epoch` to resume')
+        raise RuntimeError('Args must contain `run_id` to resume')
 
     wandb.init(project='teacher-student', resume="allow", id=resume_params['run_id'])
     g_cfg.update(wandb.config)
