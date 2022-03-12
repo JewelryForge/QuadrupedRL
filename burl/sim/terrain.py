@@ -1,6 +1,5 @@
 import time
 from collections.abc import Iterable
-from functools import lru_cache
 
 import numpy as np
 import pybullet
@@ -42,7 +41,7 @@ class PlainTerrain(Terrain):
         return np.array((0, 0, 1))
 
     def getPeakInRegion(self, x_range, y_range):
-        return 0.0, 0.0, 0.0
+        return sum(x_range) / 2, sum(y_range) / 2, 0.0
 
 
 class HeightFieldTerrain(Terrain):
@@ -192,23 +191,6 @@ def makeStandardRoughTerrain(pybullet_client, roughness=None, seed=None):
     return RandomUniformTerrain(
         pybullet_client, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
         roughness=roughness, resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=seed)
-
-
-def makeTerrain(pybullet_client):
-    from burl.utils import g_cfg
-    if g_cfg.trn_type == 'plain':
-        terrain = PlainTerrain(pybullet_client)
-    elif g_cfg.trn_type == 'curriculum':
-        raise NotImplementedError
-        # g_cfg.trn_offset = tuple(g_cfg.trn_size / 6 * self._cmd)
-        # terrain = TerrainCurriculum(pybullet_client)
-    elif g_cfg.trn_type == 'rough':
-        terrain = makeStandardRoughTerrain(pybullet_client, seed=2)
-    elif g_cfg.trn_type == 'slope':
-        terrain = SlopeTerrain(pybullet_client)
-    else:
-        raise RuntimeError(f'Unknown terrain type {g_cfg.trn_type}')
-    return terrain
 
 
 if __name__ == '__main__':

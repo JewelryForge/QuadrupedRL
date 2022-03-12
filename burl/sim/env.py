@@ -13,7 +13,6 @@ from pybullet_utils import bullet_client
 from burl.rl.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
 from burl.rl.task import BasicTask
 from burl.sim.quadruped import A1, AlienGo, Quadruped
-from burl.sim.terrain import makeTerrain
 from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
 from burl.utils.transforms import Rpy, Rotation
@@ -41,13 +40,14 @@ class QuadrupedEnv(object):
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
-        self._terrain = makeTerrain(self._env)
         self._robot: Quadruped = make_robot(self._env, execution_frequency=g_cfg.execution_frequency,
-                                            on_rack=g_cfg.on_rack, random_dynamics=g_cfg.random_dynamics,
+                                            random_dynamics=g_cfg.random_dynamics,
                                             motor_latencies=g_cfg.motor_latencies,
-                                            height_addition=self._terrain.getPeakInRegion(*make_robot.ROBOT_SIZE)[2],
                                             actuator_net=g_cfg.actuator_net)
         self._task = make_task(self)
+        self._terrain = self._task.makeTerrain(g_cfg.trn_type)
+        # FIXME: UNREASONABLE SPAWN
+        self._robot.spawn(g_cfg.on_rack, self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE))
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
         self._setPhysicsParameters()
@@ -59,7 +59,7 @@ class QuadrupedEnv(object):
         self._resetStates()
         if self._gui:
             self._initRendering()
-        self._action_buffer = deque(maxlen=10)
+        self._action_history = deque(maxlen=10)
         self._external_force = np.array((0., 0., 0.))
         self._external_torque = np.array((0., 0., 0.))
 
@@ -309,9 +309,9 @@ class QuadrupedEnv(object):
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
         rewards = []
         reward_details = {}
-        prev_action = self._action_buffer[-1] if self._action_buffer else np.array(self._robot.STANCE_POSTURE)
+        prev_action = self._action_history[-1] if self._action_history else np.array(self._robot.STANCE_POSTURE)
         action = np.asarray(action)
-        self._action_buffer.append(action)
+        self._action_history.append(action)
         for i in range(self._num_action_repeats):
             # update_execution = self._sim_step_counter % self._num_execution_repeats == 0
             update_execution = True  # FIXME: task.calculateReward needs robot.updateObservation
@@ -393,9 +393,9 @@ class QuadrupedEnv(object):
         self._env.disconnect()
 
     def getActionMutation(self):
-        if len(self._action_buffer) < 3:
+        if len(self._action_history) < 3:
             return 0.0
-        actions = [self._action_buffer[-i - 1] for i in range(3)]
+        actions = [self._action_history[-i - 1] for i in range(3)]
         return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
 
     def getAbundantTerrainInfo(self, x, y, yaw):
@@ -494,8 +494,14 @@ class FixedTgEnv(IkEnv):
                                                 r.getJointPosErrHistoryFromMoment(-0.02, noisy)))
         obs.joint_vel_his = np.concatenate((r.getJointVelHistoryFromMoment(-0.01, noisy),
                                             r.getJointVelHistoryFromMoment(-0.02, noisy)))
-        obs.joint_pos_target = r.getCmdHistoryFromIndex(-1)
-        obs.joint_prev_pos_target = r.getCmdHistoryFromIndex(-self._num_action_repeats - 1)
+        if not self._action_history:
+            obs.joint_pos_target = obs.joint_prev_pos_target = r.STANCE_POSTURE
+        else:
+            obs.joint_pos_target = self._action_history[-1]
+            if len(self._action_history) > 1:
+                obs.joint_prev_pos_target = self._action_history[-2]
+            else:
+                obs.joint_prev_pos_target = self.robot.STANCE_POSTURE
         obs.base_frequency = (self._stm.base_frequency,)
         return obs
 

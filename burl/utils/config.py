@@ -95,7 +95,7 @@ class RuntimeParam(object):
                                 ('BodyCollisionPenalty', 0.04),
                                 ('TorquePenalty', 0.01),
                                 ('JointMotionPenalty', 0.01),
-                                ('AliveReward', 0.14),
+                                ('AliveReward', 0.16),
                                 # ('TrivialStridePenalty', 0.06),
                                 # ('TorqueGradientPenalty', 0.04),
                                 ('CostOfTransportReward', 0.),

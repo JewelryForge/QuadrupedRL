@@ -47,7 +47,7 @@ class OnPolicyRunner:
     def learn(self):
         actor_obs, critic_obs = to_dev(*self.env.init_observations())
 
-        reward_buffer, eps_len_buffer = deque(maxlen=10), deque(maxlen=10)
+        reward_buffer, eps_len_buffer = deque(maxlen=g_cfg.num_envs), deque(maxlen=g_cfg.num_envs)
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=g_cfg.dev)
         total_iter = g_cfg.num_iterations

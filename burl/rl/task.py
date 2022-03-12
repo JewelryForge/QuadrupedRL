@@ -5,7 +5,7 @@ import numpy as np
 
 from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum
 from burl.rl.reward import *
-from burl.utils import g_cfg, clip
+from burl.utils import g_cfg
 
 __all__ = ['BasicTask', 'RandomCmdTask', 'get_task']
 
@@ -25,6 +25,18 @@ class BasicTask(RewardRegistry):
     cmd = property(lambda self: self._cmd)
     env = property(lambda self: self._env)
     robot = property(lambda self: self._robot)
+
+    def makeTerrain(self, terrain_type):
+        from burl.sim.terrain import PlainTerrain, SlopeTerrain, makeStandardRoughTerrain
+        if terrain_type == 'plain':
+            return PlainTerrain(self._env.client)
+        if terrain_type == 'curriculum':
+            raise NotImplementedError
+        if terrain_type == 'rough':
+            return makeStandardRoughTerrain(self._env.client)
+        if terrain_type == 'slope':
+            return SlopeTerrain(self._env.client)
+        raise RuntimeError(f'Unknown terrain type {terrain_type}')
 
     def addCurriculum(self, curriculum: GameInspiredCurriculum):
         self.curricula.append(curriculum)

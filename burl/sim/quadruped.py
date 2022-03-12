@@ -4,7 +4,6 @@ import math
 import os.path
 import random
 from collections import deque
-from typing import Deque
 
 import numpy as np
 import pybullet
@@ -13,7 +12,7 @@ import pybullet_data
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import PdMotorSim, ActuatorNetSim, ActuatorNetWithHistorySim
-from burl.utils import ang_norm, JointInfo, DynamicsInfo, safe_asin, safe_acos
+from burl.utils import ang_norm, JointInfo, DynamicsInfo
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 TP_ZERO3 = (0., 0., 0.)
@@ -35,8 +34,7 @@ class Quadruped(object):
     A 'get' method will give an accurate value, unless there's a 'noisy' option and 'noisy=True' is specified.
     """
 
-    INIT_POSITION: tuple
-    INIT_ORIENTATION: tuple
+    INIT_HEIGHT: float
     NUM_MOTORS = 12
     LEG_NAMES: tuple[str]
     JOINT_TYPES: tuple[str]
@@ -62,7 +60,6 @@ class Quadruped(object):
 
     def __init__(self, sim_env=pybullet, execution_frequency=500,
                  latency=0., motor_latencies=(0., 0.),
-                 height_addition=0., on_rack=False,
                  random_dynamics=False, self_collision_enabled=False,
                  actuator_net=None):
         self._env, self._frequency = sim_env, execution_frequency
@@ -82,19 +79,21 @@ class Quadruped(object):
         self._latency = latency
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
+        self._body_id = None
 
-        self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(height_addition)
+        self._observation_history: deque[ObservationRaw] = deque(maxlen=100)
+        self._observation_noisy_history: deque[ObservationRaw] = deque(maxlen=100)
+        self._command_history: deque[np.ndarray] = deque(maxlen=100)
+        self._torque_history: deque[np.ndarray] = deque(maxlen=100)
+        self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
+        # self._cot_buffer: deque[float] = deque()
+
+    def spawn(self, on_rack=False, position=(0., 0., 0.)):
+        self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(*position)
         self._analyseModelJoints()
         self._resetPosture()
         self.initPhysicsParams()
-        self.randomDynamics() if random_dynamics else self.setDynamics()
-
-        self._observation_history: Deque[ObservationRaw] = deque(maxlen=100)
-        self._observation_noisy_history: Deque[ObservationRaw] = deque(maxlen=100)
-        self._command_history: Deque[np.ndarray] = deque(maxlen=100)
-        self._torque_history: Deque[np.ndarray] = deque(maxlen=100)
-        self._cot_buffer: Deque[float] = deque(maxlen=int(2 * self._frequency))
-        # self._cot_buffer: Deque[float] = deque()
+        self.randomDynamics() if self._rand_dyn else self.setDynamics()
 
     @property
     def id(self):
@@ -122,19 +121,19 @@ class Quadruped(object):
 
     def _loadRobotOnRack(self):
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
-        robot = self._env.loadURDF(path, (0., 0., self.STANCE_HEIGHT * 2), self.INIT_ORIENTATION, flags=0)
+        position, orientation = (0., 0., self.STANCE_HEIGHT * 2), (0., 0., 0., 1.)
+        robot = self._env.loadURDF(path, position, orientation, flags=0)
         self._env.createConstraint(robot, -1, childBodyUniqueId=-1, childLinkIndex=-1,
                                    jointType=self._env.JOINT_FIXED,
                                    jointAxis=TP_ZERO3, parentFramePosition=TP_ZERO3,
-                                   childFramePosition=(0., 0., self.STANCE_HEIGHT * 2),
-                                   childFrameOrientation=Quaternion.from_rpy((0., 0., 0.)))
+                                   childFramePosition=position, childFrameOrientation=orientation)
         return robot
 
-    def _loadRobot(self, height_addition=0.0):
-        (x, y), z = self.INIT_POSITION[:2], self.INIT_POSITION[2] + height_addition
+    def _loadRobot(self, x=0., y=0., altitude=0., orientation=TP_Q0):
+        z = altitude + self.INIT_HEIGHT
         flags = pybullet.URDF_USE_SELF_COLLISION if self._self_collision else 0
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
-        return self._env.loadURDF(path, (x, y, z), self.INIT_ORIENTATION, flags=flags)
+        return self._env.loadURDF(path, (x, y, z), orientation, flags=flags)
 
     def _getJointIdByName(self, leg: str, joint_type: str):
         if isinstance(leg, str):
@@ -213,10 +212,10 @@ class Quadruped(object):
         self._torque = torques
         self._torque_history.append(torques)
 
-    def reset(self, height_addition=0.0, reload=False, in_situ=False):
+    def reset(self, altitude=0.0, reload=False, in_situ=False):
         """
         clear state histories and restore the robot to the initial state in simulation.
-        :param height_addition: The additional height of the robot at spawning, usually according to the terrain height.
+        :param altitude: The additional height of the robot at spawning, usually according to the terrain height.
         :param reload: Reload the urdf of the robot to simulation world if true.
         :param in_situ: Reset in situ if true.
         :return: Initial observation after reset.
@@ -228,17 +227,17 @@ class Quadruped(object):
         self._torque_history.clear()
         self._cot_buffer.clear()
         if reload:
-            self._body_id = self._loadRobot(height_addition)
+            self._body_id = self._loadRobot(altitude)
             self.initPhysicsParams()
         else:
+            z = self.INIT_HEIGHT + altitude
             if in_situ:
-                x, y, z = self.position[0], self.position[1], self.INIT_POSITION[2] + height_addition
+                x, y = self.position[:2]
                 _, _, yaw = self._env.getEulerFromQuaternion(self.orientation)
                 orn_q = self._env.getQuaternionFromEuler((0.0, 0.0, yaw))
                 self._env.resetBasePositionAndOrientation(self._body_id, (x, y, z), orn_q)
             else:
-                x, y, z = self.INIT_POSITION
-                self._env.resetBasePositionAndOrientation(self._body_id, (x, y, z + height_addition), TP_Q0)
+                self._env.resetBasePositionAndOrientation(self._body_id, (0., 0., z), TP_Q0)
         if self._rand_dyn:
             self.randomDynamics()
         elif reload:
@@ -592,8 +591,7 @@ class Quadruped(object):
 
 
 class A1(Quadruped):
-    INIT_POSITION = (0., 0., .33)
-    INIT_ORIENTATION = (0., 0., 0., 1.)
+    INIT_HEIGHT = 0.33
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
     JOINT_TYPES = ('hip', 'upper', 'lower', 'toe')
@@ -622,17 +620,23 @@ class A1(Quadruped):
             l_shoulder *= -1
 
         def _ik_hip_frame(_pos):
-            dx, dy, dz = _pos  # dz must lower than shoulder length
-            l_stretch = math.sqrt((_pos ** 2).sum() - l_shoulder ** 2)
-            a_hip_bias = math.atan2(dy, dz)
-            _sum = safe_asin(l_shoulder / math.hypot(dy, dz))
-            a_hip = min(ang_norm(_sum - a_hip_bias), ang_norm(np.pi - _sum - a_hip_bias), key=abs)
-            a_stretch = -safe_asin(dx / l_stretch)
-            a_shank = safe_acos((l_shank ** 2 + l_thigh ** 2 - l_stretch ** 2) / (2 * l_shank * l_thigh)) - math.pi
-            a_thigh = a_stretch - safe_asin(l_shank * math.sin(a_shank) / l_stretch)
-            if hasattr(self, 'JOINT_LIMITS'):
-                limits = self.JOINT_LIMITS[leg * 3: leg * 3 + 3]
-                return np.clip((a_hip, a_thigh, a_shank), *zip(*limits))
+            while True:
+                dx, dy, dz = _pos  # dz must lower than shoulder length
+                l_stretch = math.sqrt((_pos ** 2).sum() - l_shoulder ** 2)
+                a_hip_bias = math.atan2(dy, dz)
+                try:
+                    _sum = math.asin(l_shoulder / math.hypot(dy, dz))
+                    a_hip = min(ang_norm(_sum - a_hip_bias), ang_norm(np.pi - _sum - a_hip_bias), key=abs)
+                    a_stretch = -math.asin(dx / l_stretch)
+                    a_shank = math.acos((l_shank ** 2 + l_thigh ** 2 - l_stretch ** 2) /
+                                        (2 * l_shank * l_thigh)) - math.pi
+                    a_thigh = a_stretch - math.asin(l_shank * math.sin(a_shank) / l_stretch)
+                    break
+                except ValueError:
+                    _pos = _pos * 0.95
+            # if hasattr(self, 'JOINT_LIMITS'):
+            #     limits = self.JOINT_LIMITS[leg * 3: leg * 3 + 3]
+            #     return np.clip((a_hip, a_thigh, a_shank), *zip(*limits))
             return np.array((a_hip, a_thigh, a_shank))
 
         pos = np.asarray(pos)
@@ -694,8 +698,7 @@ class A1(Quadruped):
 
 
 class AlienGo(A1):
-    INIT_POSITION = (0., 0., .41)
-    INIT_ORIENTATION = (0., 0., 0., 1.)
+    INIT_HEIGHT = 0.41
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
     JOINT_TYPES = ('hip', 'thigh', 'calf', 'foot')
@@ -736,7 +739,8 @@ if __name__ == '__main__':
     pybullet.setTimeStep(2e-3)
     pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = PlainTerrain(pybullet)
-    robot = AlienGo(on_rack=True)
+    robot = AlienGo()
+    robot.spawn(on_rack=True)
     # robot.analyseJointInfos()
     pybullet.setGravity(0, 0, -9.8)
 
