@@ -353,7 +353,7 @@ class QuadrupedEnv(object):
         # log_debug(f'Step time: {time.time() - start}')
         return (*self.makeObservation(),
                 mean_reward,
-                self.is_failed or time_out,
+                self._is_failed or time_out,
                 info)
 
     def _addRandomDisturbanceOnRobot(self):
@@ -372,8 +372,13 @@ class QuadrupedEnv(object):
     def reset(self):
         # completely_reset = self._task.curriculumUpdate(self._sim_step_counter)
         completely_reset = False
+        # is_failed = self._is_failed
         self._task.reset()
         self._resetStates()
+        # if not is_failed:
+        #     if g_cfg.random_dynamics:
+        #         self._robot.randomDynamics()
+        #     return self.makeObservation()
         if completely_reset:
             self._env.resetSimulation()
             self._setPhysicsParameters()

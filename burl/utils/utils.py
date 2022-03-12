@@ -114,17 +114,20 @@ def str2time(time_str: str):
         return datetime(1900, 1, 1)
 
 
-def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
-    folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
-    if not time:
-        folder = folders[0]
+def _get_folder_with_specific_time(folders, time_stamp=None):
+    if not time_stamp:
+        return folders[0]
     else:
         for folder in folders:
-            if ''.join(folder.split('_')[1].split('-')).startswith(str(time)):
-                break
+            if ''.join(folder.split('_')[1].split('-')).startswith(str(time_stamp)):
+                return folder
         else:
-            raise RuntimeError(f'Record with time {time} not found')
-    folder = os.path.join(log_dir, folder)
+            raise RuntimeError(f'Record with time {time_stamp} not found')
+
+
+def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
+    folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
+    folder = os.path.join(log_dir, _get_folder_with_specific_time(folders, time))
     prefix, suffix = fmt.split('*')
     final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in os.listdir(folder))
     if epoch:
@@ -135,31 +138,29 @@ def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
     return os.path.join(folder, prefix + f'{epoch}' + suffix)
 
 
-def find_log_remote(host='jewel@61.153.52.71', port=10022, log_dir='teacher-student-dev/log', time=None, epoch=None):
-    print(f'ssh {host} -p {port} ls {log_dir}')
-    remote_logs = os.popen(f'ssh {host} -p {port} ls {log_dir}').read().split('\n')
+def find_log_remote(host='jewel@61.153.52.71', port=10022,
+                    log_dir='teacher-student/log', fmt='model_*.pt',
+                    time=None, epoch=None):
+    cmd = f'ssh -p {port} {host} ls {log_dir}'
+    print(cmd)
+    remote_logs = os.popen(cmd).read().split('\n')
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
     print('remote log items: ', *folders)
-    if not time:
-        folder = folders[0]
-    else:
-        for folder in folders:
-            if ''.join(folder.split('_')[1].split('-')).startswith(str(time)):
-                break
-        else:
-            raise RuntimeError(f'Record with time {time} not found, all {folders}')
+    folder = _get_folder_with_specific_time(folders, time)
     dst_dir = os.path.join(log_dir, folder).replace('\\', '/')
-    print(f'ssh {host} -p {port} ls {dst_dir}')
-    models = os.popen(f'ssh {host} -p {port} ls {dst_dir}').read().split('\n')
-    final_epoch = max(int(m.removeprefix('model_').removesuffix('.pt'))
-                      for m in models if m.startswith('model'))
+
+    cmd = f'ssh -p {port} {host} ls {dst_dir}'
+    print(cmd)
+    models = os.popen(cmd).read().split('\n')
+    prefix, suffix = fmt.split('*')
+    final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in models if m)
     if epoch:
         if epoch > final_epoch:
             raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
     else:
         epoch = final_epoch
-    model_name = f'model_{epoch}.pt'
+    model_name = prefix + f'{epoch}' + suffix
     remote_log = os.path.join(log_dir, folder, model_name)
     local_log_dir = os.path.join('log', 'remote-' + folder)
     if not os.path.exists(os.path.join(local_log_dir, model_name)):

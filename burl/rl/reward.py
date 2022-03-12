@@ -90,9 +90,10 @@ class LinearVelocityReward(Reward):
 
 
 class YawRateReward(Reward):
-    def __init__(self, upper_pos=0.6, upper_neg=0.6):
+    def __init__(self, upper_pos=0.6, upper_neg=0.45):
         self.reshape_pos = tanh_reshape(-upper_pos, upper_pos)
-        self.reshape_neg = tanh2_reshape(0.0, upper_neg)
+        self.reshape_neg = quadratic_linear_reshape(upper_neg)
+        # self.reshape_neg = tanh2_reshape(0.0, 0.6)
 
     def __call__(self, cmd, env, robot):
         yaw_cmd, yaw_rate = cmd[2], robot.getBaseRpyRate()[2]
@@ -326,13 +327,13 @@ class RewardRegistry(object):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    print(tanh_reverse(0.0, 2.0, -0.7))
+    # print(tanh_reverse(0.0, 2.0, -0.7))
     # print(tanh_reverse(-0.4, 0.8, 0.9))
-    # r1 = tanh2_reshape(0.0, 1.0)
-    r1 = lambda x: x / 1
-    r2 = quadratic_linear_reshape(1)
-    x = np.linspace(-2, 2, 1000)
+    r1 = tanh2_reshape(0.0, 0.6)
+    # r1 = lambda x: x / 1
+    r2 = quadratic_linear_reshape(0.45)
+    x = np.linspace(-1, 1, 1000)
     plt.plot(x, [-r1(x) for x in x])
     plt.plot(x, [-r2(x) for x in x])
-    plt.plot(x, -np.exp(x) + 1)
+    # plt.plot(x, -np.exp(x) + 1)
     plt.show()

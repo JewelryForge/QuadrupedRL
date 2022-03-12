@@ -265,7 +265,7 @@ class Action:
     # ))
 
     weights = np.concatenate((
-        (0.01,) * 4, (0.25, 0.25, 0.15) * 4
+        (0.,) * 4, (0.25, 0.25, 0.15) * 4
     ))
 
     @classmethod
