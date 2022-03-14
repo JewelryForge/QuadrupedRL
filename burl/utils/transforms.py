@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as scipyRotation
 
+__all__ = ['NDArrayBased', 'Rotation', 'Rpy', 'Odometry', 'Quaternion', 'get_rpy_rate_from_angular_velocity']
+
 
 class NDArrayBased(np.ndarray):
     def __new__(cls, matrix, skip_check=False):
@@ -28,8 +30,7 @@ class Rotation(NDArrayBased):
         matrix = np.asarray(matrix)
         if matrix.shape != (3, 3):
             return False
-        matrix_t = np.transpose(matrix)
-        error = np.eye(3) - np.dot(matrix_t, matrix)
+        error = np.eye(3) - np.dot(matrix.T, matrix)
         return np.linalg.norm(error) < 1e-6
 
     @classmethod
@@ -85,6 +86,12 @@ ARR_EYE3 = (ARR_ZERO3,) * 3
 
 
 class Odometry(object):
+    """
+    Homogeneous coordinate transformation defined by a rotation and a translation:
+        ((R_3x3, t_1x3)
+         (0_3x1, 1_1x1))
+    """
+
     def __init__(self, rotation=ARR_EYE3, translation=ARR_ZERO3):
         self.rotation, self.translation = np.asarray(rotation), np.asarray(translation)
 
@@ -94,7 +101,7 @@ class Odometry(object):
                             self.translation + self.rotation @ other.translation)
         if isinstance(other, np.ndarray):
             return self.rotation @ other + self.translation
-        raise RuntimeError(f"Unsupported datatype '{type(other)}' for multiplying")
+        raise RuntimeError(f'Unsupported datatype `{type(other)}` for multiplying')
 
     def __matmul__(self, other):
         return self.multiply(other)
@@ -135,6 +142,7 @@ class Quaternion(NDArrayBased):
 
     @classmethod
     def from_rotation(cls, r):
+        # scipy api is faster than python implementation
         return scipyRotation.from_matrix(r).as_quat()
 
     def __str__(self):
@@ -161,6 +169,8 @@ class Quaternion(NDArrayBased):
 
 
 class Rpy(NDArrayBased):
+    """ZYX intrinsic Euler Angles (roll, pitch, yaw)"""
+
     @classmethod
     def preprocess(cls, matrix):
         return matrix.squeeze()
@@ -210,8 +220,8 @@ def get_rpy_rate_from_angular_velocity(rpy, angular):
 if __name__ == '__main__':
     from burl.utils import MfTimer
 
-    r = np.array(Rotation.from_rpy((0.16, 0.28, 0.4)))
+    rot = np.array(Rotation.from_rpy((0.16, 0.28, 0.4)))
     for _ in range(10):
         with MfTimer() as timer:
-            Rpy.from_rotation(r)
+            Rpy.from_rotation(rot)
         print(timer.time_spent)

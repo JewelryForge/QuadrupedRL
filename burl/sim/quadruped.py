@@ -6,7 +6,7 @@ import random
 from collections import deque
 
 import numpy as np
-import pybullet
+import pybullet as pyb
 import pybullet_data
 
 import burl
@@ -27,11 +27,10 @@ class Quadruped(object):
     This class contains no pybullet.stepSimulation.
     Before a simulation cycle, run updateObservation() to set initial states.
     A general process is: applyCommand -> stepSimulation -> updateObservation.
-    Some attribute like position represents some current real states; run methods like getJointHistory for history.
+    Properties like position represent current real states; run methods like getJointHistory for history.
     Method updateObservation automatically saves real states and a noisy version with latency.
-    Expect some commonly used attribute like position and orientation,
-    it's suggested to use method with prefix 'get' to get observations.
-    A 'get' method will give an accurate value, unless there's a 'noisy' option and 'noisy=True' is specified.
+    A method with prefix `get` will give an accurate value,
+    unless there's a `noisy` option and `noisy=True` is specified.
     """
 
     INIT_HEIGHT: float
@@ -58,10 +57,20 @@ class Quadruped(object):
     SHOULDER_FRAME = 2
     INIT_FRAME = 3
 
-    def __init__(self, execution_frequency=500,
-                 latency=0., motor_latencies=(0., 0.),
-                 random_dynamics=False, self_collision_enabled=False,
-                 actuator_net=None):
+    def __init__(self, execution_frequency=500, latency=0., motor_latencies=(0., 0.),
+                 random_dynamics=False, self_collision_enabled=False, actuator_net=None):
+        """
+        Initialize inner states and motor models.
+        Explicitly call method `spawn` to load its urdf model to a certain pybullet client.
+        :param execution_frequency: the frequency of inner cycle, i.e. motor pd control.
+        :param latency: time latency of observing a state.
+        :param motor_latencies: the input and output latency of motor.
+        :param random_dynamics: True for dynamics randomization.
+        :param self_collision_enabled: True for allowing pybullet to detect collision between joints.
+        :param actuator_net: None for pd controller, `single` for single frame
+                             and `history` for additional 2 history frames.
+        """
+
         self._env, self._frequency = None, execution_frequency
         motor_common_param = dict(frequency=execution_frequency,
                                   input_latency=motor_latencies[0], output_latency=motor_latencies[1],
@@ -88,7 +97,13 @@ class Quadruped(object):
         self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
         # self._cot_buffer: deque[float] = deque()
 
-    def spawn(self, sim_env=pybullet, on_rack=False, position=(0., 0., 0.)):
+    def spawn(self, sim_env=pyb, on_rack=False, position=(0., 0., 0.)):
+        """
+        Load the robot model to certain pybullet world.
+        :param sim_env: pybullet or BulletClient instance.
+        :param on_rack: True for fixing the robot in the air.
+        :param position: additional init position w.r.t. (0., 0., STANCE_HEIGHT) in world frame.
+        """
         self._env = sim_env
         self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(*position)
         self._analyseModelJoints()
@@ -132,7 +147,7 @@ class Quadruped(object):
 
     def _loadRobot(self, x=0., y=0., altitude=0., orientation=TP_Q0):
         z = altitude + self.INIT_HEIGHT
-        flags = pybullet.URDF_USE_SELF_COLLISION if self._self_collision else 0
+        flags = pyb.URDF_USE_SELF_COLLISION if self._self_collision else 0
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
         return self._env.loadURDF(path, (x, y, z), orientation, flags=flags)
 
@@ -201,6 +216,11 @@ class Quadruped(object):
                          joint_friction=np.random.random(12) * 0.05)
 
     def applyCommand(self, motor_commands):
+        """
+        Calculate desired joint torques of position commands with motor model.
+        :param motor_commands: array of desired motor positions.
+        :return: array of desired motor torques.
+        """
         motor_commands = np.asarray(motor_commands)
         self._command_history.append(motor_commands)
         torques = self._motor.apply_position(motor_commands)
@@ -215,7 +235,7 @@ class Quadruped(object):
 
     def reset(self, altitude=0.0, reload=False, in_situ=False):
         """
-        clear state histories and restore the robot to the initial state in simulation.
+        Clear state histories and restore the robot to the initial state in simulation.
         :param altitude: The additional height of the robot at spawning, usually according to the terrain height.
         :param reload: Reload the urdf of the robot to simulation world if true.
         :param in_situ: Reset in situ if true.
@@ -254,6 +274,7 @@ class Quadruped(object):
                                        joint_states.velocity[self._motor_ids,])
 
     def updateObservation(self):
+        """Get robot states from pybullet and generate a noisy copy"""
         self._step_counter += 1
         position, orientation = self._env.getBasePositionAndOrientation(self._body_id)
         self._rpy = Rpy.from_quaternion(orientation)
@@ -343,6 +364,7 @@ class Quadruped(object):
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
     def _updateLocomotionInfos(self):
+        """Record locomotion related states in every simulation step"""
         if self._torque is not None:
             mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
             work = sum(filter(lambda i: i > 0, self._torque * self.getJointVelocities()))
@@ -371,6 +393,7 @@ class Quadruped(object):
                 self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
 
     def _estimateObservation(self):
+        """Add noise on observation"""
         idx = 0 if len(self._observation_history) <= self._latency_steps else -self._latency_steps - 1
         observation = self._observation_history[idx]
         # return observation
@@ -557,7 +580,7 @@ class Quadruped(object):
               f"{'maxF':>4}  {'maxV':>4}  {'link':^10}  {'AX'}  {'par'}  {'mass':>5}  {'inertial':^21}")
         for i in range(self._env.getNumJoints(self._body_id)):
             info = JointInfo(self._env.getJointInfo(self._body_id, i))
-            is_fixed = info.type == pybullet.JOINT_FIXED
+            is_fixed = info.type == pyb.JOINT_FIXED
             print(f'{info.idx:>2d}  {info.name[:14]:^14} {info.joint_types[info.type]:>4}', end='  ')
             print(f"{f'{info.q_idx}':>2} {f'{info.u_idx}':<2} " if not is_fixed else f"{'---':^6}", end=' ')
             print(f"{f'{info.damping:.2f}':^4}  {f'{info.friction:.2f}':^4}  ", end='')
@@ -611,7 +634,8 @@ class A1(Quadruped):
 
     def analyticalInverseKinematics(self, leg: int | str, pos, frame=Quadruped.BASE_FRAME):
         """
-        Calculate inverse kinematics analytically.
+        Calculate analytical inverse kinematics of certain leg, unconsidered about joint angle limits.
+        Currently only positions beneath the robot are supported.
         """
         if isinstance(leg, str):
             leg = self.LEG_NAMES.index(leg)
@@ -735,17 +759,18 @@ class AlienGo(A1):
 if __name__ == '__main__':
     from burl.sim.terrain import Plain
 
-    pybullet.connect(pybullet.GUI)
-    pybullet.setTimeStep(2e-3)
-    pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
-    terrain = Plain(pybullet)
+    pyb.connect(pyb.GUI)
+    pyb.setTimeStep(2e-3)
+    pyb.setAdditionalSearchPath(pybullet_data.getDataPath())
+    terrain = Plain()
     robot = AlienGo()
+    terrain.spawn(pyb)
     robot.spawn(on_rack=True)
     # robot.analyseJointInfos()
-    pybullet.setGravity(0, 0, -9.8)
+    pyb.setGravity(0, 0, -9.8)
 
     for _ in range(100000):
-        pybullet.stepSimulation()
+        pyb.stepSimulation()
         robot.updateObservation()
         # time.sleep(1. / 500)
         tq = robot.applyCommand(robot.STANCE_POSTURE)

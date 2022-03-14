@@ -252,12 +252,12 @@ class ExtendedObservation(ExteroObservation, ProprioObservation):
                                ProprioObservation.to_array(self)))
 
 
-class Action:
+class Action(ArrayAttr):
     dim = 16
 
     def __init__(self):
-        self.leg_frequencies = np.zeros(4)
-        self.foot_pos_residuals = np.zeros(12)
+        self.leg_frequencies = zero4
+        self.foot_pos_residuals = zero12
 
     biases = np.zeros(16)
     # weights = np.concatenate((

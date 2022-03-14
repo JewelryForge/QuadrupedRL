@@ -12,7 +12,7 @@ from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, SingleE
 from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
 
 
-class Accountant:
+class Accountant(object):
     def __init__(self):
         self._account = {}
         self._times = {}
@@ -37,7 +37,7 @@ class Accountant:
         self._times.clear()
 
 
-class OnPolicyRunner:
+class OnPolicyRunner(object):
     def __init__(self, make_env, make_actor, make_critic):
         self.env = (EnvContainerMp2 if g_cfg.use_mp else EnvContainer)(make_env, g_cfg.num_envs)
         self.alg = PPO(make_actor(), make_critic())
@@ -160,7 +160,7 @@ class PolicyTrainer(OnPolicyRunner):
                 'Policy/Z_noise_std': std[(6, 9, 12, 15),].mean().item()}
 
 
-class Player:
+class Player(object):
     def __init__(self, model_path, make_env, make_actor):
         self.env = SingleEnvContainer(make_env)
         self.actor = make_actor().to(g_cfg.dev)

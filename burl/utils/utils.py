@@ -6,7 +6,7 @@ from datetime import datetime
 
 class make_cls(object):
     """
-    Predefine some init parameters of a class without creating an object.
+    Predefine some init parameters of a class without creating an instance.
     """
 
     def __init__(self, cls, *args, **kwargs):
@@ -29,7 +29,15 @@ def _make_class(cls, **properties):
     return TemporaryClass
 
 
-class MfTimer:
+class MfTimer(object):
+    """
+    Multifunctional Timer. Typical usage example:
+
+    with MfTimer() as timer:
+        do_something()
+    print(timer.time_spent)
+    """
+
     def __init__(self, func=None, *args, **kwargs):
         if func:
             self.start()
@@ -75,9 +83,9 @@ class JointInfo(object):
     parent_frame_orn = property(lambda self: self._info[15])
     parent_idx = property(lambda self: self._info[16])
 
-    import pybullet as p
-    joint_types = {p.JOINT_REVOLUTE: 'rev', p.JOINT_PRISMATIC: 'pri', p.JOINT_SPHERICAL: 'sph',
-                   p.JOINT_PLANAR: 'pla', p.JOINT_FIXED: 'fix'}
+    import pybullet as pyb
+    joint_types = {pyb.JOINT_REVOLUTE: 'rev', pyb.JOINT_PRISMATIC: 'pri', pyb.JOINT_SPHERICAL: 'sph',
+                   pyb.JOINT_PLANAR: 'pla', pyb.JOINT_FIXED: 'fix'}
 
     axis_dict = {(1., 0., 0.): '+X', (0., 1., 0.): '+Y', (0., 0., 1.): '+Z',
                  (-1., 0., 0.): '-X', (0., -1., 0.): '-Y', (0., 0., -1.): '-Z', }
@@ -101,7 +109,7 @@ class DynamicsInfo(object):
     collision_margin = property(lambda self: self._info[11])
 
 
-def timestamp():
+def timestamp() -> str:
     return datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
 
@@ -141,6 +149,7 @@ def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
 def find_log_remote(host='jewel@61.153.52.71', port=10022,
                     log_dir='teacher-student/log', fmt='model_*.pt',
                     time=None, epoch=None):
+    """Find and download model file from remote"""
     print(cmd := f'ssh -p {port} {host} ls {log_dir}')
     remote_logs = os.popen(cmd).read().split('\n')
     remote_logs.remove('')
@@ -169,28 +178,35 @@ def find_log_remote(host='jewel@61.153.52.71', port=10022,
     return os.path.join(local_log_dir, model_name)
 
 
-def parse_args(argv=None):
-    if argv is None:
-        argv = sys.argv[1:]
-    args = iter(argv)
-    while True:
-        try:
-            name = next(args)
-        except StopIteration:
-            return
+def parse_args(args=None):
+    """
+    Parse args from input or sys.argv, yield pairs of name and value.
+    Supported argument formats:
+        --<ARG_NAME>=<ARG_VALUE>  ->  ARG_NAME, ARG_VALUE;
+        --<ARG_NAME> <ARG_VALUE>  ->  ARG_NAME, ARG_VALUE;
+        --<ARG_NAME>  ->  ARG_NAME, True;
+        --no-<ARG_NAME>  ->  ARG_NAME, False.
+    """
+    if not args:
+        args = sys.argv[1:]
+    idx = 0
+    while idx < len(args):
+        name = args[idx]
         assert name.startswith('--'), ValueError(f"{name} doesn't start with --")
         name = name.removeprefix('--')
         if '=' in name:
             name, value = name.split('=')
         else:
-            if name.startswith('no-'):
-                name = name.removeprefix('no-')
-                value = False
+            if idx < len(args) - 1 and not args[idx + 1].startswith('--'):
+                value = args[(idx := idx + 1)]
+            elif name.startswith('no-'):
+                name, value = name.removeprefix('no-'), False
             else:
                 value = True
+        idx += 1
         name = name.replace('-', '_')
         yield name, value
 
 
 if __name__ == '__main__':
-    pass
+    print(*parse_args())

@@ -6,7 +6,7 @@ from collections import deque
 from itertools import chain
 
 import numpy as np
-import pybullet
+import pybullet as pyb
 import pybullet_data
 from pybullet_utils import bullet_client
 
@@ -32,7 +32,7 @@ class QuadrupedEnv(object):
 
     def __init__(self, make_robot=Quadruped, make_task=BasicTask, observation_type=('snapshot',)):
         self._gui = g_cfg.rendering
-        self._env = bullet_client.BulletClient(pybullet.GUI if self._gui else pybullet.DIRECT) if True else pybullet
+        self._env = bullet_client.BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
         for obs_type in observation_type:
             assert obs_type in self.ALLOWED_OBSERVATION_TYPES, f'Unknown Observation Type {obs_type}'
@@ -100,21 +100,21 @@ class QuadrupedEnv(object):
             self._env.loadPlugin("eglRendererPlugin")
 
     def _prepareRendering(self):
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, False)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, False)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_TINY_RENDERER, False)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SHADOWS, False)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RGB_BUFFER_PREVIEW, False)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_DEPTH_BUFFER_PREVIEW, False)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_TINY_RENDERER, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_SHADOWS, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RGB_BUFFER_PREVIEW, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_DEPTH_BUFFER_PREVIEW, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
 
     def _initRendering(self):
         self._env.resetDebugVisualizerCamera(1.5, math.pi / 2, 0., (0., 0., self._robot.STANCE_HEIGHT))
         if g_cfg.extra_visualization:
-            self._contact_visual_shape = self._env.createVisualShape(shapeType=pybullet.GEOM_BOX,
+            self._contact_visual_shape = self._env.createVisualShape(shapeType=pyb.GEOM_BOX,
                                                                      halfExtents=(0.03, 0.03, 0.03),
                                                                      rgbaColor=(0.8, 0., 0., 0.6))
-            self._terrain_visual_shape = self._env.createVisualShape(shapeType=pybullet.GEOM_SPHERE,
+            self._terrain_visual_shape = self._env.createVisualShape(shapeType=pyb.GEOM_SPHERE,
                                                                      radius=0.01,
                                                                      rgbaColor=(0., 0.8, 0., 0.6))
             self._contact_obj_ids = []
@@ -141,8 +141,8 @@ class QuadrupedEnv(object):
         self._reset_counter = 0
 
         self._last_frame_time = time.time()
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, True)
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_RENDERING, True)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, True)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
 
     def _setPhysicsParameters(self):
         # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
@@ -179,7 +179,7 @@ class QuadrupedEnv(object):
                 self._time_ratio_indicator = _time_ratio_indicator
                 self._last_time_ratio = time_ratio
 
-        self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
         if g_cfg.extra_visualization:
             for obj in self._contact_obj_ids:
                 self._env.removeBody(obj)
@@ -323,7 +323,7 @@ class QuadrupedEnv(object):
                 else:
                     torques = self._robot.applyCommand(action)
 
-            self._addRandomDisturbanceOnRobot()
+            self._applyDisturbanceOnRobot()
             self._env.stepSimulation()
             self._sim_step_counter += 1
             self._estimateTerrain()
@@ -334,7 +334,7 @@ class QuadrupedEnv(object):
             for n, r in self._task.getRewardDetails().items():
                 reward_details[n] = reward_details.get(n, 0) + r
             if self._gui and g_cfg.single_step_rendering:
-                self._env.configureDebugVisualizer(pybullet.COV_ENABLE_SINGLE_STEP_RENDERING, True)
+                self._env.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
                 self._updateRendering()
         if self._gui and not g_cfg.single_step_rendering:
             self._updateRendering()
@@ -356,18 +356,12 @@ class QuadrupedEnv(object):
                 self._is_failed or time_out,
                 info)
 
-    def _addRandomDisturbanceOnRobot(self):
+    def _applyDisturbanceOnRobot(self):
         self._applied_link_id = 0
-
-        self._env.applyExternalForce(objectUniqueId=self._robot.id,
-                                     linkIndex=self._applied_link_id,
-                                     forceObj=self._external_force,
-                                     posObj=(0.0, 0.0, 0.0),
-                                     flags=pybullet.LINK_FRAME)
-        self._env.applyExternalTorque(objectUniqueId=self._robot.id,
-                                      linkIndex=self._applied_link_id,
-                                      torqueObj=self._external_torque,
-                                      flags=pybullet.LINK_FRAME)
+        self._env.applyExternalForce(objectUniqueId=self._robot.id, linkIndex=self._applied_link_id,
+                                     forceObj=self._external_force, posObj=(0.0, 0.0, 0.0), flags=pyb.LINK_FRAME)
+        self._env.applyExternalTorque(objectUniqueId=self._robot.id, linkIndex=self._applied_link_id,
+                                      torqueObj=self._external_torque, flags=pyb.LINK_FRAME)
 
     def reset(self):
         # completely_reset = False
