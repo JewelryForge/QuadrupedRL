@@ -3,6 +3,9 @@ import socket
 
 
 class UdpPublisher(object):
+    """
+    Send data stream of locomotion to outer tools such as PlotJuggler.
+    """
     def __init__(self, port):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.port = port

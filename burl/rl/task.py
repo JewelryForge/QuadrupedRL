@@ -3,7 +3,7 @@ import random
 
 import numpy as np
 
-from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum
+from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum, TerrainCurriculum
 from burl.rl.reward import *
 from burl.utils import g_cfg
 
@@ -27,16 +27,21 @@ class BasicTask(RewardRegistry):
     robot = property(lambda self: self._robot)
 
     def makeTerrain(self, terrain_type):
-        from burl.sim.terrain import PlainTerrain, SlopeTerrain, makeStandardRoughTerrain
+        from burl.sim import Plain, Slope
         if terrain_type == 'plain':
-            return PlainTerrain(self._env.client)
-        if terrain_type == 'curriculum':
+            terrain_inst = Plain()
+            terrain_inst.spawn(self._env.client)
+        elif terrain_type == 'curriculum':
+            terrain_curriculum = TerrainCurriculum(aggressive=False)
+            self.addCurriculum(terrain_curriculum)
+            terrain_inst = terrain_curriculum.generateTerrain(self._env.client)
+        elif terrain_type == 'rough':
             raise NotImplementedError
-        if terrain_type == 'rough':
-            return makeStandardRoughTerrain(self._env.client)
-        if terrain_type == 'slope':
-            return SlopeTerrain(self._env.client)
-        raise RuntimeError(f'Unknown terrain type {terrain_type}')
+        elif terrain_type == 'slope':
+            raise NotImplementedError
+        else:
+            raise RuntimeError(f'Unknown terrain type {terrain_type}')
+        return terrain_inst
 
     def addCurriculum(self, curriculum: GameInspiredCurriculum):
         self.curricula.append(curriculum)
@@ -45,18 +50,18 @@ class BasicTask(RewardRegistry):
 
     def onInit(self):
         for cur in self.curricula:
-            cur.onInit(self._cmd, self._robot, self._env)
+            cur.onInit(self, self._robot, self._env)
 
     def onSimulationStep(self):
         for cur in self.curricula:
-            cur.onSimulationStep(self._cmd, self._robot, self._env)
+            cur.onSimulationStep(self, self._robot, self._env)
         if g_cfg.test_mode:
             self.collectStatistics()
 
     def onStep(self):
         info = {}
         for cur in self.curricula:
-            cur.onStep(self._cmd, self._robot, self._env)
+            cur.onStep(self, self._robot, self._env)
             info[cur.__class__.__name__] = cur.difficulty_degree
         return info
 
@@ -125,7 +130,7 @@ class BasicTask(RewardRegistry):
 
     def reset(self):
         for cur in self.curricula:
-            cur.onReset(self._cmd, self._robot, self._env)
+            cur.onReset(self, self._robot, self._env)
         if g_cfg.test_mode:
             print('cot', self.robot.getCostOfTransport())
             print('mse torque', np.sqrt(self._torque_sum / self.robot._step_counter))

@@ -63,7 +63,6 @@ class PPOParam(object):
         self.entropy_coef = 4e-3
         self.learning_rate = 1e-4
         self.max_grad_norm = 1.0
-        # self.clip_value_loss = True
         self.desired_kl = 0.01
 
 
@@ -104,25 +103,6 @@ class RuntimeParam(object):
                                 ('HipAnglePenalty', 0.),)
 
 
-class TerrainParam(object):
-    def __init__(self):
-        self.trn_size = 30
-        self.trn_slope = np.pi / 24
-        self.trn_downsample = 15
-        self.trn_roughness = 0.1
-        self.trn_resolution = 0.05
-        self.trn_offset = (0., 0., 0.)
-
-
-class TerrainCurriculumParam(object):
-    def __init__(self):
-        self.combo_threshold = 5
-        self.miss_threshold = 3
-        self.difficulty_step = 0.01
-        self.max_difficulty = 0.3
-        self.distance_threshold = (2.5, 5.0)
-
-
 class DisturbanceParam(object):
     def __init__(self):
         self.disturbance_interval_steps = 500
@@ -130,8 +110,8 @@ class DisturbanceParam(object):
         self.torque_magnitude = (2.5, 5., 5.)  # x y z
 
 
-class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, DisturbanceParam,
-                TerrainParam, TerrainCurriculumParam, RuntimeParam):
+class TaskParam(Options, SimParam, RenderParam, TrainParam,
+                PPOParam, DisturbanceParam, RuntimeParam):
     def __init__(self):
         Options.__init__(self)
         SimParam.__init__(self)
@@ -139,8 +119,6 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, PPOParam, Disturbanc
         TrainParam.__init__(self)
         PPOParam.__init__(self)
         DisturbanceParam.__init__(self)
-        TerrainParam.__init__(self)
-        TerrainCurriculumParam.__init__(self)
         RuntimeParam.__init__(self)
         self._init = True
 

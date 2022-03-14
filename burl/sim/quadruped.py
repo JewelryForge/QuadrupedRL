@@ -58,11 +58,11 @@ class Quadruped(object):
     SHOULDER_FRAME = 2
     INIT_FRAME = 3
 
-    def __init__(self, sim_env=pybullet, execution_frequency=500,
+    def __init__(self, execution_frequency=500,
                  latency=0., motor_latencies=(0., 0.),
                  random_dynamics=False, self_collision_enabled=False,
                  actuator_net=None):
-        self._env, self._frequency = sim_env, execution_frequency
+        self._env, self._frequency = None, execution_frequency
         motor_common_param = dict(frequency=execution_frequency,
                                   input_latency=motor_latencies[0], output_latency=motor_latencies[1],
                                   joint_limits=np.array(getattr(self, 'JOINT_LIMITS', None)).reshape(-1, 2),
@@ -88,7 +88,8 @@ class Quadruped(object):
         self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
         # self._cot_buffer: deque[float] = deque()
 
-    def spawn(self, on_rack=False, position=(0., 0., 0.)):
+    def spawn(self, sim_env=pybullet, on_rack=False, position=(0., 0., 0.)):
+        self._env = sim_env
         self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(*position)
         self._analyseModelJoints()
         self._resetPosture()
@@ -515,7 +516,6 @@ class Quadruped(object):
         len_requirement = -idx if idx < 0 else idx + 1
         if len(self._command_history) < len_requirement:
             return np.array(self.STANCE_POSTURE)
-        # print(self._command_history[-2], self._command_history[-1])
         return self._command_history[idx]
 
     def getObservationHistoryFromIndex(self, idx, noisy=False) -> ObservationRaw:
@@ -733,12 +733,12 @@ class AlienGo(A1):
 
 
 if __name__ == '__main__':
-    from burl.sim.terrain import PlainTerrain
+    from burl.sim.terrain import Plain
 
     pybullet.connect(pybullet.GUI)
     pybullet.setTimeStep(2e-3)
     pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
-    terrain = PlainTerrain(pybullet)
+    terrain = Plain(pybullet)
     robot = AlienGo()
     robot.spawn(on_rack=True)
     # robot.analyseJointInfos()

@@ -2,21 +2,22 @@ import time
 from collections.abc import Iterable
 
 import numpy as np
-import pybullet
+import pybullet as pyb
 from scipy.interpolate import interp2d
 
 from burl.utils import unit, vec_cross
 
 
 class Terrain(object):
-    def __init__(self, bullet_client):
-        self.bullet_client = bullet_client
+    def __init__(self):
         self.terrain_id: int = -1
-        pass
 
     @property
     def id(self):
         return self.terrain_id
+
+    def spawn(self, sim_env):
+        raise NotImplementedError
 
     def getHeight(self, x, y):
         raise NotImplementedError
@@ -28,11 +29,10 @@ class Terrain(object):
         raise NotImplementedError
 
 
-class PlainTerrain(Terrain):
-    def __init__(self, bullet_client):
-        super().__init__(bullet_client)
-        self.terrain_id = bullet_client.loadURDF("plane.urdf")
-        bullet_client.changeDynamics(self.terrain_id, -1, lateralFriction=1.0)
+class Plain(Terrain):
+    def spawn(self, sim_env):
+        self.terrain_id = sim_env.loadURDF("plane.urdf")
+        sim_env.changeDynamics(self.terrain_id, -1, lateralFriction=1.0)
 
     def getHeight(self, x, y):
         return 0.0
@@ -45,8 +45,8 @@ class PlainTerrain(Terrain):
 
 
 class HeightFieldTerrain(Terrain):
-    def __init__(self, bullet_client, height_field, resolution, offset=(0., 0., 0.)):
-        super().__init__(bullet_client)
+    def __init__(self, height_field, resolution, offset=(0., 0., 0.)):
+        super().__init__()
         self.height_field = np.asarray(height_field)
         self.offset = np.asarray(offset, dtype=float)
         self.y_dim, self.x_dim = self.height_field.shape
@@ -60,22 +60,32 @@ class HeightFieldTerrain(Terrain):
         else:
             self.x_rsl = self.y_rsl = resolution
             self.z_rsl = 1.0
-        self.terrain_shape = bullet_client.createCollisionShape(
-            shapeType=pybullet.GEOM_HEIGHTFIELD, flags=pybullet.GEOM_CONCAVE_INTERNAL_EDGE,
+        self.terrain_shape_id = -1
+
+    def spawn(self, sim_env, replace_id=-1):
+        self.terrain_shape_id = sim_env.createCollisionShape(
+            shapeType=pyb.GEOM_HEIGHTFIELD, flags=pyb.GEOM_CONCAVE_INTERNAL_EDGE,
             meshScale=(self.x_rsl, self.y_rsl, self.z_rsl),
             heightfieldTextureScaling=self.x_size,
             heightfieldData=self.height_field.reshape(-1),
-            numHeightfieldColumns=self.x_dim, numHeightfieldRows=self.y_dim)
+            numHeightfieldColumns=self.x_dim, numHeightfieldRows=self.y_dim,
+            replaceHeightfieldIndex=replace_id)
+        if replace_id == -1:
+            self.terrain_id = sim_env.createMultiBody(0, self.terrain_shape_id)
+            sim_env.changeVisualShape(self.terrain_id, -1, rgbaColor=(1, 1, 1, 1))
+            sim_env.changeDynamics(self.terrain_id, -1, lateralFriction=1.0)
+            origin_z = (np.max(self.height_field) + np.min(self.height_field)) / 2
+            # does not need to move again when its height field is replaced
+            sim_env.resetBasePositionAndOrientation(self.terrain_id, self.offset + (0, 0, origin_z),
+                                                    (0., 0., 0., 1.))
 
-        origin_z = (np.max(self.height_field) + np.min(self.height_field)) / 2
-        self.terrain_id = bullet_client.createMultiBody(0, self.terrain_shape)
-        bullet_client.changeVisualShape(self.terrain_id, -1, rgbaColor=(1, 1, 1, 1))
-        bullet_client.changeDynamics(self.terrain_id, -1, lateralFriction=5.0)
-        bullet_client.resetBasePositionAndOrientation(self.terrain_id, self.offset + (0, 0, origin_z), (0, 0, 0, 1))
+    def replaceHeightField(self, sim_env, height_field):
+        self.height_field = height_field
+        self.spawn(sim_env, replace_id=self.terrain_shape_id)
 
     @property
     def shape_id(self):
-        return self.terrain_shape
+        return self.terrain_shape_id
 
     def xCoord2Idx(self, x):
         return int((x + 1e-10 + self.x_size / 2 - self.offset[0]) / self.x_rsl)
@@ -131,51 +141,47 @@ class HeightFieldTerrain(Terrain):
         try:
             v1, v2, v3 = self.getNearestVertices(x, y)
         except IndexError:
-            return np.array((0, 0, 1))
+            return np.array((0., 0., 1.))
         normal = unit(vec_cross(v1 - v2, v1 - v3))
         return normal if normal[2] > 0 else -normal
 
 
-class SlopeTerrain(HeightFieldTerrain):
-    def __init__(self,
-                 bullet_client,
-                 slope=10 * np.pi / 180,
-                 size=30,
-                 resolution=0.1,
-                 offset=(0, 0, 0),
-                 ):
+class Steps(HeightFieldTerrain):
+    pass
+
+
+class Slope(HeightFieldTerrain):
+    def __init__(self, slope, size, resolution, offset=(0., 0., 0.)):
         data_size = int(size / resolution) + 1
         x = np.linspace(-size / 2, size / 2, data_size)
         y = x.copy()
         height_field = np.tile(x * np.tan(slope), (len(y), 1))
-        super().__init__(bullet_client, height_field, resolution, offset)
+        super().__init__(height_field, resolution, offset)
 
 
-class RandomUniformTerrain(HeightFieldTerrain):
-    def __init__(self,
-                 bullet_client,
-                 size=15,
-                 downsample=10,
-                 roughness=0.1,
-                 resolution=0.02,
-                 offset=(0, 0, 0),
-                 seed=None):
+class Hills(HeightFieldTerrain):
+    def __init__(self, size, downsample, roughness, resolution, offset=(0., 0., 0.), seed=None):
+        height_field = self.makeHeightField(size, downsample, roughness, resolution, seed)
+        super().__init__(height_field, resolution, offset)
+
+    @staticmethod
+    def makeHeightField(size, downsample, roughness, resolution, seed=None):
         np.random.seed(seed)
         sample_rsl = downsample * resolution
         x = np.arange(-size / 2 - 3 * sample_rsl, size / 2 + 4 * sample_rsl, sample_rsl)
         y = x.copy()
         height_field_downsampled = np.random.uniform(0, roughness, (x.size, y.size))
-        self.terrain_func = interp2d(x, y, height_field_downsampled, kind='cubic')
+        terrain_func = interp2d(x, y, height_field_downsampled, kind='cubic')
 
         data_size = int(size / resolution) + 1
         x_upsampled = np.linspace(-size / 2, size / 2, data_size)
         y_upsampled = x_upsampled.copy()
-        height_field = self.terrain_func(x_upsampled, y_upsampled)
-        super().__init__(bullet_client, height_field, resolution, offset)
+        height_field = terrain_func(x_upsampled, y_upsampled)
+        return height_field
 
     # def getHeight(self, x, y):
     #     return self.terrain_func(x, y).squeeze() + self.offset[2]
-
+    #
     # def getNearestVertices(self, x, y):
     #     res = super().getNearestVertices(x, y)
     #     residue = np.array([z - self.getHeight(x, y) for x, y, z in res])
@@ -184,48 +190,70 @@ class RandomUniformTerrain(HeightFieldTerrain):
     #     return res
 
 
-def makeStandardRoughTerrain(pybullet_client, roughness=None, seed=None):
-    from burl.utils import g_cfg
-    if roughness is None:
-        roughness = g_cfg.trn_roughness
-    return RandomUniformTerrain(
-        pybullet_client, size=g_cfg.trn_size, downsample=g_cfg.trn_downsample,
-        roughness=roughness, resolution=g_cfg.trn_resolution, offset=g_cfg.trn_offset, seed=seed)
-
-
 if __name__ == '__main__':
-    pybullet.connect(pybullet.GUI)
-    # t = SlopeTerrain(pybullet, size=20, slope=np.pi / 12, resolution=0.1)
-    # t = RandomUniformTerrain(pybullet, size=20, roughness=0.2, downsample=15, resolution=0.1)
-    # pybullet.resetSimulation()
-    t = RandomUniformTerrain(pybullet, size=30, roughness=1.0, downsample=15, resolution=0.05)
-    pybullet.changeVisualShape(t.id, -1, rgbaColor=(1, 1, 1, 1))
-    terrain_visual_shape = pybullet.createVisualShape(shapeType=pybullet.GEOM_SPHERE,
-                                                      radius=0.01,
-                                                      rgbaColor=(0., 0.8, 0., 0.6))
-    cylinder_shape = pybullet.createVisualShape(shapeType=pybullet.GEOM_CYLINDER,
-                                                radius=0.005, length=0.11,
-                                                rgbaColor=(0., 0, 0.8, 0.6))
-    box_shape = pybullet.createVisualShape(shapeType=pybullet.GEOM_BOX,
-                                           halfExtents=(0.03, 0.03, 0.03),
-                                           rgbaColor=(0.8, 0., 0., 0.6))
+    import random
+    from burl.sim import AlienGo
+
+    pyb.connect(pyb.GUI)
+    pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, 0)
+    t = Hills(size=3, roughness=0.4, downsample=20, resolution=0.1)
+    t.spawn(pyb)
+    robot = AlienGo()
+    robot.spawn()
+
+    pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, 1)
+    pyb.setGravity(0, 0, -10)
+    pyb.setRealTimeSimulation(1)
+
+    pyb.changeVisualShape(t.id, -1, rgbaColor=(1, 1, 1, 1))
+
+    terrain_visual_shape = pyb.createVisualShape(shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0., 0.8, 0., 0.6))
+    ray_hit_shape = pyb.createVisualShape(shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0.8, 0., 0., 0.6))
+    cylinder_shape = pyb.createVisualShape(shapeType=pyb.GEOM_CYLINDER, radius=0.005, length=0.11,
+                                           rgbaColor=(0., 0, 0.8, 0.6))
+    box_shape = pyb.createVisualShape(shapeType=pyb.GEOM_BOX, halfExtents=(0.03, 0.03, 0.03),
+                                      rgbaColor=(0.8, 0., 0., 0.6))
 
     from burl.utils.transforms import Quaternion
 
-    for x in np.random.uniform(-1, 1, 10):
-        for y in np.random.uniform(-1, 1, 10):
+    points, vectors, ray_hits = [], [], []
+
+    for x in np.linspace(-1, 1, 10):
+        for y in np.linspace(-1, 1, 10):
             h = t.getHeight(x, y)
-            pybullet.createMultiBody(baseVisualShapeIndex=terrain_visual_shape,
-                                     basePosition=(x, y, h))
+            points.append(pyb.createMultiBody(baseVisualShapeIndex=terrain_visual_shape,
+                                              basePosition=(x, y, h)))
             n = t.getNormal(x, y)
             y_ax = unit(np.cross(n, (1, 0, 0)))
             x_ax = unit(np.cross(y_ax, n))
-            pybullet.createMultiBody(baseVisualShapeIndex=cylinder_shape,
-                                     basePosition=(x, y, h),
-                                     baseOrientation=(Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T)))
+            vectors.append(pyb.createMultiBody(
+                baseVisualShapeIndex=cylinder_shape, basePosition=(x, y, h),
+                baseOrientation=Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T)))
+            ray_hits.append(pyb.createMultiBody(
+                baseVisualShapeIndex=ray_hit_shape, basePosition=pyb.rayTest((x, y, 2), (x, y, -1))[0][3]
+            ))
+
     cor = t.getPeakInRegion((-0.5, 0.5), (-0.5, 0.5))
-    pybullet.createMultiBody(baseVisualShapeIndex=box_shape,
-                             basePosition=cor, baseOrientation=(0, 0, 0, 1))
-    for _ in range(100000):
-        pybullet.stepSimulation()
-        time.sleep(1 / 240)
+    box_id = pyb.createMultiBody(baseVisualShapeIndex=box_shape,
+                                 basePosition=cor, baseOrientation=(0., 0., 0., 1.))
+
+    for i in range(10):
+        time.sleep(5)
+        pyb.resetBasePositionAndOrientation(robot.id, (0., 0., 3.), (0., 0., 0., 1.))
+        t.replaceHeightField(pyb, Hills(size=3, roughness=random.random(), downsample=20,
+                                        resolution=0.1).height_field)
+        idx = 0
+        for x in np.linspace(-1, 1, 10):
+            for y in np.linspace(-1, 1, 10):
+                h = t.getHeight(x, y)
+                pyb.resetBasePositionAndOrientation(points[idx], (x, y, h), (0., 0., 0., 1.))
+                pyb.resetBasePositionAndOrientation(ray_hits[idx], pyb.rayTest((x, y, 2), (x, y, -1))[0][3],
+                                                    (0., 0., 0., 1.))
+                n = t.getNormal(x, y)
+                y_ax = unit(np.cross(n, (1, 0, 0)))
+                x_ax = unit(np.cross(y_ax, n))
+                pyb.resetBasePositionAndOrientation(vectors[idx], (x, y, h),
+                                                    Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T))
+                idx += 1
+        pyb.resetBasePositionAndOrientation(box_id, t.getPeakInRegion((-0.5, 0.5), (-0.5, 0.5)), (0., 0., 0., 1.))
+    time.sleep(300)

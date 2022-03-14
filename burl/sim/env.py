@@ -40,14 +40,14 @@ class QuadrupedEnv(object):
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
-        self._robot: Quadruped = make_robot(self._env, execution_frequency=g_cfg.execution_frequency,
+        self._robot: Quadruped = make_robot(execution_frequency=g_cfg.execution_frequency,
                                             random_dynamics=g_cfg.random_dynamics,
                                             motor_latencies=g_cfg.motor_latencies,
                                             actuator_net=g_cfg.actuator_net)
         self._task = make_task(self)
         self._terrain = self._task.makeTerrain(g_cfg.trn_type)
-        # FIXME: UNREASONABLE SPAWN
-        self._robot.spawn(g_cfg.on_rack, self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE))
+        self._robot.spawn(self._env, g_cfg.on_rack,
+                          (0., 0., self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE)[2]))
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
 
         self._setPhysicsParameters()
@@ -370,8 +370,7 @@ class QuadrupedEnv(object):
                                       flags=pybullet.LINK_FRAME)
 
     def reset(self):
-        # completely_reset = self._task.curriculumUpdate(self._sim_step_counter)
-        completely_reset = False
+        # completely_reset = False
         # is_failed = self._is_failed
         self._task.reset()
         self._resetStates()
@@ -379,12 +378,11 @@ class QuadrupedEnv(object):
         #     if g_cfg.random_dynamics:
         #         self._robot.randomDynamics()
         #     return self.makeObservation()
-        if completely_reset:
-            self._env.resetSimulation()
-            self._setPhysicsParameters()
-            self._terrain.reset()
-        self._robot.reset(self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE)[2],
-                          reload=completely_reset)
+        # if completely_reset:
+        #     self._env.resetSimulation()
+        #     self._setPhysicsParameters()
+        #     self._terrain.reset()
+        self._robot.reset(self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE)[2])
         self._initSimulation()
         self._robot.updateObservation()
         return self.makeObservation()
