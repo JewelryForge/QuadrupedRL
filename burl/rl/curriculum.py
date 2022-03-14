@@ -76,10 +76,11 @@ class TerrainCurriculum(GameInspiredCurriculum):
 
             self.terrain.spawn(sim_env)
         else:
-            roughness = self.max_roughness * (random.random() if self.difficulty == self.max_difficulty
-                                              else self.difficulty_degree)
-            self.terrain.replaceHeightField(
-                sim_env, self.terrain.makeHeightField(size=30, downsample=20, resolution=0.1, roughness=roughness))
+            if self.difficulty:
+                roughness = self.max_roughness * (random.random() if self.difficulty == self.max_difficulty
+                                                  else self.difficulty_degree)
+                self.terrain.replaceHeightField(
+                    sim_env, self.terrain.makeHeightField(size=30, downsample=20, resolution=0.1, roughness=roughness))
         return self.terrain
 
     def onSimulationStep(self, task, robot, env):
@@ -87,10 +88,8 @@ class TerrainCurriculum(GameInspiredCurriculum):
         self.episode_sim_count += 1
 
     def onReset(self, task, robot, env):
-        if self.register(not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6):
-            self.generateTerrain(env.client)
-        if g_cfg.test_mode:
-            self.generateTerrain(env.client)
+        self.register(not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6)
+        self.generateTerrain(env.client)
         self.episode_linear_reward_sum = self.episode_sim_count = 0
 
 

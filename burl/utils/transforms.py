@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as scipyRotation
 
-__all__ = ['NDArrayBased', 'Rotation', 'Rpy', 'Odometry', 'Quaternion', 'get_rpy_rate_from_angular_velocity']
+__all__ = ['Rotation', 'Rpy', 'Quaternion', 'Odometry',
+           'get_rpy_rate_from_angular_velocity']
 
 
 class NDArrayBased(np.ndarray):
@@ -115,6 +116,9 @@ class Odometry(object):
 
 
 class Quaternion(NDArrayBased):
+    """
+    q = [x y z w] = w + xi +yj + zk
+    """
     THRESHOLD = 1e-5
 
     @classmethod
@@ -128,13 +132,12 @@ class Quaternion(NDArrayBased):
 
     @classmethod
     def identity(cls):
-        return cls((0, 0, 0, 1))
+        return cls((0., 0., 0., 1.))
 
     @classmethod
     def from_rpy(cls, rpy):
-        rpy = np.asarray(rpy)
-        sr, sp, sy = np.sin(rpy / 2)
-        cr, cp, cy = np.cos(rpy / 2)
+        rpy_2 = np.asarray(rpy) / 2
+        (sr, sp, sy), (cr, cp, cy) = np.sin(rpy_2), np.cos(rpy_2)
         return cls((sr * cp * cy - cr * sp * sy,
                     cr * sp * cy + sr * cp * sy,
                     cr * cp * sy - sr * sp * cy,
@@ -143,7 +146,10 @@ class Quaternion(NDArrayBased):
     @classmethod
     def from_rotation(cls, r):
         # scipy api is faster than python implementation
-        return scipyRotation.from_matrix(r).as_quat()
+        return scipyRotation.from_matrix(r).as_quat().view(cls)
+
+    def inverse(self):
+        return Quaternion((-self.x, -self.y, -self.z, self.w), skip_check=True)
 
     def __str__(self):
         return self.__repr__()

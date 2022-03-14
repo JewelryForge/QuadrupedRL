@@ -15,7 +15,7 @@ from burl.rl.task import BasicTask
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
-from burl.utils.transforms import Rpy, Rotation
+from burl.utils.transforms import Rpy, Rotation, Quaternion
 
 
 class QuadrupedEnv(object):
@@ -40,23 +40,25 @@ class QuadrupedEnv(object):
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
+        self._resetStates()
+
         self._robot: Quadruped = make_robot(execution_frequency=g_cfg.execution_frequency,
                                             random_dynamics=g_cfg.random_dynamics,
                                             motor_latencies=g_cfg.motor_latencies,
                                             actuator_net=g_cfg.actuator_net)
         self._task = make_task(self)
         self._terrain = self._task.makeTerrain(g_cfg.trn_type)
-        self._robot.spawn(self._env, g_cfg.on_rack,
-                          (0., 0., self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE)[2]))
-        assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
+        self._robot.spawn(self._env, g_cfg.on_rack)
+        if not g_cfg.on_rack:
+            self.moveRobotOnTerrain()
 
         self._setPhysicsParameters()
-        self._initSimulation()
+        self._prepareSimulation()
+        assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
         self._num_action_repeats = int(g_cfg.sim_frequency / g_cfg.action_frequency)
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
         log_debug(f'Action Repeats for {self._num_action_repeats} time(s)')
         log_debug(f'Execution Repeats For {self._num_execution_repeats} time(s)')
-        self._resetStates()
         if self._gui:
             self._initRendering()
         self._action_history = deque(maxlen=10)
@@ -67,9 +69,7 @@ class QuadrupedEnv(object):
         self._sim_step_counter = 0
         self._episode_reward = 0.0
         self._is_failed = False
-        self._est_X = None
-        self._est_Y = None
-        self._est_Z = None
+        self._terrain_samples = []
         self._est_height = 0.0
 
     sim_time = property(lambda self: self._sim_step_counter / g_cfg.sim_frequency)
@@ -85,11 +85,16 @@ class QuadrupedEnv(object):
         self._robot.updateObservation()
         return self.makeObservation()
 
-    def _initSimulation(self):
-        return
-        for _ in range(300):
-            self._robot.applyTorques((0.,) * 12)
-            self._env.stepSimulation()
+    def moveRobotOnTerrain(self):
+        self._estimateTerrain(self._robot.retrieveFootXYsInWorldFrame())
+        self._env.resetBasePositionAndOrientation(self._robot.id, (0., 0., self._est_height + self._robot.INIT_HEIGHT),
+                                                  Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse())
+
+    def _prepareSimulation(self):
+        pass
+        # for _ in range(300):
+        #     self._robot.applyTorques((0.,) * 12)
+        #     self._env.stepSimulation()
 
     def _loadEgl(self):
         import pkgutil
@@ -162,7 +167,6 @@ class QuadrupedEnv(object):
                 time_spent += time_to_sleep
         self._last_frame_time = time.time()
         time_ratio = period_coeff / g_cfg.sim_frequency / time_spent
-        # print('time ratio:', f'{time_ratio:.2f}')
         if g_cfg.moving_camera:
             yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
             (x, y, _), z = self._robot.position, self._robot.STANCE_HEIGHT
@@ -292,17 +296,16 @@ class QuadrupedEnv(object):
     def makeNoisyExtendedObservation(self, obs=None):
         return self.makeExtendedObservation(obs, noisy=True)
 
-    def _estimateTerrain(self):
-        self._est_X, self._est_Y, self._est_Z = [], [], []
-        for x, y in self._robot.getFootXYsInWorldFrame():
-            self._est_X.append(x)
-            self._est_Y.append(y)
-            self._est_Z.append(self.getTerrainHeight(x, y))
-        x, y, _ = self._robot.position
-        self._est_X.append(x)
-        self._est_Y.append(y)
-        self._est_Z.append(self.getTerrainHeight(x, y))
-        self._est_height = np.mean(self._est_Z)
+    def _estimateTerrain(self, xy_points=None):
+        self._terrain_samples.clear()
+        est_h = 0.
+        if not xy_points:
+            xy_points = self._robot.getFootXYsInWorldFrame()
+        for x, y in xy_points:
+            z = self.getTerrainHeight(x, y)
+            est_h += z
+            self._terrain_samples.append((x, y, z))
+        self._est_height = est_h / len(xy_points)
 
     def step(self, action):
         # NOTICE: ADDING LATENCY ARBITRARILY FROM A DISTRIBUTION IS NOT REASONABLE
@@ -346,8 +349,6 @@ class QuadrupedEnv(object):
         info = {'time_out': time_out,
                 'reward_details': reward_details,
                 'episode_reward': self._episode_reward}
-        # if hasattr(self._terrain, 'difficulty'):
-        #     info['difficulty'] = self._terrain.difficulty
         if task_info := self._task.onStep():
             info['task_info'] = task_info
         # log_debug(f'Step time: {time.time() - start}')
@@ -376,8 +377,9 @@ class QuadrupedEnv(object):
         #     self._env.resetSimulation()
         #     self._setPhysicsParameters()
         #     self._terrain.reset()
-        self._robot.reset(self._terrain.getPeakInRegion(*self._robot.ROBOT_SIZE)[2])
-        self._initSimulation()
+        self._robot.reset()
+        self.moveRobotOnTerrain()
+        self._prepareSimulation()
         self._robot.updateObservation()
         return self.makeObservation()
 
@@ -404,27 +406,31 @@ class QuadrupedEnv(object):
     def getTerrainHeight(self, x, y) -> float:
         return self._terrain.getHeight(x, y)
 
-    def getSafetyHeightOfRobot(self) -> float:
+    def getTerrainBasedHeightOfRobot(self) -> float:
         return self._robot.position[2] - self._est_height
 
-    def getSafetyFootHeightsOfRobot(self) -> np.ndarray:
-        foot_pos = [self._robot.getFootPositionInWorldFrame(i) for i in range(4)]
-        return np.array([z - self.getTerrainHeight(x, y) - 0.02 for x, y, z in foot_pos])
-
-    def getSafetyRpyOfRobot(self) -> Rpy:
-        X, Y, Z = np.array(self._est_X), np.array(self._est_Y), np.array(self._est_Z)
-        # Use terrain points to fit a plane
+    def estimateLocalTerrainNormal(self):
+        X, Y, Z = np.array(self._terrain_samples).T
         A = np.zeros((3, 3))
         A[0, :] = np.sum(X ** 2), X @ Y, np.sum(X)
         A[1, :] = A[0, 1], np.sum(Y ** 2), np.sum(Y)
         A[2, :] = A[0, 2], A[1, 2], len(X)
         b = np.array((X @ Z, Y @ Z, np.sum(Z)))
         a, b, _ = np.linalg.solve(A, b)
-        trn_Z = unit((-a, -b, 1))
+        return unit((-a, -b, 1))
+
+    def getLocalTerrainRotation(self):
+        trn_Z = self.estimateLocalTerrainNormal()
+        trn_Y = vec_cross(trn_Z, (1., 0., 0.))
+        trn_X = vec_cross(trn_Y, trn_Z)
+        # (trn_X, trn_Y, trn_Z) is the transpose of rotation matrix, so there's no need to transpose again
+        return np.array((trn_X, trn_Y, trn_Z))
+
+    def getTerrainBasedRpyOfRobot(self) -> Rpy:
+        trn_Z = self.estimateLocalTerrainNormal()
         rot_robot = Rotation.from_quaternion(self._robot.orientation)
         trn_Y = vec_cross(trn_Z, rot_robot.X)
         trn_X = vec_cross(trn_Y, trn_Z)
-        # (trn_X, trn_Y, trn_Z) is the transpose of rotation matrix, so there's no need to transpose again
         return Rpy.from_rotation(np.array((trn_X, trn_Y, trn_Z)) @ rot_robot)
 
     def getTerrainNormal(self, x, y) -> np.ndarray:
@@ -538,11 +544,12 @@ class FixedTgEnv(IkEnv):
                 x, y, z = self._robot.getFootPositionInHipFrame(i)
                 self._plotter(i, (x, z), 'b')
 
-    def _initSimulation(self):  # for the stability of the beginning
-        for _ in range(500):
-            self._robot.updateMinimalObservation()
-            self._robot.applyCommand(self._robot.STANCE_POSTURE)
-            self._env.stepSimulation()
+    def _prepareSimulation(self):  # for the stability of the beginning
+        pass
+        # for _ in range(500):
+        #     self._robot.updateMinimalObservation()
+        #     self._robot.applyCommand(self._robot.STANCE_POSTURE)
+        #     self._env.stepSimulation()
 
 
 if __name__ == '__main__':
@@ -553,7 +560,7 @@ if __name__ == '__main__':
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
-    g_cfg.extra_visualization = False
+    g_cfg.extra_visualization = True
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
     # g_cfg.motor_latencies = (2e-3, 0.)

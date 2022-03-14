@@ -97,15 +97,16 @@ class Quadruped(object):
         self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
         # self._cot_buffer: deque[float] = deque()
 
-    def spawn(self, sim_env=pyb, on_rack=False, position=(0., 0., 0.)):
+    def spawn(self, sim_env=pyb, on_rack=False, position=(0., 0., 0.), orientation=(0., 0., 0., 1.)):
         """
         Load the robot model to certain pybullet world.
         :param sim_env: pybullet or BulletClient instance.
         :param on_rack: True for fixing the robot in the air.
         :param position: additional init position w.r.t. (0., 0., STANCE_HEIGHT) in world frame.
+        :param orientation: init orientation in world frame
         """
         self._env = sim_env
-        self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(*position)
+        self._body_id = self._loadRobotOnRack() if on_rack else self._loadRobot(position, orientation)
         self._analyseModelJoints()
         self._resetPosture()
         self.initPhysicsParams()
@@ -145,8 +146,9 @@ class Quadruped(object):
                                    childFramePosition=position, childFrameOrientation=orientation)
         return robot
 
-    def _loadRobot(self, x=0., y=0., altitude=0., orientation=TP_Q0):
-        z = altitude + self.INIT_HEIGHT
+    def _loadRobot(self, position=(0., 0., 0.), orientation=TP_Q0):
+        x, y, z = position
+        z += self.INIT_HEIGHT
         flags = pyb.URDF_USE_SELF_COLLISION if self._self_collision else 0
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
         return self._env.loadURDF(path, (x, y, z), orientation, flags=flags)
@@ -241,12 +243,7 @@ class Quadruped(object):
         :param in_situ: Reset in situ if true.
         :return: Initial observation after reset.
         """
-        self._resetStates()
-        self._observation_history.clear()
-        self._observation_noisy_history.clear()
-        self._command_history.clear()
-        self._torque_history.clear()
-        self._cot_buffer.clear()
+        self.clearObservations()
         if reload:
             self._body_id = self._loadRobot(altitude)
             self.initPhysicsParams()
@@ -295,6 +292,14 @@ class Quadruped(object):
                                        self.getJointVelocities(noisy=True))
         self._updateLocomotionInfos()
         return self._observation, observation_noisy
+
+    def clearObservations(self):
+        self._resetStates()
+        self._observation_history.clear()
+        self._observation_noisy_history.clear()
+        self._command_history.clear()
+        self._torque_history.clear()
+        self._cot_buffer.clear()
 
     def numericalInverseKinematics(self, leg, pos, frame=BASE_FRAME):
         """
@@ -345,10 +350,7 @@ class Quadruped(object):
         return contact_states
 
     def _getFootStates(self):
-        """
-        Get foot positions, orientations and forces by getLinkStates and getContactPoints.
-        :return: FootStates
-        """
+        """Get foot positions, orientations and forces by getLinkStates and getContactPoints."""
         link_states = self._env.getLinkStates(self._body_id, self._foot_ids)
         foot_positions = [ls[0] for ls in link_states]
         foot_orientations = [ls[1] for ls in link_states]
@@ -499,6 +501,9 @@ class Quadruped(object):
 
     def getFootXYsInWorldFrame(self):
         return [self._observation.foot_states.positions[leg, :2] for leg in range(4)]
+
+    def retrieveFootXYsInWorldFrame(self):
+        return [link_state[0][:2] for link_state in self._env.getLinkStates(self._body_id, self._foot_ids)]
 
     def getFootSlipVelocity(self):
         return np.array(self._slips) * self._frequency
@@ -722,7 +727,7 @@ class A1(Quadruped):
 
 
 class AlienGo(A1):
-    INIT_HEIGHT = 0.41
+    INIT_HEIGHT = 0.427
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
     JOINT_TYPES = ('hip', 'thigh', 'calf', 'foot')

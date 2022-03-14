@@ -140,8 +140,7 @@ class BodyPosturePenalty(Reward):
         self.pitch_reshape = quadratic_linear_reshape(pitch_upper)
 
     def __call__(self, cmd, env, robot):
-        r, p, _ = env.getSafetyRpyOfRobot()
-        # print(np.array([r, self.roll_reshape(r), p, self.pitch_reshape(p)]))
+        r, p, _ = env.getTerrainBasedRpyOfRobot()
         return -(self.roll_reshape(r) + self.pitch_reshape(p)) / 2
 
 
@@ -151,8 +150,8 @@ class BodyHeightReward(Reward):
         self.reshape = tanh2_reshape(0., range_)
 
     def __call__(self, cmd, env, robot):
-        return env.getSafetyHeightOfRobot()
-        height = env.getSafetyHeightOfRobot()
+        return env.getTerrainBasedHeightOfRobot()
+        height = env.getTerrainBasedHeightOfRobot()
         return 1 - self.reshape(abs(height - self.des))
 
 

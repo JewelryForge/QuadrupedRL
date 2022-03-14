@@ -118,7 +118,7 @@ class BasicTask(RewardRegistry):
                 'torque': tuple(rob.getLastAppliedTorques()),
                 'contact': tuple(rob.getContactStates())
             },
-            'body_height': env.getSafetyHeightOfRobot(),
+            'body_height': env.getTerrainBasedHeightOfRobot(),
             'cot': rob.getCostOfTransport(),
             'twist': {
                 'linear': tuple(rob.getBaseLinearVelocityInBaseFrame()),
@@ -144,14 +144,14 @@ class BasicTask(RewardRegistry):
 
     def isFailed(self):  # TODO: CHANGE TIME_OUT TO NORMALLY FINISH
         r, _, _ = self._robot.rpy
-        safety_h = self._env.getSafetyHeightOfRobot()
+        safety_h = self._env.getTerrainBasedHeightOfRobot()
         h_lb, h_ub = self._robot.STANCE_HEIGHT * 0.5, self._robot.STANCE_HEIGHT * 1.5
         if (safety_h < h_lb or safety_h > h_ub or r < -np.pi / 3 or r > np.pi / 3 or
                 self._robot.getBaseContactState()):
             return True
-        joint_diff = self._robot.getJointPositions() - self._robot.STANCE_POSTURE
-        if any(joint_diff > g_cfg.joint_angle_range) or any(joint_diff < -g_cfg.joint_angle_range):
-            return True
+        # joint_diff = self._robot.getJointPositions() - self._robot.STANCE_POSTURE
+        # if any(joint_diff > g_cfg.joint_angle_range) or any(joint_diff < -g_cfg.joint_angle_range):
+        #     return True
         return False
 
 
