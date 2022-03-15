@@ -276,7 +276,7 @@ class RewardRegistry(object):
     def weight_sum(self):
         return self._weight_sum
 
-    def register(self, name: str, weight: float):
+    def addReward(self, name: str, weight: float):
         if name in self._rewards_set:
             raise RuntimeError(f'Duplicated Reward Type {name}')
         self._rewards_set.add(name)
@@ -290,7 +290,7 @@ class RewardRegistry(object):
     def report(self):
         from burl.utils.log import colored_str
         print(colored_str(f'Got {len(self._rewards_weights)} types of rewards:', 'white'))
-        print(f"{'Reward Type':<25}Weight * {self._coefficient:.3f}")
+        print(f"{'Reward Type':<28}Weight * {self._coefficient:.3f}")
         for reward, weight in self._rewards_weights:
             reward_name: str = reward.__class__.__name__
             length = len(reward_name)
@@ -298,7 +298,7 @@ class RewardRegistry(object):
                 reward_name = colored_str(reward_name, 'green')
             elif reward_name.endswith('Penalty'):
                 reward_name = colored_str(reward_name, 'magenta')
-            print(f'{reward_name}{" " * (25 - length)}{weight:.3f}')
+            print(f'{reward_name}{" " * (28 - length)}{weight:.3f}')
         print()
 
     def getRewardDetails(self):

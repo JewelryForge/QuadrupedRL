@@ -14,6 +14,7 @@ class Options(object):
         self.task_type = 'basic'
         self.random_dynamics = False
         self.actuator_net = None
+        self.use_centralized_curriculum = False
 
 
 class PhysicsParam(object):

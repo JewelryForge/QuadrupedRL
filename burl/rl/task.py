@@ -3,38 +3,39 @@ import random
 
 import numpy as np
 
-from burl.rl.curriculum import GameInspiredCurriculum, DisturbanceCurriculum, TerrainCurriculum
+from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CURRICULUM_DISTRIB
 from burl.rl.reward import *
 from burl.utils import g_cfg
 
-__all__ = ['BasicTask', 'RandomCmdTask', 'get_task']
+__all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
 
 
 class BasicTask(RewardRegistry):
     def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
         super().__init__(np.asarray(cmd), env, env.robot)
         for reward, weight in g_cfg.rewards_weights:
-            self.register(reward, weight)
-
+            self.addReward(reward, weight)
         self.setCoefficient(0.25)
-        self.curricula: list[GameInspiredCurriculum] = []
-        if g_cfg.add_disturbance:
-            self.addCurriculum(DisturbanceCurriculum(aggressive=False))
         # self.setCoefficient(0.1 / self._weight_sum)
+
+        self.curricula: list[CURRICULUM_DISTRIB] = []
 
     cmd = property(lambda self: self._cmd)
     env = property(lambda self: self._env)
     robot = property(lambda self: self._robot)
 
     def makeTerrain(self, terrain_type):
-        from burl.sim import Plain, Slope
+        from burl.sim import Plain
         if terrain_type == 'plain':
             terrain_inst = Plain()
             terrain_inst.spawn(self._env.client)
         elif terrain_type == 'curriculum':
-            terrain_curriculum = TerrainCurriculum(aggressive=False)
-            self.addCurriculum(terrain_curriculum)
-            terrain_inst = terrain_curriculum.generateTerrain(self._env.client)
+            for crm in self.curricula:
+                if hasattr(crm, 'generateTerrain'):
+                    terrain_inst = crm.generateTerrain(self._env.client)
+                    break
+            else:
+                raise RuntimeError('Not a TerrainCurriculum instance')
         elif terrain_type == 'rough':
             raise NotImplementedError
         elif terrain_type == 'slope':
@@ -43,26 +44,24 @@ class BasicTask(RewardRegistry):
             raise RuntimeError(f'Unknown terrain type {terrain_type}')
         return terrain_inst
 
-    def addCurriculum(self, curriculum: GameInspiredCurriculum):
+    def addCurriculum(self, curriculum: CURRICULUM_DISTRIB):
         self.curricula.append(curriculum)
-        if g_cfg.test_mode:
-            curriculum.maxLevel()
 
     def onInit(self):
-        for cur in self.curricula:
-            cur.onInit(self, self._robot, self._env)
+        for crm in self.curricula:
+            crm.onInit(self, self._robot, self._env)
 
     def onSimulationStep(self):
-        for cur in self.curricula:
-            cur.onSimulationStep(self, self._robot, self._env)
+        for crm in self.curricula:
+            crm.onSimulationStep(self, self._robot, self._env)
         if g_cfg.test_mode:
             self.collectStatistics()
 
     def onStep(self):
         info = {}
-        for cur in self.curricula:
-            cur.onStep(self, self._robot, self._env)
-            info[cur.__class__.__name__] = cur.difficulty_degree
+        for crm in self.curricula:
+            crm.onStep(self, self._robot, self._env)
+            info[crm.__class__.__name__] = crm.difficulty_degree
         return info
 
     def collectStatistics(self):
@@ -129,8 +128,8 @@ class BasicTask(RewardRegistry):
         udp_pub.send(data)
 
     def reset(self):
-        for cur in self.curricula:
-            cur.onReset(self, self._robot, self._env)
+        for crm in self.curricula:
+            crm.onReset(self, self._robot, self._env)
         if g_cfg.test_mode:
             print('cot', self.robot.getCostOfTransport())
             print('mse torque', np.sqrt(self._torque_sum / self.robot._step_counter))
@@ -155,30 +154,30 @@ class BasicTask(RewardRegistry):
         return False
 
 
-class RandomLeftRightTask(BasicTask):
-    def __init__(self, env):
-        self.update_interval = 1500
-        self.last_update = 0
-        self.last_cmd = 0
-        super().__init__(env, (0., 1., 0.))
-
-    def reset(self):
-        self.last_update = 0
-        self._cmd = np.array((0., 1., 0.))
-        super().reset()
-
-    def onStep(self):
-        if self._env.sim_step >= self.last_update + self.update_interval:
-            self._cmd = np.array((0., 1., 0.) if self.last_cmd else (0., -1., 0.))
-            self.last_cmd = 1 - self.last_cmd
-            self.last_update = self._env.sim_step
-        super().onStep()
+# class RandomLeftRightTask(BasicTask):
+#     def __init__(self, env):
+#         self.update_interval = 1500
+#         self.last_update = 0
+#         self.last_cmd = 0
+#         super().__init__(env, (0., 1., 0.))
+#
+#     def reset(self):
+#         self.last_update = 0
+#         self._cmd = np.array((0., 1., 0.))
+#         super().reset()
+#
+#     def onStep(self):
+#         if self._env.sim_step >= self.last_update + self.update_interval:
+#             self._cmd = np.array((0., 1., 0.) if self.last_cmd else (0., -1., 0.))
+#             self.last_cmd = 1 - self.last_cmd
+#             self.last_update = self._env.sim_step
+#         super().onStep()
 
 
 class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
-        self.stop_prob = 0.2
+        # self.stop_prob = 0.2
         self.interval_range = (1000, 2500)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
@@ -209,6 +208,40 @@ class RandomCmdTask(RandomLinearCmdTask):
         yaw = random.uniform(0, 2 * np.pi)
         return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 1.))))
         # return np.array((math.cos(yaw), math.sin(yaw), clip(random.gauss(0, 0.5), -1, 1)))
+
+
+class CentralizedTask(object):
+    def __init__(self):
+        self.curriculum_prototypes: list[CURRICULUM_PROTOTYPE] = []
+        aggressive = g_cfg.test_mode
+        buffer_len = g_cfg.num_envs * 2
+        if g_cfg.use_centralized_curriculum:
+            from burl.rl.curriculum import CentralizedDisturbanceCurriculum, CentralizedTerrainCurriculum
+            if g_cfg.add_disturbance:
+                self.curriculum_prototypes.append(
+                    CentralizedDisturbanceCurriculum(buffer_len=buffer_len, aggressive=aggressive))
+            if g_cfg.trn_type == 'curriculum':
+                self.curriculum_prototypes.append(
+                    CentralizedTerrainCurriculum(buffer_len=buffer_len, aggressive=aggressive))
+        else:
+            from burl.rl.curriculum import DisturbanceCurriculum, TerrainCurriculum
+            if g_cfg.add_disturbance:
+                self.curriculum_prototypes.append(DisturbanceCurriculum(aggressive))
+            if g_cfg.trn_type == 'curriculum':
+                self.curriculum_prototypes.append(TerrainCurriculum(aggressive))
+
+    def makeDistribution(self, task_class, *args, **kwargs):
+        def _makeDistribution(env):
+            task_inst: BasicTask = task_class(env, *args, **kwargs)
+            for crm in self.curriculum_prototypes:
+                task_inst.addCurriculum(crm.makeDistribution())
+            return task_inst
+
+        return _makeDistribution
+
+    def updateCurricula(self):
+        for crm in self.curriculum_prototypes:
+            crm.checkLetter()
 
 
 def get_task(task_type: str):

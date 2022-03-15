@@ -233,7 +233,8 @@ class QuadrupedEnv(object):
                 axis_y = np.array((-axis_x[1], axis_x[0], 0))
                 last_end = axis_x * 0.1
                 phase, phase_inc = 0, cmd[2] / 3
-                for i, cmd_ind in enumerate(self._cmd_indicators):
+                # plot arrow ----->
+                for i, cmd_idc in enumerate(self._cmd_indicators):
                     if i < 5:
                         phase += phase_inc
                     elif i == 5:
@@ -245,9 +246,9 @@ class QuadrupedEnv(object):
                     _cmd_indicator = self._env.addUserDebugLine(
                         lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
                         lineWidth=5, lifeTime=1, parentObjectUniqueId=self._robot.id,
-                        replaceItemUniqueId=cmd_ind)
-                    if cmd_ind != -1 and _cmd_indicator != cmd_ind:
-                        self._env.removeUserDebugItem(cmd_ind)
+                        replaceItemUniqueId=cmd_idc)
+                    if cmd_idc != -1 and _cmd_indicator != cmd_idc:
+                        self._env.removeUserDebugItem(cmd_idc)
                     self._cmd_indicators[i] = _cmd_indicator
                     if i < 5:
                         last_end = end
@@ -316,8 +317,7 @@ class QuadrupedEnv(object):
         action = np.asarray(action)
         self._action_history.append(action)
         for i in range(self._num_action_repeats):
-            # update_execution = self._sim_step_counter % self._num_execution_repeats == 0
-            update_execution = True  # FIXME: task.calculateReward needs robot.updateObservation
+            update_execution = self._sim_step_counter % self._num_execution_repeats == 0
             if update_execution:
                 if g_cfg.use_action_interpolation:
                     weight = (i + 1) / self._num_action_repeats
@@ -332,10 +332,10 @@ class QuadrupedEnv(object):
             self._estimateTerrain()
             if update_execution:
                 self._robot.updateObservation()
-            rewards.append(self._task.calculateReward())
+                rewards.append(self._task.calculateReward())
+                for n, r in self._task.getRewardDetails().items():
+                    reward_details[n] = reward_details.get(n, 0) + r
             self._task.onSimulationStep()
-            for n, r in self._task.getRewardDetails().items():
-                reward_details[n] = reward_details.get(n, 0) + r
             if self._gui and g_cfg.single_step_rendering:
                 self._env.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
                 self._updateRendering()
@@ -521,7 +521,8 @@ class FixedTgEnv(IkEnv):
     def step(self, action: Action | np.ndarray):
         if not isinstance(action, Action):
             action = Action.from_array(action)
-        self._stm.update(action.leg_frequencies)
+        self._stm.update((0.,) * 4)
+        # self._stm.update(action.leg_frequencies)
         priori = self._stm.get_priori_trajectory().reshape(4, 3)
         des_pos = action.foot_pos_residuals.reshape(4, 3) + priori
 
@@ -546,17 +547,17 @@ class FixedTgEnv(IkEnv):
 
     def _prepareSimulation(self):  # for the stability of the beginning
         pass
-        # for _ in range(500):
-        #     self._robot.updateMinimalObservation()
-        #     self._robot.applyCommand(self._robot.STANCE_POSTURE)
-        #     self._env.stepSimulation()
+        for _ in range(100):
+            self._robot.updateMinimalObservation()
+            self._robot.applyCommand(self._robot.STANCE_POSTURE)
+            self._env.stepSimulation()
 
 
 if __name__ == '__main__':
     from burl.utils import init_logger, set_logger_level
 
     g_cfg.on_rack = False
-    g_cfg.trn_type = 'plain'
+    g_cfg.trn_type = 'curriculum'
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
@@ -567,7 +568,7 @@ if __name__ == '__main__':
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
-    tg = True
+    tg = False
     if tg:
         env = FixedTgEnv(AlienGo)
         env.initObservation()

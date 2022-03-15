@@ -7,7 +7,7 @@ import wandb
 
 from burl.alg import Actor, Critic, PPO
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
-from burl.rl.task import get_task
+from burl.rl.task import get_task, CentralizedTask
 from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, SingleEnvContainer
 from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
 
@@ -74,6 +74,7 @@ class OnPolicyRunner(object):
                         eps_len_buffer.extend(cur_episode_length[reset_ids].cpu().numpy().tolist())
                         cur_reward_sum[reset_ids] = 0
                         cur_episode_length[reset_ids] = 0
+                        self.on_env_reset(reset_ids)
 
                 task_infos = infos.get('task_info', {})
                 collection_time = timer.end()
@@ -88,6 +89,9 @@ class OnPolicyRunner(object):
                 self.save(os.path.join(g_cfg.log_dir, f'model_{it}.pt'))
 
         self.save(os.path.join(g_cfg.log_dir, f'model_{self.current_iter}.pt'))
+
+    def on_env_reset(self, reset_ids):
+        pass
 
     def log(self, it, locs, width=25):
         log_info(f"{'#' * width}")
@@ -143,9 +147,10 @@ class OnPolicyRunner(object):
 
 class PolicyTrainer(OnPolicyRunner):
     def __init__(self, task_type='basic'):
-        task_class = get_task(task_type)
+        self.task_prototype = CentralizedTask()
         super().__init__(
-            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
+            make_env=make_cls(FixedTgEnv, make_robot=AlienGo,
+                              make_task=self.task_prototype.makeDistribution(get_task(task_type))),
             make_actor=make_cls(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
                                 g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims,
                                 g_cfg.init_noise_std),
@@ -154,10 +159,17 @@ class PolicyTrainer(OnPolicyRunner):
 
     def get_policy_info(self):
         std = self.alg.actor.std.cpu()
-        return {'Policy/freq_noise_std': std[:4].mean().item(),
-                'Policy/X_noise_std': std[(4, 7, 10, 13),].mean().item(),
-                'Policy/Y_noise_std': std[(5, 8, 11, 14),].mean().item(),
-                'Policy/Z_noise_std': std[(6, 9, 12, 15),].mean().item()}
+        return {  # 'Policy/freq_noise_std': std[:4].mean().item(),
+            'Policy/X_noise_std': std[(0, 3, 6, 9),].mean().item(),
+            'Policy/Y_noise_std': std[(1, 4, 7, 10),].mean().item(),
+            'Policy/Z_noise_std': std[(2, 5, 8, 11),].mean().item()}
+        # return {'Policy/freq_noise_std': std[:4].mean().item(),
+        #         'Policy/X_noise_std': std[(4, 7, 10, 13),].mean().item(),
+        #         'Policy/Y_noise_std': std[(5, 8, 11, 14),].mean().item(),
+        #         'Policy/Z_noise_std': std[(6, 9, 12, 15),].mean().item()}
+
+    def on_env_reset(self, reset_ids):
+        self.task_prototype.updateCurricula()
 
 
 class Player(object):
@@ -196,11 +208,12 @@ class Player(object):
 
 class PolicyPlayer(Player):
     def __init__(self, model_path, task_type='basic'):
-        task_class = get_task(task_type)
+        task_prototype = CentralizedTask()
 
         super().__init__(
             model_path,
-            make_env=make_cls(FixedTgEnv, make_robot=AlienGo, make_task=task_class),
+            make_env=make_cls(FixedTgEnv, make_robot=AlienGo,
+                              make_task=task_prototype.makeDistribution(get_task(task_type))),
             make_actor=make_cls(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
                                 g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
         )

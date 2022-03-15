@@ -70,7 +70,7 @@ class StateSnapshot(ObservationBase):
         cls._init = True
         super()._wb_init()
         command_bias, command_weight = zero3, (1.,) * 3
-        gravity_vector_bias, gravity_vector_weight = (0., 0., .998), (10.,) * 3
+        gravity_vector_bias, gravity_vector_weight = (0., 0., .99), (5., 5., 20.)
         base_linear_bias, base_linear_weight = zero3, (2.,) * 3
         base_angular_bias, base_angular_weight = zero3, (2.,) * 3
         joint_pos_bias, joint_pos_weight = get_robot_type().STANCE_POSTURE, (2.,) * 12
@@ -253,28 +253,45 @@ class ExtendedObservation(ExteroObservation, ProprioObservation):
 
 
 class Action(ArrayAttr):
-    dim = 16
+    dim = 12
 
     def __init__(self):
-        self.leg_frequencies = zero4
         self.foot_pos_residuals = zero12
 
-    biases = np.zeros(16)
-    # weights = np.concatenate((
-    #     (0.01,) * 4, (0.1, 0.1, 0.025) * 4
-    # ))
-
-    weights = np.concatenate((
-        (0.,) * 4, (0.25, 0.25, 0.15) * 4
-    ))
+    biases = np.zeros(12)
+    weights = np.array((0.25, 0.25, 0.15) * 4)
 
     @classmethod
     def from_array(cls, arr: np.ndarray):
         arr = arr * cls.weights + cls.biases
         action = Action()
-        action.leg_frequencies = arr[:4]
-        action.foot_pos_residuals = arr[4:]
+        action.foot_pos_residuals = arr
         return action
+
+
+# class Action(ArrayAttr):
+#     dim = 16
+#
+#     def __init__(self):
+#         self.leg_frequencies = zero4
+#         self.foot_pos_residuals = zero12
+#
+#     biases = np.zeros(16)
+#     # weights = np.concatenate((
+#     #     (0.01,) * 4, (0.1, 0.1, 0.025) * 4
+#     # ))
+#
+#     weights = np.concatenate((
+#         (0.,) * 4, (0.25, 0.25, 0.15) * 4
+#     ))
+#
+#     @classmethod
+#     def from_array(cls, arr: np.ndarray):
+#         arr = arr * cls.weights + cls.biases
+#         action = Action()
+#         action.leg_frequencies = arr[:4]
+#         action.foot_pos_residuals = arr[4:]
+#         return action
 
 
 class JointStates(ArrayAttr):

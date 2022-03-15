@@ -1,5 +1,8 @@
+import collections
 import math
+import multiprocessing as mp
 import random
+from typing import Union
 
 import numpy as np
 
@@ -59,11 +62,14 @@ class GameInspiredCurriculum(object):
     def maxLevel(self):
         self.difficulty = self.max_difficulty
 
+    def makeDistribution(self):
+        return self
+
 
 class TerrainCurriculum(GameInspiredCurriculum):
     def __init__(self, aggressive=False):
         super().__init__(100, 1, aggressive)
-        self.max_roughness = 0.4
+        self.max_roughness = 0.2
         self.terrain = None
         self.episode_linear_reward_sum = 0.
         self.episode_sim_count = 0
@@ -145,3 +151,139 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
             self.updateDisturbance(env)
             self.update_interval = random.uniform(*self.interval_range)
             self.last_update = env.sim_step
+
+
+class CurriculumDistribution(object):
+    def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
+        self.comm, self.difficulty_getter = comm, difficulty_getter
+        self.max_difficulty = max_difficulty
+        self.difficulty = difficulty_getter()
+
+    @property
+    def difficulty_degree(self):
+        return self.difficulty / self.max_difficulty
+
+    def onInit(self, task, robot, env):
+        pass
+
+    def onSimulationStep(self, task, robot, env):
+        pass
+
+    def onStep(self, task, robot, env):
+        pass
+
+    def isSuccess(self, task, robot, env) -> bool:
+        pass
+
+    def onReset(self, task, robot, env):
+        self.comm.put((self.difficulty, self.isSuccess(task, robot, env)))
+        self.difficulty = self.difficulty_getter()
+
+
+class CentralizedCurriculum(object):
+    def __init__(self, distribution_class, buffer_len, max_difficulty, bounds=(0.5, 0.8), aggressive=False):
+        self.max_difficulty, self.buffer_len = max_difficulty, buffer_len
+        self.distribution = distribution_class
+        self.lower_bound, self.upper_bound = bounds
+        self.buffer = collections.deque(maxlen=buffer_len)
+        self.letter_box = mp.Queue()
+        self._difficulty = mp.Value('i', max_difficulty if aggressive else 0)
+
+    @property
+    def difficulty(self):
+        return self._difficulty.value
+
+    @difficulty.setter
+    def difficulty(self, value):
+        self._difficulty.value = value
+
+    def register(self, difficulty, success: bool):
+        self.buffer.append(success if difficulty == self.difficulty else success * self.upper_bound)
+        if len(self.buffer) == self.buffer_len:
+            if (mean := sum(self.buffer) / self.buffer_len) > self.upper_bound:
+                self.increaseLevel()
+            elif mean < self.lower_bound:
+                self.decreaseLevel()
+
+    def checkLetter(self):
+        while not self.letter_box.empty():
+            self.register(*self.letter_box.get())
+
+    def decreaseLevel(self):
+        if (difficulty := self.difficulty) > 0:
+            self.difficulty = difficulty - 1
+            self.buffer.clear()
+
+    def increaseLevel(self):
+        if (difficulty := self.difficulty) < self.max_difficulty:
+            self.difficulty = difficulty + 1
+            self.buffer.clear()
+
+    def makeDistribution(self):
+        return self.distribution(self.letter_box, lambda: self._difficulty.value, self.max_difficulty)
+
+
+class DisturbanceCurriculumDistribution(CurriculumDistribution):
+    def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
+        super().__init__(comm, difficulty_getter, max_difficulty)
+        self.force_magnitude = np.array(g_cfg.force_magnitude)
+        self.torque_magnitude = np.array(g_cfg.torque_magnitude)
+        self.interval_range = (500, 1000)
+        self.update_interval = random.uniform(*self.interval_range)
+        self.last_update = 0
+
+    updateDisturbance = DisturbanceCurriculum.updateDisturbance
+
+    def onInit(self, task, robot, env):
+        self.updateDisturbance(env)
+
+    def isSuccess(self, task, robot, env) -> bool:
+        return not env.is_failed
+
+    def onReset(self, task, robot, env):
+        super().onReset(task, robot, env)
+        self.update_interval = random.uniform(*self.interval_range)
+        self.last_update = 0
+        self.updateDisturbance(env)
+
+    def onSimulationStep(self, task, robot, env):
+        if env.sim_step >= self.last_update + self.update_interval:
+            self.updateDisturbance(env)
+            self.update_interval = random.uniform(*self.interval_range)
+            self.last_update = env.sim_step
+
+
+class TerrainCurriculumDistribution(CurriculumDistribution):
+    def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
+        super().__init__(comm, difficulty_getter, max_difficulty)
+        self.max_roughness = 0.2
+        self.terrain = None
+        self.episode_linear_reward_sum = 0.
+        self.episode_sim_count = 0
+
+    generateTerrain = TerrainCurriculum.generateTerrain
+
+    def onSimulationStep(self, task, robot, env):
+        TerrainCurriculum.onSimulationStep(self, task, robot, env)
+
+    def isSuccess(self, task, robot, env) -> bool:
+        return not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6
+
+    def onReset(self, task, robot, env):
+        super().onReset(task, robot, env)
+        self.generateTerrain(env.client)
+        self.episode_linear_reward_sum = self.episode_sim_count = 0
+
+
+class CentralizedDisturbanceCurriculum(CentralizedCurriculum):
+    def __init__(self, buffer_len=32, max_difficulty=25, bounds=(0.5, 0.8), aggressive=False):
+        super().__init__(DisturbanceCurriculumDistribution, buffer_len, max_difficulty, bounds, aggressive)
+
+
+class CentralizedTerrainCurriculum(CentralizedCurriculum):
+    def __init__(self, buffer_len=32, max_difficulty=100, bounds=(0.5, 0.8), aggressive=False):
+        super().__init__(TerrainCurriculumDistribution, buffer_len, max_difficulty, bounds, aggressive)
+
+
+CURRICULUM_PROTOTYPE = Union[GameInspiredCurriculum, CentralizedCurriculum]
+CURRICULUM_DISTRIB = Union[GameInspiredCurriculum, CurriculumDistribution]

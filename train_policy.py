@@ -8,7 +8,8 @@ import wandb
 
 def update_cfg_from_args():
     abbrs = {'num_iters': 'num_iterations',
-             'rand_dyn': 'random_dynamics'}
+             'rand_dyn': 'random_dynamics',
+             'centralized': 'use_centralized_curriculum'}
     for name, value in parse_args():
         if name == 'mp_train':
             g_cfg.use_wandb = True
