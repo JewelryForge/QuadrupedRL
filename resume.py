@@ -51,7 +51,7 @@ def main():
     update_cfg_from_wandb_and_args()
     log_warn(f'Training on {g_cfg.device}')
     runner = PolicyTrainer(g_cfg.task_type)
-    runner.load(find_log(time=resume_params['time'], epoch=resume_params['epoch']))
+    runner.load(find_log(time_=resume_params['time'], epoch=resume_params['epoch']))
     runner.learn()
 
 

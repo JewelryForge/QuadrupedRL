@@ -127,7 +127,7 @@ def train_actuator_net(actuator_net, dataset_class, lr=1e-3, num_epochs=1000, ba
 
     wandb.init(project='actuator_net', name=str((actuator_net.hidden_dims, lr)), mode=None)
     init_logger()
-    log_dir = f'ident/{timestamp()}'
+    log_dir = f'ident/{get_timestamp()}'
     os.makedirs(log_dir, exist_ok=True)
     torch.set_printoptions(linewidth=10000)
     for i in range(1, num_epochs + 1):
@@ -162,7 +162,7 @@ if __name__ == '__main__':
 
     sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
     import burl
-    from burl.utils import timestamp, log_info, init_logger, find_log, MfTimer
+    from burl.utils import get_timestamp, log_info, init_logger, find_log, MfTimer
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
     use_history_info = True

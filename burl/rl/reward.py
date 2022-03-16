@@ -276,7 +276,11 @@ class RewardRegistry(object):
     def weight_sum(self):
         return self._weight_sum
 
-    def addReward(self, name: str, weight: float):
+    @property
+    def reward_details(self):
+        return self._reward_details
+
+    def add_reward(self, name: str, weight: float):
         if name in self._rewards_set:
             raise RuntimeError(f'Duplicated Reward Type {name}')
         self._rewards_set.add(name)
@@ -284,7 +288,7 @@ class RewardRegistry(object):
         self._weight_sum += weight
         self._rewards_weights.append((reward_class(), weight))
 
-    def setCoefficient(self, coeff):
+    def set_coeff(self, coeff):
         self._coefficient = coeff
 
     def report(self):
@@ -301,10 +305,7 @@ class RewardRegistry(object):
             print(f'{reward_name}{" " * (28 - length)}{weight:.3f}')
         print()
 
-    def getRewardDetails(self):
-        return self._reward_details
-
-    def calculateReward(self):
+    def calc_reward(self):
         self._reward_details.clear()
         weighted_sum = 0.0
         for reward, weight in self._rewards_weights:
@@ -313,7 +314,7 @@ class RewardRegistry(object):
             weighted_sum += rew * weight
         return weighted_sum * self._coefficient
 
-    def calculateEveryTermOfReward(self):
+    def calc_reward_terms(self):
         self._reward_details.clear()
         reward_terms = []
         for reward, weight in self._rewards_weights:

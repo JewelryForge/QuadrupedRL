@@ -1,113 +1,116 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 import torch
 
 
+@dataclass
 class Options(object):
-    def __init__(self):
-        self.rendering = False
-        self.on_rack = False
-        self.test_mode = False
-        self.use_wandb = True
-        self.add_disturbance = True
-        self.trn_type = 'plain'
-        self.tg_init = 'fixed'
-        self.lr_scheduler = ''
-        self.task_type = 'basic'
-        self.random_dynamics = False
-        self.actuator_net = None
-        self.use_centralized_curriculum = False
+    rendering: bool = False
+    on_rack: bool = False
+    test_mode: bool = False
+    use_wandb: bool = True
+    add_disturbance: bool = True
+    trn_type: str = 'plain'
+    tg_init: str = 'fixed'
+    lr_scheduler: str = ''
+    task_type: str = 'basic'
+    random_dynamics: bool = False
+    actuator_net: str | None = None
+    use_centralized_curriculum: bool = False
+    aggressive: bool = False
 
 
+@dataclass
 class PhysicsParam(object):
-    def __init__(self):
-        self.self_collision_enabled = False
-        self.motor_latencies = (0., 0.)
-        self.joint_friction = 0.025
-        self.foot_lateral_friction = 0.4
-        self.foot_spinning_friction = 0.2
-        self.foot_restitution = 0.3
-        self.joint_angle_range = 1.0
+    self_collision_enabled: bool = False
+    motor_latencies: tuple[float, float] = (0., 0.)
+    joint_friction: float = 0.025
+    foot_lateral_friction: float = 0.4
+    foot_spinning_friction: float = 0.2
+    foot_restitution: float = 0.3
+    joint_angle_range: float = 1.0
 
 
+@dataclass
 class SimParam(PhysicsParam):
-    def __init__(self):
-        super().__init__()
-        self.action_frequency = 50
-        self.sim_frequency = 500
-        self.execution_frequency = 500
-        self.max_sim_iterations = 10000
-        self.use_action_interpolation = True
+    action_frequency: int = 50
+    sim_frequency: int = 500
+    execution_frequency: int = 500
+    max_sim_iterations: int = 10000
+    use_action_interpolation: bool = True
 
 
+@dataclass
 class RenderParam(object):
-    def __init__(self):
-        self.rendering = False
-        self.sleeping_enabled = False
-        self.time_ratio = 1.
-        self.moving_camera = True
-        self.extra_visualization = True
-        self.show_indicators = True
-        self.show_time_ratio = True
-        self.plot_trajectory = False
-        self.single_step_rendering = False
+    rendering: bool = False
+    sleeping_enabled: bool = False
+    time_ratio: float = 1.
+    moving_camera: bool = True
+    extra_visualization: bool = True
+    show_indicators: bool = True
+    show_time_ratio: bool = True
+    plot_trajectory: bool = False
+    single_step_rendering: bool = False
 
 
+@dataclass
 class PPOParam(object):
-    def __init__(self):
-        self.storage_len = 128
-        self.repeat_times = 8
-        self.num_mini_batches = 1
-        self.clip_ratio = 0.2
-        self.gamma = 0.995
-        self.lambda_gae = 0.95
-        self.value_loss_coef = 1.0
-        self.entropy_coef = 4e-3
-        self.learning_rate = 1e-4
-        self.max_grad_norm = 1.0
-        self.desired_kl = 0.01
+    storage_len: int = 128
+    repeat_times: int = 8
+    num_mini_batches: int = 1
+    clip_ratio: float = 0.2
+    gamma: float = 0.995
+    lambda_gae: float = 0.95
+    value_loss_coeff: float = 1.0
+    entropy_coeff: float = 4e-3
+    learning_rate: float = 1e-4
+    max_grad_norm: float = 1.0
+    # desired_kl : float= 0.01
 
 
+@dataclass
 class TrainParam(object):
-    def __init__(self):
-        self.num_iterations = 10000
-        self.num_envs = 16
-        self.init_noise_std = 0.1
-        self.save_interval = 50
-        self.device = 'cuda'
-        self.extero_layer_dims = (72, 64)
-        self.proprio_layer_dims = ()
-        self.action_layer_dims = (256, 128, 64)
-        # self.action_layer_dims = (512, 256, 128)
+    num_iterations: int = 10000
+    num_envs: int = 16
+    init_noise_std: float = 0.1
+    save_interval: int = 50
+    device: str = 'cuda'
+    extero_layer_dims: tuple[int, ...] = (72, 64)
+    proprio_layer_dims: tuple[int, ...] = ()
+    action_layer_dims: tuple[int, ...] = (256, 128, 64)
+    # action_layer_dims = (512, 256, 128)
 
 
+@dataclass
 class RuntimeParam(object):
-    def __init__(self):
-        self.log_dir = ''
-        self.run_name = None
-        self.use_mp = True
-        self.rewards_weights = (('LinearVelocityReward', 0.16),
-                                ('YawRateReward', 0.06),
-                                ('OrthogonalLinearPenalty', 0.04),
-                                ('VerticalLinearPenalty', 0.04),
-                                ('RollPitchRatePenalty', 0.04),
-                                ('BodyPosturePenalty', 0.04),
-                                ('FootSlipPenalty', 0.04),
-                                ('BodyCollisionPenalty', 0.04),
-                                ('TorquePenalty', 0.01),
-                                ('JointMotionPenalty', 0.01),
-                                ('AliveReward', 0.16),
-                                # ('TrivialStridePenalty', 0.06),
-                                # ('TorqueGradientPenalty', 0.04),
-                                ('CostOfTransportReward', 0.),
-                                ('ClearanceOverTerrainReward', 0.),
-                                ('BodyHeightReward', 0.),
-                                ('HipAnglePenalty', 0.),)
+    log_dir: str = ''
+    run_name: str = ''
+    use_mp: bool = True
+    rewards_weights: tuple[tuple[str, float], ...] = (('LinearVelocityReward', 0.16),
+                                                      ('YawRateReward', 0.06),
+                                                      ('OrthogonalLinearPenalty', 0.04),
+                                                      ('VerticalLinearPenalty', 0.04),
+                                                      ('RollPitchRatePenalty', 0.04),
+                                                      ('BodyPosturePenalty', 0.04),
+                                                      ('FootSlipPenalty', 0.04),
+                                                      ('BodyCollisionPenalty', 0.04),
+                                                      ('TorquePenalty', 0.01),
+                                                      ('JointMotionPenalty', 0.01),
+                                                      ('AliveReward', 0.24),
+                                                      # ('TrivialStridePenalty', 0.06),
+                                                      # ('TorqueGradientPenalty', 0.04),
+                                                      ('CostOfTransportReward', 0.),
+                                                      ('ClearanceOverTerrainReward', 0.02),
+                                                      ('BodyHeightReward', 0.),
+                                                      ('HipAnglePenalty', 0.),)
 
 
+@dataclass
 class DisturbanceParam(object):
-    def __init__(self):
-        self.disturbance_interval_steps = 500
-        self.force_magnitude = (20., 20.)  # horizontal vertical
-        self.torque_magnitude = (2.5, 5., 5.)  # x y z
+    disturbance_interval_steps: int = 500
+    force_magnitude: tuple[float, float] = (20., 20.)  # horizontal vertical
+    torque_magnitude: tuple[float, float, float] = (2.5, 5., 5.)  # x y z
 
 
 class TaskParam(Options, SimParam, RenderParam, TrainParam,

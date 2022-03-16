@@ -147,8 +147,8 @@ class PPO(object):
         self.repeat_times = g_cfg.repeat_times
         self.clip_ratio = g_cfg.clip_ratio
         # self.clip_value_loss = g_cfg.clip_value_loss
-        self.value_loss_coef = g_cfg.value_loss_coef
-        self.entropy_coef = g_cfg.entropy_coef
+        self.value_loss_coeff = g_cfg.value_loss_coeff
+        self.entropy_coeff = g_cfg.entropy_coeff
         self.max_grad_norm = g_cfg.max_grad_norm
 
         self.actor, self.critic = actor.to(self.device), critic.to(self.device)
@@ -199,6 +199,10 @@ class PPO(object):
         self.storage.compute_returns(last_values, self.gamma, self.lambda_gae)
 
     def adaptively_modify_lr(self, sigma_batch, mu_batch, old_sigma_batch, old_mu_batch):
+        """
+        Robust policy gradients with Proximal Policy Optimization, from Nicolas Heess etc.
+        Emergence of Locomotion Behaviours in Rich Environments (2017)
+        """
         with torch.inference_mode():
             kl = torch.sum((sigma_batch / old_sigma_batch + 1e-5).log() - 0.5 +
                            (old_sigma_batch.square() + (old_mu_batch - mu_batch).square())
@@ -246,7 +250,7 @@ class PPO(object):
 
             value_loss = (returns_batch - value_batch).pow(2).mean() / (value_batch.std() + 1e-6)
 
-            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
+            loss = surrogate_loss + self.value_loss_coeff * value_loss - self.entropy_coeff * entropy_batch.mean()
 
             # Gradient step
             self.optim.zero_grad()

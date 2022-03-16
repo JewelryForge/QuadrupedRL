@@ -1,4 +1,8 @@
+from dataclasses import dataclass
+
 import numpy as np
+
+from burl.utils import ARRAY_LIKE
 
 zero = np.zeros
 one = np.ones
@@ -294,40 +298,32 @@ class Action(ArrayAttr):
 #         return action
 
 
+@dataclass
 class JointStates(ArrayAttr):
-    def __init__(self, position=None, velocity=None, reaction_force=None, torque=None):
-        self.position, self.velocity = position, velocity
-        self.reaction_force, self.torque = reaction_force, torque
+    position: ARRAY_LIKE = None
+    velocity: ARRAY_LIKE = None
+    reaction_force: ARRAY_LIKE = None
+    torque: ARRAY_LIKE = None
 
 
+@dataclass
 class Pose(ArrayAttr):
-    def __init__(self, position=None, orientation=None, rpy=None):
-        self.position, self.orientation = position, orientation
-        self.rpy = rpy
+    position: ARRAY_LIKE = None
+    orientation: ARRAY_LIKE = None
+    rpy: ARRAY_LIKE = None
 
 
+@dataclass
 class Twist(ArrayAttr):
-    def __init__(self, linear=None, angular=None):
-        self.linear, self.angular = linear, angular
-
-    def __iter__(self):
-        return (self.linear, self.angular).__iter__()
-
-    def __str__(self):
-        return str(np.concatenate([self.linear, self.angular]))
+    linear: ARRAY_LIKE = None
+    angular: ARRAY_LIKE = None
 
 
+@dataclass
 class BaseState(object):
-    def __init__(self, pose=None, twist=None, twist_Base=None):
-        self.pose: Pose = pose
-        self.twist: Twist = twist
-        self.twist_Base: Twist = twist_Base
-
-    def __iter__(self):
-        return (self.pose, self.twist).__iter__()
-
-    def __str__(self):
-        return f'pose: {str(self.pose)}, twist: {str(self.twist)}'
+    pose: Pose = None
+    twist: Twist = None
+    twist_Base: Twist = None
 
 
 class ContactStates(np.ndarray):
@@ -335,21 +331,19 @@ class ContactStates(np.ndarray):
         return np.asarray(matrix, dtype=float)
 
 
+@dataclass
 class FootStates(ArrayAttr):
-    def __init__(self, positions=None, orientations=None, forces=None):
-        self.positions, self.orientations = positions, orientations
-        self.forces = forces
+    positions: ARRAY_LIKE = None
+    orientations: ARRAY_LIKE = None
+    forces: ARRAY_LIKE = None
 
 
+@dataclass
 class ObservationRaw(object):
-    def __init__(self, base_state=None, joint_states=None, foot_states=None, contact_states=None):
-        self.base_state: BaseState = base_state
-        self.joint_states: JointStates = joint_states
-        self.foot_states: FootStates = foot_states
-        self.contact_states: ContactStates = contact_states
-
-    def __str__(self):
-        return str(self.base_state) + '\n' + str(self.contact_states)
+    base_state: BaseState = None
+    joint_states: JointStates = None
+    foot_states: FootStates = None
+    contact_states: ContactStates = None
 
 
 if __name__ == '__main__':

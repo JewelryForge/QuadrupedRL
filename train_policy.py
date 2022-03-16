@@ -2,7 +2,7 @@ import sys
 
 sys.path.append('.')
 from burl.rl.runner import PolicyTrainer
-from burl.utils import g_cfg, log_warn, init_logger, parse_args, timestamp
+from burl.utils import g_cfg, log_warn, init_logger, parse_args, get_timestamp
 import wandb
 
 
@@ -51,7 +51,10 @@ def main():
     wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     if not g_cfg.log_dir:
-        g_cfg.log_dir = f'log/{timestamp()}#{wandb.run.name}@{wandb.run.id}'
+        if g_cfg.use_wandb:
+            g_cfg.log_dir = f'log/{get_timestamp(wandb.run.start_time)}#{wandb.run.name}@{wandb.run.id}'
+        else:
+            g_cfg.log_dir = f'log/{get_timestamp()}'
     runner = PolicyTrainer(g_cfg.task_type)
     runner.learn()
 

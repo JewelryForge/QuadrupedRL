@@ -9,7 +9,7 @@ from burl.alg import Actor, Critic, PPO
 from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 from burl.rl.task import get_task, CentralizedTask
 from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, SingleEnvContainer
-from burl.utils import make_cls, g_cfg, to_dev, MfTimer, log_info
+from burl.utils import make_part, g_cfg, to_dev, MfTimer, log_info
 
 
 class Accountant(object):
@@ -149,12 +149,12 @@ class PolicyTrainer(OnPolicyRunner):
     def __init__(self, task_type='basic'):
         self.task_prototype = CentralizedTask()
         super().__init__(
-            make_env=make_cls(FixedTgEnv, make_robot=AlienGo,
-                              make_task=self.task_prototype.makeDistribution(get_task(task_type))),
-            make_actor=make_cls(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
-                                g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims,
-                                g_cfg.init_noise_std),
-            make_critic=make_cls(Critic, ExtendedObservation.dim, 1),
+            make_env=make_part(FixedTgEnv, make_robot=AlienGo,
+                               make_task=self.task_prototype.make_distribution(get_task(task_type))),
+            make_actor=make_part(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                                 g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims,
+                                 g_cfg.init_noise_std),
+            make_critic=make_part(Critic, ExtendedObservation.dim, 1),
         )
 
     def get_policy_info(self):
@@ -169,7 +169,7 @@ class PolicyTrainer(OnPolicyRunner):
         #         'Policy/Z_noise_std': std[(6, 9, 12, 15),].mean().item()}
 
     def on_env_reset(self, reset_ids):
-        self.task_prototype.updateCurricula()
+        self.task_prototype.update_curricula()
 
 
 class Player(object):
@@ -212,8 +212,8 @@ class PolicyPlayer(Player):
 
         super().__init__(
             model_path,
-            make_env=make_cls(FixedTgEnv, make_robot=AlienGo,
-                              make_task=task_prototype.makeDistribution(get_task(task_type))),
-            make_actor=make_cls(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
-                                g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
+            make_env=make_part(FixedTgEnv, make_robot=AlienGo,
+                               make_task=task_prototype.make_distribution(get_task(task_type))),
+            make_actor=make_part(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+                                 g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
         )

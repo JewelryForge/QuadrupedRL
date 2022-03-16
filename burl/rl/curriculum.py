@@ -2,7 +2,8 @@ import collections
 import math
 import multiprocessing as mp
 import random
-from typing import Union
+from collections.abc import Callable
+from typing import Union, Type
 
 import numpy as np
 
@@ -10,7 +11,9 @@ from burl.utils import g_cfg
 
 
 class GameInspiredCurriculum(object):
-    def __init__(self, max_difficulty, patience, aggressive=False):
+    """A curriculum prototype, with different difficulty between multi environments"""
+
+    def __init__(self, max_difficulty: int, patience: int, aggressive=False):
         self.episode_count = 0
         self.max_difficulty = max_difficulty
         self.patience = patience
@@ -32,49 +35,54 @@ class GameInspiredCurriculum(object):
             self.combo = 0
             self.miss += 1
         if self.miss and self.miss % self.patience == 0:
-            self.decreaseLevel()
+            self.decrease_level()
             return True
         elif self.combo and self.combo % self.patience == 0:
-            self.increaseLevel()
+            self.increase_level()
             return True
         return False
 
-    def decreaseLevel(self):
+    def decrease_level(self):
         if self.difficulty > 0:
             self.difficulty -= 1
 
-    def increaseLevel(self):
+    def increase_level(self):
         if self.difficulty < self.max_difficulty:
             self.difficulty += 1
 
-    def onInit(self, task, robot, env):
+    def on_init(self, task, robot, env):
         pass
 
-    def onSimulationStep(self, task, robot, env):
+    def on_simulation_step(self, task, robot, env):
         pass
 
-    def onStep(self, task, robot, env):
+    def on_step(self, task, robot, env):
         pass
 
-    def onReset(self, task, robot, env):
+    def on_reset(self, task, robot, env):
         pass
 
-    def maxLevel(self):
+    def set_max_level(self):
         self.difficulty = self.max_difficulty
 
-    def makeDistribution(self):
+    def make_distribution(self):
+        """For interface consistence"""
         return self
 
 
 class TerrainCurriculum(GameInspiredCurriculum):
     def __init__(self, aggressive=False):
         super().__init__(100, 1, aggressive)
-        self.max_roughness = 0.2
+        self.max_roughness = 0.4
         self.terrain = None
         self.episode_linear_reward_sum = 0.
         self.episode_sim_count = 0
 
-    def generateTerrain(self, sim_env):
+    def generate_terrain(self, sim_env):
+        """
+        If no terrain has been spawned, create and spawn it.
+        Otherwise update its height field.
+        """
         if not self.terrain:
             from burl.sim import Hills
             self.terrain = Hills(size=30, downsample=20, resolution=0.1,
@@ -89,13 +97,13 @@ class TerrainCurriculum(GameInspiredCurriculum):
                     sim_env, self.terrain.makeHeightField(size=30, downsample=20, resolution=0.1, roughness=roughness))
         return self.terrain
 
-    def onSimulationStep(self, task, robot, env):
-        self.episode_linear_reward_sum += task.getRewardDetails()['LinearVelocityReward']
+    def on_simulation_step(self, task, robot, env):
+        self.episode_linear_reward_sum += task.reward_details['LinearVelocityReward']
         self.episode_sim_count += 1
 
-    def onReset(self, task, robot, env):
+    def on_reset(self, task, robot, env):
         self.register(not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6)
-        self.generateTerrain(env.client)
+        self.generate_terrain(env.client)
         self.episode_linear_reward_sum = self.episode_sim_count = 0
 
 
@@ -108,7 +116,7 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
 
-    def updateDisturbance(self, env):
+    def update_disturbance(self, env):
         if not self.difficulty:
             external_force = external_torque = (0., 0., 0.)
         else:
@@ -137,24 +145,26 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
         # external_torque = (0., 0., 0.)
         env.setDisturbance(external_force, external_torque)
 
-    def onInit(self, task, robot, env):
-        self.updateDisturbance(env)
+    def on_init(self, task, robot, env):
+        self.update_disturbance(env)
 
-    def onReset(self, task, robot, env):
+    def on_reset(self, task, robot, env):
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
         self.register(not env.is_failed)
-        self.updateDisturbance(env)
+        self.update_disturbance(env)
 
-    def onSimulationStep(self, task, robot, env):
+    def on_simulation_step(self, task, robot, env):
         if env.sim_step >= self.last_update + self.update_interval:
-            self.updateDisturbance(env)
+            self.update_disturbance(env)
             self.update_interval = random.uniform(*self.interval_range)
             self.last_update = env.sim_step
 
 
 class CurriculumDistribution(object):
-    def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
+    """Defines how curriculum affects the environment"""
+
+    def __init__(self, comm: mp.Queue, difficulty_getter: Callable[[], int], max_difficulty: int):
         self.comm, self.difficulty_getter = comm, difficulty_getter
         self.max_difficulty = max_difficulty
         self.difficulty = difficulty_getter()
@@ -163,25 +173,31 @@ class CurriculumDistribution(object):
     def difficulty_degree(self):
         return self.difficulty / self.max_difficulty
 
-    def onInit(self, task, robot, env):
+    def on_init(self, task, robot, env):
         pass
 
-    def onSimulationStep(self, task, robot, env):
+    def on_simulation_step(self, task, robot, env):
         pass
 
-    def onStep(self, task, robot, env):
+    def on_step(self, task, robot, env):
         pass
 
-    def isSuccess(self, task, robot, env) -> bool:
+    def is_success(self, task, robot, env) -> bool:
         pass
 
-    def onReset(self, task, robot, env):
-        self.comm.put((self.difficulty, self.isSuccess(task, robot, env)))
+    def on_reset(self, task, robot, env):
+        self.comm.put((self.difficulty, self.is_success(task, robot, env)))
         self.difficulty = self.difficulty_getter()
 
 
 class CentralizedCurriculum(object):
-    def __init__(self, distribution_class, buffer_len, max_difficulty, bounds=(0.5, 0.8), aggressive=False):
+    """
+    A centralized curriculum prototype, with common difficulty between multiprocess environments,
+    maintains a filter and difficulty alteration.
+    """
+
+    def __init__(self, distribution_class: Type[CurriculumDistribution], buffer_len: int, max_difficulty: int,
+                 bounds=(0.5, 0.8), aggressive=False):
         self.max_difficulty, self.buffer_len = max_difficulty, buffer_len
         self.distribution = distribution_class
         self.lower_bound, self.upper_bound = bounds
@@ -198,28 +214,30 @@ class CentralizedCurriculum(object):
         self._difficulty.value = value
 
     def register(self, difficulty, success: bool):
-        self.buffer.append(success if difficulty == self.difficulty else success * self.upper_bound)
+        self_difficulty = self.difficulty
+        self.buffer.append(success if difficulty >= self_difficulty else success * self.upper_bound)
         if len(self.buffer) == self.buffer_len:
-            if (mean := sum(self.buffer) / self.buffer_len) > self.upper_bound:
-                self.increaseLevel()
-            elif mean < self.lower_bound:
-                self.decreaseLevel()
+            if self_difficulty < self.max_difficulty:
+                if (mean := sum(self.buffer) / self.buffer_len) > self.upper_bound:
+                    self.increase_level()
+                elif mean < self.lower_bound:
+                    self.decrease_level()
 
-    def checkLetter(self):
+    def check_letter_box(self):
         while not self.letter_box.empty():
             self.register(*self.letter_box.get())
 
-    def decreaseLevel(self):
+    def decrease_level(self):
         if (difficulty := self.difficulty) > 0:
             self.difficulty = difficulty - 1
             self.buffer.clear()
 
-    def increaseLevel(self):
+    def increase_level(self):
         if (difficulty := self.difficulty) < self.max_difficulty:
             self.difficulty = difficulty + 1
             self.buffer.clear()
 
-    def makeDistribution(self):
+    def make_distribution(self):
         return self.distribution(self.letter_box, lambda: self._difficulty.value, self.max_difficulty)
 
 
@@ -232,23 +250,23 @@ class DisturbanceCurriculumDistribution(CurriculumDistribution):
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
 
-    updateDisturbance = DisturbanceCurriculum.updateDisturbance
+    update_disturbance = DisturbanceCurriculum.update_disturbance
 
-    def onInit(self, task, robot, env):
-        self.updateDisturbance(env)
+    def on_init(self, task, robot, env):
+        self.update_disturbance(env)
 
-    def isSuccess(self, task, robot, env) -> bool:
+    def is_success(self, task, robot, env) -> bool:
         return not env.is_failed
 
-    def onReset(self, task, robot, env):
-        super().onReset(task, robot, env)
+    def on_reset(self, task, robot, env):
+        super().on_reset(task, robot, env)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
-        self.updateDisturbance(env)
+        self.update_disturbance(env)
 
-    def onSimulationStep(self, task, robot, env):
+    def on_simulation_step(self, task, robot, env):
         if env.sim_step >= self.last_update + self.update_interval:
-            self.updateDisturbance(env)
+            self.update_disturbance(env)
             self.update_interval = random.uniform(*self.interval_range)
             self.last_update = env.sim_step
 
@@ -260,28 +278,30 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
         self.terrain = None
         self.episode_linear_reward_sum = 0.
         self.episode_sim_count = 0
+        self.linear_reward_threshold = 0.4
 
-    generateTerrain = TerrainCurriculum.generateTerrain
+    generate_terrain = TerrainCurriculum.generate_terrain
 
-    def onSimulationStep(self, task, robot, env):
-        TerrainCurriculum.onSimulationStep(self, task, robot, env)
+    def on_simulation_step(self, task, robot, env):
+        TerrainCurriculum.on_simulation_step(self, task, robot, env)
 
-    def isSuccess(self, task, robot, env) -> bool:
-        return not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6
+    def is_success(self, task, robot, env) -> bool:
+        average_linear_reward = self.episode_linear_reward_sum / self.episode_sim_count
+        return not env.is_failed and average_linear_reward > self.linear_reward_threshold
 
-    def onReset(self, task, robot, env):
-        super().onReset(task, robot, env)
-        self.generateTerrain(env.client)
+    def on_reset(self, task, robot, env):
+        super().on_reset(task, robot, env)
+        self.generate_terrain(env.client)
         self.episode_linear_reward_sum = self.episode_sim_count = 0
 
 
 class CentralizedDisturbanceCurriculum(CentralizedCurriculum):
-    def __init__(self, buffer_len=32, max_difficulty=25, bounds=(0.5, 0.8), aggressive=False):
+    def __init__(self, buffer_len=32, max_difficulty=25, bounds=(0.5, 0.9), aggressive=False):
         super().__init__(DisturbanceCurriculumDistribution, buffer_len, max_difficulty, bounds, aggressive)
 
 
 class CentralizedTerrainCurriculum(CentralizedCurriculum):
-    def __init__(self, buffer_len=32, max_difficulty=100, bounds=(0.5, 0.8), aggressive=False):
+    def __init__(self, buffer_len=32, max_difficulty=50, bounds=(0.5, 0.9), aggressive=False):
         super().__init__(TerrainCurriculumDistribution, buffer_len, max_difficulty, bounds, aggressive)
 
 

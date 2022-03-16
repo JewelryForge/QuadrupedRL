@@ -17,8 +17,8 @@ if __name__ == '__main__':
     set_logger_level('debug')
     remote = False
     if remote:
-        model_path = find_log_remote(time=None, epoch=None, log_dir='teacher-student/log')
+        model_path = find_log_remote(host='csc', time_=None, epoch=None, log_dir='teacher-student/log')
     else:
-        model_path = find_log(time=None, epoch=None)
-    player = PolicyPlayer(model_path, 'randLn')
+        model_path = find_log(time_=None, epoch=None)
+    player = PolicyPlayer(model_path, 'randCmd')
     player.play()

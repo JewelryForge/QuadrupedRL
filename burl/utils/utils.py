@@ -1,32 +1,24 @@
+from __future__ import annotations
+
+import functools
 import os
 import sys
 import time
 from datetime import datetime
+from typing import Union
+
+import numpy as np
+
+ARRAY_LIKE = Union[np.ndarray, list, tuple]
 
 
-class make_cls(object):
+class make_part(functools.partial):
     """
     Predefine some init parameters of a class without creating an instance.
     """
 
-    def __init__(self, cls, *args, **kwargs):
-        self.cls, self.args, self.kwargs = cls, args, kwargs
-
-    def __call__(self, *args, **kwargs):
-        kwargs.update(self.kwargs)
-        return self.cls(*self.args, *args, **kwargs)
-
     def __getattr__(self, item):
-        return getattr(self.cls, item)
-
-
-def _make_class(cls, **properties):
-    class TemporaryClass(cls):
-        def __init__(*args, **kwargs):
-            properties.update(kwargs)
-            super().__init__(*args, **properties)
-
-    return TemporaryClass
+        return getattr(self.func, item)
 
 
 class MfTimer(object):
@@ -109,8 +101,9 @@ class DynamicsInfo(object):
     collision_margin = property(lambda self: self._info[11])
 
 
-def timestamp() -> str:
-    return datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+def get_timestamp(timestamp: int | float = None) -> str:
+    datetime_ = datetime.fromtimestamp(timestamp) if timestamp else datetime.now()
+    return datetime_.strftime('%y-%m-%d_%H-%M-%S')
 
 
 def str2time(time_str: str):
@@ -122,49 +115,48 @@ def str2time(time_str: str):
         return datetime(1900, 1, 1)
 
 
-def _get_folder_with_specific_time(folders, time_stamp=None):
-    if not time_stamp:
+def _get_folder_with_specific_time(folders, time_=None):
+    if not time_:
         return folders[0]
     else:
         for folder in folders:
-            if ''.join(folder.split('_')[1].split('-')).startswith(str(time_stamp)):
+            if ''.join(folder.split('_')[1].split('-')).startswith(str(time_)):
                 return folder
         else:
-            raise RuntimeError(f'Record with time {time_stamp} not found')
+            raise RuntimeError(f'Record with time {time_} not found')
 
 
-def find_log(log_dir='log', fmt='model_*.pt', time=None, epoch=None):
+def find_log(log_dir='log', fmt='model_*.pt', time_=None, epoch: int = None):
     folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
-    folder = os.path.join(log_dir, _get_folder_with_specific_time(folders, time))
+    folder = os.path.join(log_dir, _get_folder_with_specific_time(folders, time_))
     prefix, suffix = fmt.split('*')
     final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in os.listdir(folder))
     if epoch:
-        if epoch > final_epoch:
-            raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
+        assert epoch <= final_epoch, f'Epoch {epoch} does not exist, max {final_epoch}'
     else:
         epoch = final_epoch
     return os.path.join(folder, prefix + f'{epoch}' + suffix)
 
 
-def find_log_remote(host='jewel@61.153.52.71', port=10022,
-                    log_dir='teacher-student/log', fmt='model_*.pt',
-                    time=None, epoch=None):
+def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log', fmt='model_*.pt',
+                    time_=None, epoch: int = None):
     """Find and download model file from remote"""
-    print(cmd := f'ssh -p {port} {host} ls {log_dir}')
+    ssh = f'ssh -p {port} {host}' if port else f'ssh {host}'
+    scp = f'scp -P {port} {host}' if port else f'scp {host}'
+    print(cmd := f'{ssh} ls {log_dir}')
     remote_logs = os.popen(cmd).read().split('\n')
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
     print('remote log items: ', *folders)
-    folder = _get_folder_with_specific_time(folders, time)
+    folder = _get_folder_with_specific_time(folders, time_)
     dst_dir = os.path.join(log_dir, folder).replace('\\', '/')
 
-    print(cmd := f'ssh -p {port} {host} ls {dst_dir}')
+    print(cmd := f'{ssh} ls {dst_dir}')
     models = os.popen(cmd).read().split('\n')
     prefix, suffix = fmt.split('*')
     final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in models if m)
     if epoch:
-        if epoch > final_epoch:
-            raise RuntimeError(f'Epoch {epoch} does not exist, max {final_epoch}')
+        assert epoch <= final_epoch, f'Epoch {epoch} does not exist, max {final_epoch}'
     else:
         epoch = final_epoch
     model_name = prefix + f'{epoch}' + suffix
@@ -173,12 +165,12 @@ def find_log_remote(host='jewel@61.153.52.71', port=10022,
     if not os.path.exists(os.path.join(local_log_dir, model_name)):
         os.makedirs(local_log_dir, exist_ok=True)
         print(f'downloading model file')
-        if os.system(f'scp -P {port} {host}:{remote_log} {local_log_dir}'):
+        if os.system(f'{scp}:{remote_log} {local_log_dir}'):
             raise RuntimeError('scp failed')
     return os.path.join(local_log_dir, model_name)
 
 
-def parse_args(args=None):
+def parse_args(args: list[str] = None):
     """
     Parse args from input or sys.argv, yield pairs of name and value.
     Supported argument formats:
@@ -192,7 +184,7 @@ def parse_args(args=None):
     idx = 0
     while idx < len(args):
         name = args[idx]
-        assert name.startswith('--'), ValueError(f"{name} doesn't start with --")
+        assert name.startswith('--'), f"arg `{name}` does not start with --"
         name = name.removeprefix('--')
         if '=' in name:
             name, value = name.split('=')

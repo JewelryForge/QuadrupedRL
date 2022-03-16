@@ -4,6 +4,7 @@ import math
 import os.path
 import random
 from collections import deque
+from typing import Optional as Opt
 
 import numpy as np
 import pybullet as pyb
@@ -12,7 +13,7 @@ import pybullet_data
 import burl
 from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import PdMotorSim, ActuatorNetSim, ActuatorNetWithHistorySim
-from burl.utils import ang_norm, JointInfo, DynamicsInfo
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 TP_ZERO3 = (0., 0., 0.)
@@ -117,17 +118,17 @@ class Quadruped(object):
         return self._body_id
 
     def _resetStates(self):
-        self._base_pose: Pose = None
-        self._base_twist: Twist = None
-        self._base_twist_Base: Twist = None
-        self._rpy: Rpy = None
-        self._last_stance_states: list[tuple[float, np.ndarray]] = [None] * 4
+        self._base_pose: Opt[Pose] = None
+        self._base_twist: Opt[Twist] = None
+        self._base_twist_Base: Opt[Twist] = None
+        self._rpy: Opt[Rpy] = None
+        self._last_stance_states: list[Opt[tuple[float, np.ndarray]]] = [None] * 4
         self._max_foot_heights: np.ndarray = np.zeros(4)
         self._foot_clearances: np.ndarray = np.zeros(4)
-        self._torque: np.ndarray = None
+        self._torque: Opt[np.ndarray] = None
         self._strides = [(0., 0.)] * 4
         self._slips = [0.] * 4
-        self._observation: ObservationRaw = None
+        self._observation: Opt[ObservationRaw] = None
         self._step_counter = -1
         self._sum_work = 0.0
         if isinstance(self._latency, float):
@@ -167,7 +168,7 @@ class Quadruped(object):
 
     def _analyseModelJoints(self):
         self._num_joints = self._env.getNumJoints(self._body_id)
-        self._joint_names = ['_'.join((l, j, s)) for l in self.LEG_NAMES
+        self._joint_names = ['_'.join((leg, j, s)) for leg in self.LEG_NAMES
                              for j, s in zip(self.JOINT_TYPES, self.JOINT_SUFFIX)]
 
         joint_name_to_id = {}
@@ -175,14 +176,15 @@ class Quadruped(object):
             joint_info = self._env.getJointInfo(self._body_id, i)
             joint_name_to_id[joint_info[1].decode("UTF-8")] = joint_info[0]
         self._joint_ids = [joint_name_to_id.get(n, -1) for n in self._joint_names]
-        self._motor_ids = [self._getJointId(l, j) for l in range(4) for j in range(3)]
-        self._foot_ids = [self._getJointId(l, -1) for l in range(4)]
+        self._motor_ids = [self._getJointId(leg, j) for leg in range(4) for j in range(3)]
+        self._foot_ids = [self._getJointId(leg, -1) for leg in range(4)]
 
     def _resetPosture(self):
         for i in range(12):
             self._env.resetJointState(self._body_id, self._motor_ids[i], self.STANCE_POSTURE[i], 0.0)
 
     def initPhysicsParams(self):
+        """Set sensors and get dynamics info from pybullet"""
         self._env.setPhysicsEngineParameter(enableConeFriction=0)
         for leg in range(4):
             self._env.enableJointForceTorqueSensor(self._body_id, self._getJointId(leg, 3), True)
@@ -192,6 +194,7 @@ class Quadruped(object):
     def setDynamics(self, foot_lateral_friction=(0.4,) * 4,
                     foot_spinning_friction=(0.2,) * 4,
                     joint_friction=(0.025,) * 12):
+        """Set robot dynamics, including frictions and inertia"""
         self._foot_friction = foot_lateral_friction
         for link_id, lf, sf in zip(self._foot_ids, self._foot_friction, foot_spinning_friction):
             self._env.changeDynamics(self._body_id, link_id, lateralFriction=lf, spinningFriction=sf)
@@ -203,6 +206,7 @@ class Quadruped(object):
         self._mass = sum([self._env.getDynamicsInfo(self._body_id, i)[0] for i in range(self._num_joints)])
 
     def randomDynamics(self):
+        """Randomize robot dynamics, including frictions and inertia"""
         base_mass = self._base_dynamics.mass * random.uniform(0.8, 1.2)
         base_inertia = self._base_dynamics.inertia * np.random.uniform(0.8, 1.2, 3)
         leg_masses, leg_inertia = zip(*[(leg_dyn.mass * random.uniform(0.8, 1.2),
@@ -217,7 +221,7 @@ class Quadruped(object):
         self.setDynamics(foot_lateral_friction=np.random.uniform(0.4, 1.0, 4),
                          joint_friction=np.random.random(12) * 0.05)
 
-    def applyCommand(self, motor_commands):
+    def applyCommand(self, motor_commands: ARRAY_LIKE):
         """
         Calculate desired joint torques of position commands with motor model.
         :param motor_commands: array of desired motor positions.
@@ -262,13 +266,13 @@ class Quadruped(object):
             self.setDynamics()
         self._env.resetBaseVelocity(self._body_id, TP_ZERO3, TP_ZERO3)
         self._resetPosture()
-        self._motor.reset()
 
     def updateMinimalObservation(self):
+        """Only update motor observations, for basic locomotion"""
         joint_states_raw = self._env.getJointStates(self._body_id, range(self._num_joints))
         joint_states = JointStates(*zip(*joint_states_raw))
-        self._motor.update_observation(joint_states.position[self._motor_ids,],
-                                       joint_states.velocity[self._motor_ids,])
+        self._motor.update_observation(joint_states.position[(self._motor_ids,)],
+                                       joint_states.velocity[(self._motor_ids,)])
 
     def updateObservation(self):
         """Get robot states from pybullet and generate a noisy copy"""
@@ -294,14 +298,16 @@ class Quadruped(object):
         return self._observation, observation_noisy
 
     def clearObservations(self):
+        """Clear all saved observations, besides those of motor"""
         self._resetStates()
         self._observation_history.clear()
         self._observation_noisy_history.clear()
         self._command_history.clear()
         self._torque_history.clear()
         self._cot_buffer.clear()
+        self._motor.reset()
 
-    def numericalInverseKinematics(self, leg, pos, frame=BASE_FRAME):
+    def numericalInverseKinematics(self, leg: int, pos: ARRAY_LIKE, frame=BASE_FRAME):
         """
         Calculate the inverse kinematic of certain leg by calling pybullet.calculateInverseKinematics.
         :param leg: The number of leg, ranging from [0, 4).
@@ -328,10 +334,10 @@ class Quadruped(object):
 
         return np.array(all_joint_angles[leg * 3: leg * 3 + 3])
 
-    def analyticalInverseKinematics(self, leg, pos, frame=BASE_FRAME):
+    def analyticalInverseKinematics(self, leg: int, pos: ARRAY_LIKE, frame=BASE_FRAME):
         raise NotImplementedError
 
-    def forwardKinematics(self, leg, angles) -> Odometry:
+    def forwardKinematics(self, leg: int, angles: ARRAY_LIKE) -> Odometry:
         raise NotImplementedError
 
     def _rotateFromWorld(self, vector_world, reference):
@@ -366,14 +372,14 @@ class Quadruped(object):
         return FootStates(foot_positions, foot_orientations, foot_forces)
 
     def _updateLocomotionInfos(self):
-        """Record locomotion related states in every simulation step"""
+        """Record locomotion related states including clearances, slips and strides in every simulation step"""
+        joint_vel = self.getJointVelocities()
         if self._torque is not None:
             mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
-            work = sum(filter(lambda i: i > 0, self._torque * self.getJointVelocities()))
+            work = sum(filter(lambda x: x > 0, self._torque * joint_vel))
             self._sum_work += work
             self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
-        joint_vel = self.getJointVelocities()
-        rolling_vel = joint_vel[(1, 4, 7, 10),] + joint_vel[(2, 5, 8, 11),]
+        rolling_vel = joint_vel[((1, 4, 7, 10),)] + joint_vel[((2, 5, 8, 11),)]
         for i, contact in enumerate(self.getFootContactStates()):
             foot_pos_world = self.getFootPositionInWorldFrame(i)
             if contact:
@@ -394,21 +400,23 @@ class Quadruped(object):
                 self._strides[i], self._slips[i], self._foot_clearances[i] = (0., 0.), 0., 0.
                 self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
 
-    def _estimateObservation(self):
+    def _estimateObservation(self, noisy=True):
         """Add noise on observation"""
         idx = 0 if len(self._observation_history) <= self._latency_steps else -self._latency_steps - 1
         observation = self._observation_history[idx]
-        # return observation
-        observation_noisy = ObservationRaw(BaseState(), JointStates())
-        add_noise = np.random.normal
-        observation_noisy.base_state.pose = Pose()
-        observation_noisy.base_state.pose.rpy = add_noise(observation.base_state.pose.rpy, 1e-2)
-        observation_noisy.base_state.pose.orientation = Quaternion.from_rpy(observation_noisy.base_state.pose.rpy)
-        observation_noisy.base_state.twist_Base = Twist(add_noise(observation.base_state.twist_Base.linear, 5e-2),
-                                                        add_noise(observation.base_state.twist_Base.angular, 5e-2))
-        observation_noisy.joint_states.position = add_noise(observation.joint_states.position, 5e-3)
-        observation_noisy.joint_states.velocity = add_noise(observation.joint_states.velocity, 1e-1)
-        return observation_noisy
+        if noisy:
+            observation_noisy = ObservationRaw(BaseState(), JointStates())
+            add_noise = np.random.normal
+            observation_noisy.base_state.pose = Pose()
+            observation_noisy.base_state.pose.rpy = add_noise(observation.base_state.pose.rpy, 1e-2)
+            observation_noisy.base_state.pose.orientation = Quaternion.from_rpy(observation_noisy.base_state.pose.rpy)
+            observation_noisy.base_state.twist_Base = Twist(add_noise(observation.base_state.twist_Base.linear, 5e-2),
+                                                            add_noise(observation.base_state.twist_Base.angular, 5e-2))
+            observation_noisy.joint_states.position = add_noise(observation.joint_states.position, 5e-3)
+            observation_noisy.joint_states.velocity = add_noise(observation.joint_states.velocity, 1e-1)
+            return observation_noisy
+        else:
+            return observation
 
     @property
     def position(self):  # without latency and noise
@@ -450,7 +458,7 @@ class Quadruped(object):
     def getBaseLinearVelocity(self):
         """
         Get the real robot linear velocity in world frame.
-        :return: linear velocity in np.ndarray with shape (3,)
+        :return: linear velocity of np.ndarray with shape (3,)
         """
         return self._base_twist.linear
 
@@ -473,10 +481,10 @@ class Quadruped(object):
         return self._observation.contact_states[0]
 
     def getFootContactStates(self):
-        return self._observation.contact_states[self._foot_ids,]
+        return self._observation.contact_states[(self._foot_ids,)]
 
     def getPrevFootContactStates(self):
-        return self.getObservationHistoryFromIndex(-2).contact_states[self._foot_ids,]
+        return self.getObservationHistoryFromIndex(-2).contact_states[(self._foot_ids,)]
 
     def getFootContactForces(self):
         return self._observation.foot_states.forces.reshape(-1)
@@ -521,15 +529,15 @@ class Quadruped(object):
         return self._observation.joint_states
 
     def getJointPositions(self, noisy=False):
-        return self.getObservation(noisy).joint_states.position[self._motor_ids,]
+        return self.getObservation(noisy).joint_states.position[(self._motor_ids,)]
 
     def getJointVelocities(self, noisy=False):
-        return self.getObservation(noisy).joint_states.velocity[self._motor_ids,]
+        return self.getObservation(noisy).joint_states.velocity[(self._motor_ids,)]
 
     def getJointAccelerations(self):
         if len(self._observation_history) > 2:
-            return (self._observation.joint_states.velocity[self._motor_ids,] -
-                    self._observation_history[-2].joint_states.velocity[self._motor_ids,]) * self._frequency
+            return (self._observation.joint_states.velocity[(self._motor_ids,)] -
+                    self._observation_history[-2].joint_states.velocity[(self._motor_ids,)]) * self._frequency
         return np.zeros(12)
 
     def getLastAppliedTorques(self):
@@ -553,13 +561,13 @@ class Quadruped(object):
         return history
 
     def getJointPosHistoryFromIndex(self, idx, noisy=False):
-        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.position[self._motor_ids,]
+        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.position[(self._motor_ids,)]
 
     def getJointPosErrHistoryFromIndex(self, idx, noisy=False):
         return self.getCmdHistoryFromIndex(idx) - self.getJointPosHistoryFromIndex(idx, noisy)
 
     def getJointVelHistoryFromIndex(self, idx, noisy=False):
-        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.velocity[self._motor_ids,]
+        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.velocity[(self._motor_ids,)]
 
     def _getIndexFromMoment(self, moment):
         assert moment < 0
@@ -637,13 +645,13 @@ class A1(Quadruped):
     P_PARAMS = 80.
     D_PARAMS = (1., 2., 2.) * 4
 
-    def analyticalInverseKinematics(self, leg: int | str, pos, frame=Quadruped.BASE_FRAME):
+    def analyticalInverseKinematics(self, leg: int, pos: ARRAY_LIKE, frame=Quadruped.BASE_FRAME):
         """
         Calculate analytical inverse kinematics of certain leg, unconsidered about joint angle limits.
         Currently only positions beneath the robot are supported.
         """
-        if isinstance(leg, str):
-            leg = self.LEG_NAMES.index(leg)
+        # if isinstance(leg, str):
+        #     leg = self.LEG_NAMES.index(leg)
         l_shoulder, l_thigh, l_shank = self.LINK_LENGTHS
         if self.LEG_NAMES[leg].endswith('R'):
             l_shoulder *= -1
@@ -681,7 +689,9 @@ class A1(Quadruped):
             return _ik_hip_frame(pos + (0, l_shoulder, 0) + self.STANCE_FOOT_POSITIONS[leg])
         raise RuntimeError(f'Unknown Frame {frame}')
 
-    def forwardKinematics(self, leg: int, angles) -> Odometry:
+    def forwardKinematics(self, leg: int, angles: ARRAY_LIKE) -> Odometry:
+        """Calculate the position and orientation of the end-effector (foot) in BASE frame"""
+
         def _mdh_matrix(alpha, a, d, theta):
             ca, sa, ct, st = np.cos(alpha), np.sin(alpha), np.cos(theta), np.sin(theta)
             return Odometry(((ct, -st, 0),
@@ -707,7 +717,12 @@ class A1(Quadruped):
                                     (0, 1, 0))))
         return transformation
 
-    def _getContactStates(self):
+    def _getContactStates(self) -> list[bool, ...]:
+        """
+        Returns contact states of all links:
+            [base, thigh, shank, foot of leg 0, ..., thigh, shank, foot of leg 3]
+        """
+
         def _getContactState(link_id):
             return bool(self._env.getContactPoints(bodyA=self._body_id, linkIndexA=link_id))
 
@@ -720,10 +735,10 @@ class A1(Quadruped):
         return contact_states
 
     def getFootContactStates(self):
-        return self._observation.contact_states[(3, 6, 9, 12),]
+        return self._observation.contact_states[((3, 6, 9, 12),)]
 
     def getPrevFootContactStates(self):
-        return self.getObservationHistoryFromIndex(-2).contact_states[(3, 6, 9, 12),]
+        return self.getObservationHistoryFromIndex(-2).contact_states[((3, 6, 9, 12),)]
 
 
 class AlienGo(A1):
@@ -768,14 +783,14 @@ if __name__ == '__main__':
     pyb.setTimeStep(2e-3)
     pyb.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = Plain()
-    robot = AlienGo()
+    _robot = AlienGo()
     terrain.spawn(pyb)
-    robot.spawn(on_rack=True)
+    _robot.spawn(on_rack=True)
     # robot.analyseJointInfos()
     pyb.setGravity(0, 0, -9.8)
 
     for _ in range(100000):
         pyb.stepSimulation()
-        robot.updateObservation()
+        _robot.updateObservation()
         # time.sleep(1. / 500)
-        tq = robot.applyCommand(robot.STANCE_POSTURE)
+        tq = _robot.applyCommand(_robot.STANCE_POSTURE)

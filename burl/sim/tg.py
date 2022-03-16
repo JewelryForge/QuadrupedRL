@@ -185,9 +185,9 @@ if __name__ == '__main__':
     # tg = designed_tg()
     # tg2 = end_trajectory_generator()
     x = np.linspace(-2, 2, 1000)
-    y1 = [tg(x) for x in x]
+    # y1 = [tg(x) for x in x]
     # y2 = [tg2(x) for x in x]
-    plt.plot(x, y1)
+    # plt.plot(x, y1)
     # plt.plot(x, y2)
     # plt.legend(['des', 'raw'])
     plt.show()

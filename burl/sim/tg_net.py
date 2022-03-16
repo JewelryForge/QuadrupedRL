@@ -60,7 +60,7 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     import wandb
     from burl.sim.tg import vertical_tg
-    from burl.utils import timestamp
+    from burl.utils import get_timestamp
 
     hidden_dims = eval(sys.argv[1])
     closed_tg = vertical_tg(h=0.12)
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     criterion = nn.MSELoss()
     num_epochs = 30000
     batch_size = 1000
-    log_dir = f'tg_log/{timestamp()}'
+    log_dir = f'tg_log/{get_timestamp()}'
     os.makedirs(log_dir, exist_ok=True)
     torch.set_printoptions(linewidth=10000)
     try:

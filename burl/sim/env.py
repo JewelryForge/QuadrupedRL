@@ -4,24 +4,25 @@ import math
 import time
 from collections import deque
 from itertools import chain
+from typing import Any, Callable, Optional as Opt
 
 import numpy as np
 import pybullet as pyb
 import pybullet_data
-from pybullet_utils import bullet_client
+from pybullet_utils.bullet_client import BulletClient
 
 from burl.rl.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
 from burl.rl.task import BasicTask
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.tg import TgStateMachine, vertical_tg
-from burl.utils import make_cls, g_cfg, log_info, log_debug, unit, vec_cross
+from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Quaternion
 
 
 class QuadrupedEnv(object):
     """
     Manage a simulation environment of a Quadruped robot, including physics and rendering parameters.
-    Reads g_cfg.trn_type to generate terrains.
+    Provides interface for reinforcement learning, including making observation and calculating rewards.
     """
 
     ALLOWED_OBSERVATION_TYPES = {'snapshot': 'makeStateSnapshot',
@@ -30,9 +31,11 @@ class QuadrupedEnv(object):
                                  'extended': 'makeExtendedObservation',
                                  'noisy_extended': 'makeNoisyExtendedObservation'}
 
-    def __init__(self, make_robot=Quadruped, make_task=BasicTask, observation_type=('snapshot',)):
+    def __init__(self, make_robot: Callable[..., Quadruped],
+                 make_task: Callable[..., BasicTask] = BasicTask,
+                 observation_type: tuple[str] = ('snapshot',)):
         self._gui = g_cfg.rendering
-        self._env = bullet_client.BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb
+        self._env = BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb  # for pylint
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
         for obs_type in observation_type:
             assert obs_type in self.ALLOWED_OBSERVATION_TYPES, f'Unknown Observation Type {obs_type}'
@@ -47,7 +50,7 @@ class QuadrupedEnv(object):
                                             motor_latencies=g_cfg.motor_latencies,
                                             actuator_net=g_cfg.actuator_net)
         self._task = make_task(self)
-        self._terrain = self._task.makeTerrain(g_cfg.trn_type)
+        self._terrain = self._task.make_terrain(g_cfg.trn_type)
         self._robot.spawn(self._env, g_cfg.on_rack)
         if not g_cfg.on_rack:
             self.moveRobotOnTerrain()
@@ -81,7 +84,7 @@ class QuadrupedEnv(object):
     is_failed = property(lambda self: self._is_failed)
 
     def initObservation(self):
-        self._task.onInit()
+        self._task.on_init()
         self._robot.updateObservation()
         return self.makeObservation()
 
@@ -308,7 +311,13 @@ class QuadrupedEnv(object):
             self._terrain_samples.append((x, y, z))
         self._est_height = est_h / len(xy_points)
 
-    def step(self, action):
+    def step(self, action: ARRAY_LIKE) -> tuple[Any, float, bool, dict]:
+        """
+        Given motor angles, calculate motor torques, step simulation, optionally update rendering
+        and get observations and rewards.
+        :param action: desired motor angles.
+        :return: a tuple, containing (*observations, reward, is_finished, info)
+        """
         # NOTICE: ADDING LATENCY ARBITRARILY FROM A DISTRIBUTION IS NOT REASONABLE
         # NOTICE: SHOULD CALCULATE TIME_SPENT IN REAL WORLD; HERE USE FIXED TIME INTERVAL
         rewards = []
@@ -332,10 +341,10 @@ class QuadrupedEnv(object):
             self._estimateTerrain()
             if update_execution:
                 self._robot.updateObservation()
-                rewards.append(self._task.calculateReward())
-                for n, r in self._task.getRewardDetails().items():
+                rewards.append(self._task.calc_reward())
+                for n, r in self._task.reward_details.items():
                     reward_details[n] = reward_details.get(n, 0) + r
-            self._task.onSimulationStep()
+            self._task.on_simulation_step()
             if self._gui and g_cfg.single_step_rendering:
                 self._env.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
                 self._updateRendering()
@@ -343,13 +352,14 @@ class QuadrupedEnv(object):
             self._updateRendering()
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats
-        self._is_failed = self._task.isFailed()
+        self._is_failed = self._task.is_failed()
         time_out = not self._is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
-        self._episode_reward += (mean_reward := np.mean(rewards))
+        mean_reward = np.mean(rewards).item()
+        self._episode_reward += mean_reward
         info = {'time_out': time_out,
                 'reward_details': reward_details,
                 'episode_reward': self._episode_reward}
-        if task_info := self._task.onStep():
+        if task_info := self._task.on_step():
             info['task_info'] = task_info
         # log_debug(f'Step time: {time.time() - start}')
         return (*self.makeObservation(),
@@ -392,7 +402,7 @@ class QuadrupedEnv(object):
         actions = [self._action_history[-i - 1] for i in range(3)]
         return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
 
-    def getAbundantTerrainInfo(self, x, y, yaw):
+    def getAbundantTerrainInfo(self, x, y, yaw) -> list[tuple[float, float, float]]:
         interval = 0.1
         dx, dy = interval * np.cos(yaw), interval * np.sin(yaw)
         points = ((dx - dy, dx + dy), (dx, dy), (dx + dy, -dx + dy),
@@ -409,7 +419,7 @@ class QuadrupedEnv(object):
     def getTerrainBasedHeightOfRobot(self) -> float:
         return self._robot.position[2] - self._est_height
 
-    def estimateLocalTerrainNormal(self):
+    def estimateLocalTerrainNormal(self) -> np.ndarray:
         X, Y, Z = np.array(self._terrain_samples).T
         A = np.zeros((3, 3))
         A[0, :] = np.sum(X ** 2), X @ Y, np.sum(X)
@@ -419,7 +429,7 @@ class QuadrupedEnv(object):
         a, b, _ = np.linalg.solve(A, b)
         return unit((-a, -b, 1))
 
-    def getLocalTerrainRotation(self):
+    def getLocalTerrainRotation(self) -> np.ndarray:
         trn_Z = self.estimateLocalTerrainNormal()
         trn_Y = vec_cross(trn_Z, (1., 0., 0.))
         trn_X = vec_cross(trn_Y, trn_Z)
@@ -438,32 +448,35 @@ class QuadrupedEnv(object):
 
 
 class IkEnv(QuadrupedEnv):
-    def __init__(self, make_robot=A1, make_task=BasicTask, observation_type=('extended', 'extended'),
-                 ik_type='analytical', horizontal_frame=False):
+    def __init__(self, make_robot: Callable[..., Quadruped], make_task=BasicTask,
+                 observation_type=('extended', 'extended'), ik_type='analytical', horizontal_frame=False):
         super().__init__(make_robot, make_task, observation_type)
-        self._commands = None
+        self._commands: Opt[np.ndarray] = None
         if ik_type == 'analytical':
             self._ik = self._robot.analyticalInverseKinematics
         elif ik_type == 'numerical':
             self._ik = self._robot.numericalInverseKinematics
         else:
             raise RuntimeError(f'Unknown IK Type {ik_type}')
-        self._horizontal_frame = horizontal_frame
-
-    def step(self, des_pos):
-        if not self._horizontal_frame:
-            self._commands = np.concatenate([self._ik(i, pos, Quadruped.INIT_FRAME)
-                                             for i, pos in enumerate(des_pos)])
+        if horizontal_frame:
+            self.calculate_commands = self.calculateCommandsInHorizontalFrame
         else:
-            h2b = self._robot.transformFromHorizontalToBase(True)
-            offsets = ((0., -self._robot.LINK_LENGTHS[0], 0.),
-                       (0., self._robot.LINK_LENGTHS[0], 0.),
-                       (0., -self._robot.LINK_LENGTHS[0], 0.),
-                       (0., self._robot.LINK_LENGTHS[0], 0.))
-            des_pos = np.array([h2b @ (des_p + offset) for des_p, offset in zip(des_pos, offsets)])
-            self._commands = np.concatenate([self._ik(i, pos, Quadruped.HIP_FRAME)
-                                             for i, pos in enumerate(des_pos)])
+            self.calculate_commands = self.calculateCommands
 
+    def calculateCommands(self, des_pos: ARRAY_LIKE) -> np.ndarray:
+        return np.concatenate([self._ik(i, pos, Quadruped.INIT_FRAME) for i, pos in enumerate(des_pos)])
+
+    def calculateCommandsInHorizontalFrame(self, des_pos: ARRAY_LIKE) -> np.ndarray:
+        h2b = self._robot.transformFromHorizontalToBase(True)
+        offsets = ((0., -self._robot.LINK_LENGTHS[0], 0.),
+                   (0., self._robot.LINK_LENGTHS[0], 0.),
+                   (0., -self._robot.LINK_LENGTHS[0], 0.),
+                   (0., self._robot.LINK_LENGTHS[0], 0.))
+        des_pos = np.array([h2b @ (des_p + offset) for des_p, offset in zip(des_pos, offsets)])
+        return np.concatenate([self._ik(i, pos, Quadruped.HIP_FRAME) for i, pos in enumerate(des_pos)])
+
+    def step(self, des_pos: ARRAY_LIKE):
+        self._commands = self.calculate_commands(des_pos)
         return super().step(self._commands)
 
     def getLastCommand(self) -> np.ndarray:
@@ -471,10 +484,11 @@ class IkEnv(QuadrupedEnv):
 
 
 class FixedTgEnv(IkEnv):
-    tg_types = {'A1': make_cls(vertical_tg, h=0.08),
-                'AlienGo': make_cls(vertical_tg, h=0.12)}
+    tg_types = {'A1': make_part(vertical_tg, h=0.08),
+                'AlienGo': make_part(vertical_tg, h=0.12)}
 
-    def __init__(self, make_robot=A1, make_task=BasicTask, observation_type=('noisy_extended', 'extended'),
+    def __init__(self, make_robot: Callable[..., Quadruped],
+                 make_task=BasicTask, observation_type=('noisy_extended', 'extended'),
                  ik_type='analytical', horizontal_frame=False):
         super().__init__(make_robot, make_task, observation_type, ik_type, horizontal_frame)
         self._stm = TgStateMachine(1 / g_cfg.action_frequency,
@@ -535,9 +549,9 @@ class FixedTgEnv(IkEnv):
         return super().reset()
 
     def plotFootTrajectories(self, des_pos):
-        from burl.utils import plotTrajectories
+        from burl.utils import plot_trajectory
         if not hasattr(self, '_plotter'):
-            self._plotter = plotTrajectories()
+            self._plotter = plot_trajectory()
         for i, flag in enumerate(self._stm.cycles == 5):
             if flag:
                 x, y, z = des_pos[i]
@@ -546,7 +560,6 @@ class FixedTgEnv(IkEnv):
                 self._plotter(i, (x, z), 'b')
 
     def _prepareSimulation(self):  # for the stability of the beginning
-        pass
         for _ in range(100):
             self._robot.updateMinimalObservation()
             self._robot.applyCommand(self._robot.STANCE_POSTURE)
@@ -557,7 +570,7 @@ if __name__ == '__main__':
     from burl.utils import init_logger, set_logger_level
 
     g_cfg.on_rack = False
-    g_cfg.trn_type = 'curriculum'
+    g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
@@ -568,9 +581,9 @@ if __name__ == '__main__':
     init_logger()
     set_logger_level('DEBUG')
     np.set_printoptions(precision=3, linewidth=1000)
-    tg = False
+    tg = True
     if tg:
-        env = FixedTgEnv(AlienGo)
+        env = FixedTgEnv(make_part(AlienGo))
         env.initObservation()
         for i in range(1, 100000):
             *_, reset, _ = env.step(Action())
