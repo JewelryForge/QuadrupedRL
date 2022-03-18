@@ -1,0 +1,4 @@
+[submodule "resources/motor_data"]
+	path = resources/motor_data
+	url = https://github.com/JewelryForge/motor_data.git
+	branch = main

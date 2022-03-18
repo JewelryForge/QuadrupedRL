@@ -1,12 +1,17 @@
 from __future__ import annotations
+
+import os
+
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, random_split, ConcatDataset
 
+import burl
+
 __all__ = ['ActuatorNet', 'ActuatorNetWithHistory']
 
-RSC_DIR = '/home/jewel/Workspaces/motor_data'
+RSC_DIR = os.path.join(burl.rsc_path, 'motor_data')
 
 
 class ActuatorNet(nn.Module):
@@ -161,8 +166,7 @@ if __name__ == '__main__':
     import wandb
 
     sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
-    import burl
-    from burl.utils import get_timestamp, log_info, init_logger, find_log, MfTimer
+    from burl.utils import get_timestamp, log_info, init_logger
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
     use_history_info = True
