@@ -20,7 +20,7 @@ class BasicTask(RewardRegistry):
         super().__init__(np.asarray(cmd), env, env.robot)
         for reward, weight in g_cfg.rewards_weights:
             self.add_reward(reward, weight)
-        self.set_coeff(0.25)
+        self.set_coeff(0.5)
 
         self.plugins: list[Plugin] = []
         if g_cfg.test_mode:
@@ -144,7 +144,7 @@ class RandomCmdTask(RandomLinearCmdTask):
 
     def random_cmd(self):
         yaw = random.uniform(0, 2 * np.pi)
-        return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 1.))))
+        return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 0, 1.))))
         # return np.array((math.cos(yaw), math.sin(yaw), clip(random.gauss(0, 0.5), -1, 1)))
 
 

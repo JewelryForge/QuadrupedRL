@@ -83,18 +83,19 @@ class TerrainCurriculum(GameInspiredCurriculum):
         If no terrain has been spawned, create and spawn it.
         Otherwise update its height field.
         """
+        size, resolution = 30, 0.1
+        mini_rfn = random.uniform(0, 0.02)
         if not self.terrain:
             from burl.sim.terrain import Hills
-            self.terrain = Hills(size=30, downsample=20, resolution=0.1,
-                                 roughness=self.difficulty_degree * self.max_roughness)
-
+            roughness = self.difficulty_degree * self.max_roughness
+            self.terrain = Hills.make(size, resolution, (roughness, 20), (mini_rfn, 1))
             self.terrain.spawn(sim_env)
         else:
             if self.difficulty:
                 roughness = self.max_roughness * (random.random() if self.difficulty == self.max_difficulty
                                                   else self.difficulty_degree)
-                self.terrain.replaceHeightField(
-                    sim_env, self.terrain.makeHeightField(size=30, downsample=20, resolution=0.1, roughness=roughness))
+                self.terrain.replace_heightfield(
+                    sim_env, self.terrain.make_heightfield(size, resolution, (roughness, 20), (mini_rfn, 1)))
         return self.terrain
 
     def on_simulation_step(self, task, robot, env):

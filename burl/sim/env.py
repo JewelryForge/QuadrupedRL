@@ -424,7 +424,7 @@ class QuadrupedEnv(object):
         return [p[2] for p in self.getAbundantTerrainInfo(x, y, yaw)]
 
     def getTerrainHeight(self, x, y) -> float:
-        return self._terrain.getHeight(x, y)
+        return self._terrain.get_height(x, y)
 
     def getTerrainBasedHeightOfRobot(self) -> float:
         return self._robot.position[2] - self._est_height
@@ -454,7 +454,7 @@ class QuadrupedEnv(object):
         return Rpy.from_rotation(np.array((trn_X, trn_Y, trn_Z)) @ rot_robot)
 
     def getTerrainNormal(self, x, y) -> np.ndarray:
-        return self._terrain.getNormal(x, y)
+        return self._terrain.get_normal(x, y)
 
 
 class IkEnv(QuadrupedEnv):

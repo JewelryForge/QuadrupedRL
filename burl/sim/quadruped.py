@@ -124,6 +124,7 @@ class Quadruped(object):
         self._base_twist: Opt[Twist] = None
         self._base_twist_Base: Opt[Twist] = None
         self._rpy: Opt[Rpy] = None
+        self._rpy_rate: Opt[np.ndarray] = None
         self._last_stance_states: list[Opt[tuple[float, np.ndarray]]] = [None] * 4
         self._max_foot_heights: np.ndarray = np.zeros(4)
         self._foot_clearances: np.ndarray = np.zeros(4)
@@ -283,8 +284,9 @@ class Quadruped(object):
         self._rpy = Rpy.from_quaternion(orientation)
         self._base_pose = Pose(position, orientation, self._rpy)
         self._base_twist = Twist(*self._env.getBaseVelocity(self._body_id))
-        self._base_twist_Base = Twist(self._rotateFromWorldToBase(self._base_twist.linear),
-                                      self._rotateFromWorldToBase(self._base_twist.angular))
+        self._base_twist_Base = Twist(*self._rotateFromWorldToBase(self._base_twist.linear, self._base_twist.angular))
+        self._rpy_rate = get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist.angular)
+
         self._observation = ObservationRaw()
         self._observation.base_state = BaseState(self._base_pose, self._base_twist, self._base_twist_Base)
         joint_states_raw = self._env.getJointStates(self._body_id, range(self._num_joints))
@@ -342,13 +344,16 @@ class Quadruped(object):
     def forwardKinematics(self, leg: int, angles: ARRAY_LIKE) -> Odometry:
         raise NotImplementedError
 
-    def _rotateFromWorld(self, vector_world, reference):
-        _, reference_inv = self._env.invertTransform(TP_ZERO3, reference)
-        rotated, _ = self._env.multiplyTransforms(TP_ZERO3, reference_inv, vector_world, TP_Q0)
-        return rotated
+    @staticmethod
+    def _rotateToRefFrame(reference, vector, *other_vectors):
+        _, reference_inv = pyb.invertTransform(TP_ZERO3, reference)
+        if not other_vectors:
+            return pyb.multiplyTransforms(TP_ZERO3, reference_inv, vector, TP_Q0)[0]
+        return [pyb.multiplyTransforms(TP_ZERO3, reference_inv, vec, TP_Q0)[0]
+                for vec in (vector, *other_vectors)]
 
-    def _rotateFromWorldToBase(self, vector_world):
-        return self._rotateFromWorld(vector_world, self._base_pose.orientation)
+    def _rotateFromWorldToBase(self, vector_world, *other_vectors):
+        return self._rotateToRefFrame(self._base_pose.orientation, vector_world, *other_vectors)
 
     def _getContactStates(self):
         def _getContactState(link_id):
@@ -474,7 +479,7 @@ class Quadruped(object):
         return self.getObservation(noisy).base_state.twist_Base.angular
 
     def getBaseRpyRate(self):
-        return get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist.angular)
+        return self._rpy_rate
 
     def getContactStates(self):
         return self._observation.contact_states

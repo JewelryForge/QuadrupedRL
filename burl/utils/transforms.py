@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 from scipy.spatial.transform import Rotation as scipyRotation
 
@@ -215,8 +217,8 @@ class Rpy(NDArrayBased):
 
 def get_rpy_rate_from_angular_velocity(rpy, angular):
     r, p, y = rpy
-    sp, cp = np.sin(p), np.cos(p)
-    cr, tr = np.cos(r), np.tan(r)
+    sp, cp = math.sin(p), math.cos(p)
+    cr, tr = math.cos(r), math.tan(r)
     trans = np.array(((1, sp * tr, cp * tr),
                       (0, cp, -sp),
                       (0, sp / cr, cp / cr)))

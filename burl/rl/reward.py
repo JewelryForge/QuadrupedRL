@@ -13,7 +13,7 @@ ATANH0_9 = math.atanh(0.9)
 
 
 class Reward(ABC):
-    def __call__(self, cmd, env, robot):
+    def __call__(self, cmd, env, robot) -> float:
         raise NotImplementedError
 
 
@@ -161,7 +161,8 @@ class JointMotionPenalty(Reward):
         self.acc_reshape = np.vectorize(quadratic_linear_reshape(acc_upper))
 
     def __call__(self, cmd, env, robot):
-        return -self.vel_reshape(robot.getJointVelocities()) - self.acc_reshape(robot.getJointAccelerations())
+        return -(self.vel_reshape(robot.getJointVelocities()).sum() +
+                 self.acc_reshape(robot.getJointAccelerations()).sum()) / 12
 
 
 class TorqueGradientPenalty(Reward):
@@ -235,7 +236,6 @@ class BodyCollisionPenalty(Reward):
 class TorquePenalty(Reward):
     def __init__(self, upper=900):
         self.reshape = np.vectorize(quadratic_linear_reshape(upper))
-        # self.reshape = lambda x: x / upper
 
     def __call__(self, cmd, env, robot):
         return -sum(self.reshape(robot.getLastAppliedTorques() ** 2))

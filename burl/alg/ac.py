@@ -10,6 +10,11 @@ def layer_norm(layer, std=1.0, bias_const=1e-6):
 
 
 class Actor(nn.Module):
+    """
+    extero_obs  ->  extero_layers ->|
+                                    |-> concat -> action_layers -> action
+    proprio_obs -> proprio_layers ->|
+    """
     activation = nn.Tanh
 
     def __init__(self, extero_obs_dim, proprio_obs_dim, action_dim,

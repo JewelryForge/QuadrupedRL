@@ -108,6 +108,7 @@ class ActuatorNetSim(MotorSim):
 class ActuatorNetWithHistorySim(MotorSim):
     def __init__(self, model_path, device='cpu', frequency=500, input_latency=0., output_latency=0.,
                  joint_limits=None, torque_limits=None, cmd_clip=0.2):
+        # 'cuda' is not advised in modern cpus
         super().__init__(frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
         model_info = torch.load(model_path, map_location={'cuda:0': device})
         self.net = ActuatorNetWithHistory(hidden_dims=model_info['hidden_dims']).to(device)

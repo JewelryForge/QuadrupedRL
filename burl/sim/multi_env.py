@@ -1,22 +1,31 @@
+from typing import overload, Callable
 from collections.abc import Iterable
-import torch.multiprocessing as mp
+import multiprocessing as mp
 
 import numpy as np
 import torch
 
-from burl.sim.env import FixedTgEnv
+from burl.sim.env import QuadrupedEnv
 
 __all__ = ['EnvContainer', 'EnvContainerMp2', 'SingleEnvContainer']
 
 
 class EnvContainer(object):
+    @overload
+    def __init__(self, make_env: Callable[..., QuadrupedEnv], num_envs: int):
+        ...
+
+    @overload
+    def __init__(self, make_env: Iterable[Callable[..., QuadrupedEnv]], num_envs: None):
+        ...
+
     def __init__(self, make_env, num_envs=None):
         self.num_envs = num_envs
         if isinstance(make_env, Iterable):
-            self._envs: list[FixedTgEnv] = [make() for make in make_env]
+            self._envs: list[QuadrupedEnv] = [make_env() for make_env in make_env]
             self.num_envs = len(self._envs)
         else:
-            self._envs: list[FixedTgEnv] = [make_env() for _ in range(self.num_envs)]
+            self._envs: list[QuadrupedEnv] = [make_env() for _ in range(self.num_envs)]
         self._envs[0].task.report()
 
     def step(self, actions: torch.Tensor):
@@ -35,7 +44,7 @@ class EnvContainer(object):
                 if isinstance(_v, dict):
                     _infos_merged[_k] = _merge_dict_recursively([_info[_k] for _info in _infos])
                 else:
-                    _infos_merged[_k] = torch.as_tensor(np.array([_info[_k] for _info in _infos], dtype=np.float32))
+                    _infos_merged[_k] = torch.Tensor(np.array([_info[_k] for _info in _infos]))
             return _infos_merged
 
         return (torch.as_tensor(np.array(actor_obs, dtype=np.float32)),
