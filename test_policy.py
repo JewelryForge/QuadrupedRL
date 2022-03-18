@@ -15,7 +15,7 @@ if __name__ == '__main__':
     g_cfg.tg_init = 'symmetric'
     init_logger()
     set_logger_level('debug')
-    remote = False
+    remote = True
     if remote:
         model_path = find_log_remote(host='csc', time_=None, epoch=None, log_dir='teacher-student/log')
     else:

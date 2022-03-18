@@ -7,6 +7,8 @@ from scipy.interpolate import interp2d
 
 from burl.utils import unit, vec_cross
 
+__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'Steps', 'Slope', 'Hills']
+
 
 class Terrain(object):
     def __init__(self):
@@ -192,7 +194,7 @@ class Hills(HeightFieldTerrain):
 
 if __name__ == '__main__':
     import random
-    from burl.sim import AlienGo
+    from burl.sim.env import AlienGo
 
     pyb.connect(pyb.GUI)
     pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, 0)

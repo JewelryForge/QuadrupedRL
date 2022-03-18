@@ -6,9 +6,10 @@ import torch
 import wandb
 
 from burl.alg import Actor, Critic, PPO
-from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
+from burl.sim.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 from burl.rl.task import get_task, CentralizedTask
-from burl.sim import FixedTgEnv, AlienGo, EnvContainerMp2, EnvContainer, SingleEnvContainer
+from burl.sim.env import FixedTgEnv, AlienGo
+from burl.sim.multi_env import EnvContainerMp2, EnvContainer, SingleEnvContainer
 from burl.utils import make_part, g_cfg, to_dev, MfTimer, log_info
 
 

@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import math
 import random
 from typing import Type
 
 import numpy as np
 
-from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CURRICULUM_DISTRIB, CentralizedCurriculum
+from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
+from burl.sim.plugins import Plugin, StatisticsCollector
+from burl.sim.terrain import Terrain, Plain
 from burl.utils import g_cfg
 
 __all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
@@ -17,23 +21,23 @@ class BasicTask(RewardRegistry):
         for reward, weight in g_cfg.rewards_weights:
             self.add_reward(reward, weight)
         self.set_coeff(0.25)
-        # self.setCoefficient(0.1 / self._weight_sum)
 
-        self.curricula: list[CURRICULUM_DISTRIB] = []
+        self.plugins: list[Plugin] = []
+        if g_cfg.test_mode:
+            self.load_plugin(StatisticsCollector())
 
     cmd = property(lambda self: self._cmd)
     env = property(lambda self: self._env)
     robot = property(lambda self: self._robot)
 
-    def make_terrain(self, terrain_type: str):
-        from burl.sim import Plain
+    def make_terrain(self, terrain_type: str) -> Terrain:
         if terrain_type == 'plain':
             terrain_inst = Plain()
             terrain_inst.spawn(self._env.client)
         elif terrain_type == 'curriculum':
-            for crm in self.curricula:
-                if hasattr(crm, 'generate_terrain'):
-                    terrain_inst = crm.generate_terrain(self._env.client)
+            for plg in self.plugins:
+                if hasattr(plg, 'generate_terrain'):
+                    terrain_inst = plg.generate_terrain(self._env.client)
                     break
             else:
                 raise RuntimeError('Not a TerrainCurriculum instance is registered')
@@ -45,106 +49,31 @@ class BasicTask(RewardRegistry):
             raise RuntimeError(f'Unknown terrain type {terrain_type}')
         return terrain_inst
 
-    def add_curriculum(self, curriculum: CURRICULUM_DISTRIB):
-        self.curricula.append(curriculum)
+    def load_plugin(self, plugin: Plugin):
+        self.plugins.append(plugin)
 
     def on_init(self):
         """Called back before env.initObservation"""
-        for crm in self.curricula:
-            crm.on_init(self, self._robot, self._env)
+        for plg in self.plugins:
+            plg.on_init(self, self._robot, self._env)
 
     def on_simulation_step(self):
         """Called back after every simulation step"""
-        for crm in self.curricula:
-            crm.on_simulation_step(self, self._robot, self._env)
-        if g_cfg.test_mode:
-            self.collect_statistics()
+        for plg in self.plugins:
+            plg.on_simulation_step(self, self._robot, self._env)
 
     def on_step(self):
         """Called back after every env.step"""
         info = {}
-        for crm in self.curricula:
-            crm.on_step(self, self._robot, self._env)
-            info[crm.__class__.__name__] = crm.difficulty_degree
+        for plg in self.plugins:
+            if plg_info := plg.on_step(self, self._robot, self._env):
+                info |= plg_info
         return info
-
-    def collect_statistics(self):
-        from burl.sim import Quadruped, FixedTgEnv
-
-        from burl.utils import udp_pub
-        from collections import deque
-        cmd = self.cmd
-        env: FixedTgEnv = self.env
-        rob: Quadruped = self.robot
-
-        def wrap(reward_type):
-            return reward_type().__call__(cmd, env, rob)
-
-        if not hasattr(self, '_torque_sum'):
-            self._torque_sum = 0.
-            self._torque_abs_sum = 0.
-            self._torque_pen_sum = 0.0
-            self._joint_motion_sum = 0.0
-        self._torque_sum += rob.getLastAppliedTorques() ** 2
-        self._torque_abs_sum += abs(rob.getLastAppliedTorques())
-        self._torque_pen_sum += wrap(TorquePenalty)
-        self._joint_motion_sum += wrap(JointMotionPenalty)
-        # print(wrap(LinearVelocityReward))
-        # print(rob.getJointVelocities())
-        # print(rob.getJointAccelerations())
-        # print()
-        # print(max(rob.getLastAppliedTorques()))
-        # print(wrap(HipAnglePenalty))
-        # print(rob.getBaseLinearVelocityInBaseFrame()[2])
-
-        # print(wrap(TorquePenalty))
-        # r_rate, p_rate, _ = rob.getBaseRpyRate()
-        # print(r_rate, p_rate, wrap(RollPitchRatePenalty))
-        # r, p, _ = rob.rpy
-        # print(r, p, wrap(BodyPosturePenalty))
-        # print(cmd, rob.getBaseLinearVelocityInBaseFrame()[:2], wrap(LinearVelocityReward))
-        # print(env.getSafetyHeightOfRobot(), wrap(BodyHeightReward))
-        # print(rob.getCostOfTransport(), wrap(CostOfTransportReward))
-        # strides = [np.linalg.norm(s) for s in rob.getStrides()]
-        # if any(s != 0.0 for s in strides):
-        #     print(strides, wrap(SmallStridePenalty))
-        # if any(clearances := rob.getFootClearances()):
-        #     print(clearances, wrap(FootClearanceReward))
-        data = {
-            'joint_states': {
-                'joint_pos': tuple(rob.getJointPositions()),
-                'commands': tuple(rob._command_history[-1]),
-                'joint_vel': tuple(rob.getJointVelocities()),
-                'joint_acc': tuple(rob.getJointAccelerations()),
-                # 'kp_part': tuple(rob._motor._kp_part),
-                # 'kd_part': tuple(rob._motor._kd_part),
-                'torque': tuple(rob.getLastAppliedTorques()),
-                'contact': tuple(rob.getContactStates())
-            },
-            'body_height': env.getTerrainBasedHeightOfRobot(),
-            'cot': rob.getCostOfTransport(),
-            'twist': {
-                'linear': tuple(rob.getBaseLinearVelocityInBaseFrame()),
-                'angular': tuple(rob.getBaseAngularVelocityInBaseFrame()),
-            },
-            'torque_pen': wrap(TorquePenalty)
-        }
-        udp_pub.send(data)
 
     def reset(self):
         """Called back before env resets"""
-        for crm in self.curricula:
-            crm.on_reset(self, self._robot, self._env)
-        if g_cfg.test_mode:
-            print('cot', self.robot.getCostOfTransport())
-            print('mse torque', np.sqrt(self._torque_sum / self.robot._step_counter))
-            print('abs torque', self._torque_abs_sum / self.robot._step_counter)
-            print('torque pen', self._torque_pen_sum / self.robot._step_counter)
-            print('joint motion pen', self._joint_motion_sum / self.robot._step_counter)
-            self._torque_sum = 0.
-            self._torque_abs_sum = 0.
-            self._torque_pen_sum = 0.0
-            self._joint_motion_sum = 0.0
+        for plg in self.plugins:
+            plg.on_reset(self, self._robot, self._env)
 
     def is_failed(self):
         r, _, _ = self._robot.rpy
@@ -221,6 +150,7 @@ class RandomCmdTask(RandomLinearCmdTask):
 
 class CentralizedTask(object):
     """A wrapper of Task class for centralized curricula"""
+
     def __init__(self):
         self.curriculum_prototypes: list[CURRICULUM_PROTOTYPE] = []
         aggressive = g_cfg.test_mode or g_cfg.aggressive
@@ -244,7 +174,7 @@ class CentralizedTask(object):
         def _make_distribution(env):
             task_inst = task_class(env, *args, **kwargs)
             for crm in self.curriculum_prototypes:
-                task_inst.add_curriculum(crm.make_distribution())
+                task_inst.load_plugin(crm.make_distribution())
             return task_inst
 
         return _make_distribution

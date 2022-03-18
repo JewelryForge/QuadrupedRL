@@ -11,10 +11,12 @@ import pybullet as pyb
 import pybullet_data
 
 import burl
-from burl.rl.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
+from burl.sim.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
 from burl.sim.motor import PdMotorSim, ActuatorNetSim, ActuatorNetWithHistorySim
 from burl.utils import ang_norm, JointInfo, DynamicsInfo, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
+
+__all__ = ['Quadruped', 'A1', 'AlienGo']
 
 TP_ZERO3 = (0., 0., 0.)
 TP_Q0 = (0., 0., 0., 1.)
@@ -249,7 +251,7 @@ class Quadruped(object):
         """
         self.clearObservations()
         if reload:
-            self._body_id = self._loadRobot(altitude)
+            self._body_id = self._loadRobot((0., 0., altitude))
             self.initPhysicsParams()
         else:
             z = self.INIT_HEIGHT + altitude
@@ -528,13 +530,13 @@ class Quadruped(object):
     def getJointStates(self) -> JointStates:
         return self._observation.joint_states
 
-    def getJointPositions(self, noisy=False):
+    def getJointPositions(self, noisy=False) -> np.ndarray:
         return self.getObservation(noisy).joint_states.position[(self._motor_ids,)]
 
-    def getJointVelocities(self, noisy=False):
+    def getJointVelocities(self, noisy=False) -> np.ndarray:
         return self.getObservation(noisy).joint_states.velocity[(self._motor_ids,)]
 
-    def getJointAccelerations(self):
+    def getJointAccelerations(self) -> np.ndarray:
         if len(self._observation_history) > 2:
             return (self._observation.joint_states.velocity[(self._motor_ids,)] -
                     self._observation_history[-2].joint_states.velocity[(self._motor_ids,)]) * self._frequency
@@ -547,6 +549,9 @@ class Quadruped(object):
         if len(self._torque_history) > 2:
             return (self._torque - self._torque_history[-2]) * self._frequency
         return np.zeros(12)
+
+    def getLastCommand(self):
+        return self._command_history[-1]
 
     def getCmdHistoryFromIndex(self, idx):
         len_requirement = -idx if idx < 0 else idx + 1

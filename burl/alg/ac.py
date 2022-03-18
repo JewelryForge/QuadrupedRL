@@ -114,7 +114,7 @@ class Critic(nn.Module):
 
 
 if __name__ == '__main__':
-    from burl.rl.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
+    from burl.sim.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
 
     actor = Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim)
     critic = Critic(ExtendedObservation.dim)

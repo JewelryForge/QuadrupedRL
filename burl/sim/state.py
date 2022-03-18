@@ -45,12 +45,12 @@ class ObservationBase(object):
 
 
 def get_robot_type():
-    from burl.sim import A1, AlienGo
+    from burl.sim.quadruped import A1, AlienGo
     return AlienGo
 
 
 def get_base_frequency():
-    from burl.sim import TgStateMachine
+    from burl.sim.tg import TgStateMachine
     return TgStateMachine.base_frequency
 
 

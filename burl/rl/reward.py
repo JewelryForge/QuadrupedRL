@@ -233,7 +233,7 @@ class BodyCollisionPenalty(Reward):
 
 
 class TorquePenalty(Reward):
-    def __init__(self, upper=1600):
+    def __init__(self, upper=900):
         self.reshape = np.vectorize(quadratic_linear_reshape(upper))
         # self.reshape = lambda x: x / upper
 
@@ -250,17 +250,17 @@ class CostOfTransportReward(Reward):
         return -self.reshape(cot)
 
 
-class ImitationReward(Reward):
-    def __init__(self, upper=0.05, dst=None):
-        from burl.sim import vertical_tg
-        self.reshape = tanh2_reshape(0., upper)
-        self.dst = dst() if dst else vertical_tg(h=0.12)
-
-    def __call__(self, cmd, env, robot):
-        dst = self.dst(env.phases)
-        foot_pos = np.array([robot.getFootPositionInInitFrame(i) for i in range(4)])
-        residue = np.linalg.norm(dst - foot_pos, axis=1)
-        return 1 - sum(self.reshape(r) for r in residue) / 4
+# class ImitationReward(Reward):
+#     def __init__(self, upper=0.05, dst=None):
+#         from burl.sim import vertical_tg
+#         self.reshape = tanh2_reshape(0., upper)
+#         self.dst = dst() if dst else vertical_tg(h=0.12)
+#
+#     def __call__(self, cmd, env, robot):
+#         dst = self.dst(env.phases)
+#         foot_pos = np.array([robot.getFootPositionInInitFrame(i) for i in range(4)])
+#         residue = np.linalg.norm(dst - foot_pos, axis=1)
+#         return 1 - sum(self.reshape(r) for r in residue) / 4
 
 
 class RewardRegistry(object):

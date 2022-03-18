@@ -6,6 +6,8 @@ import torch
 
 from burl.sim.env import FixedTgEnv
 
+__all__ = ['EnvContainer', 'EnvContainerMp2', 'SingleEnvContainer']
+
 
 class EnvContainer(object):
     def __init__(self, make_env, num_envs=None):

@@ -7,6 +7,8 @@ import torch
 
 from burl.sim.ident import ActuatorNet, ActuatorNetWithHistory
 
+__all__ = ['MotorSim', 'PdMotorSim', 'ActuatorNetSim', 'ActuatorNetWithHistorySim']
+
 
 class MotorSim(object):
     def __init__(self, frequency=500, input_latency=0., output_latency=0.,

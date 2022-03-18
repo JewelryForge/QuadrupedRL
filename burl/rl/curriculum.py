@@ -57,7 +57,7 @@ class GameInspiredCurriculum(object):
         pass
 
     def on_step(self, task, robot, env):
-        pass
+        return {self.__class__.__name__: self.difficulty_degree}
 
     def on_reset(self, task, robot, env):
         pass
@@ -84,7 +84,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
         Otherwise update its height field.
         """
         if not self.terrain:
-            from burl.sim import Hills
+            from burl.sim.terrain import Hills
             self.terrain = Hills(size=30, downsample=20, resolution=0.1,
                                  roughness=self.difficulty_degree * self.max_roughness)
 
@@ -180,7 +180,7 @@ class CurriculumDistribution(object):
         pass
 
     def on_step(self, task, robot, env):
-        pass
+        return {self.__class__.__name__: self.difficulty_degree}
 
     def is_success(self, task, robot, env) -> bool:
         pass

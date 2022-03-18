@@ -11,12 +11,14 @@ import pybullet as pyb
 import pybullet_data
 from pybullet_utils.bullet_client import BulletClient
 
-from burl.rl.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
 from burl.rl.task import BasicTask
+from burl.sim.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Quaternion
+
+__all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv']
 
 
 class QuadrupedEnv(object):
@@ -52,8 +54,7 @@ class QuadrupedEnv(object):
         self._task = make_task(self)
         self._terrain = self._task.make_terrain(g_cfg.trn_type)
         self._robot.spawn(self._env, g_cfg.on_rack)
-        if not g_cfg.on_rack:
-            self.moveRobotOnTerrain()
+        self.moveRobotOnTerrain()
 
         self._setPhysicsParameters()
         self._prepareSimulation()
@@ -89,6 +90,8 @@ class QuadrupedEnv(object):
         return self.makeObservation()
 
     def moveRobotOnTerrain(self):
+        if g_cfg.on_rack:
+            return
         self._estimateTerrain(self._robot.retrieveFootXYsInWorldFrame())
         self._env.resetBasePositionAndOrientation(self._robot.id, (0., 0., self._est_height + self._robot.INIT_HEIGHT),
                                                   Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse())
@@ -375,19 +378,26 @@ class QuadrupedEnv(object):
                                       torqueObj=self._external_torque, flags=pyb.LINK_FRAME)
 
     def reset(self):
-        # completely_reset = False
-        # is_failed = self._is_failed
         self._task.reset()
         self._resetStates()
         # if not is_failed:
         #     if g_cfg.random_dynamics:
         #         self._robot.randomDynamics()
         #     return self.makeObservation()
-        # if completely_reset:
-        #     self._env.resetSimulation()
-        #     self._setPhysicsParameters()
-        #     self._terrain.reset()
         self._robot.reset()
+        self.moveRobotOnTerrain()
+        self._prepareSimulation()
+        self._robot.updateObservation()
+        return self.makeObservation()
+
+    def reload(self):
+        self._task.reset()
+        self._resetStates()
+        self._env.resetSimulation()
+        self._setPhysicsParameters()
+        self._terrain.spawn(self._env)
+        self._robot.reset(reload=True)
+        self._initRendering()
         self.moveRobotOnTerrain()
         self._prepareSimulation()
         self._robot.updateObservation()
@@ -404,7 +414,7 @@ class QuadrupedEnv(object):
 
     def getAbundantTerrainInfo(self, x, y, yaw) -> list[tuple[float, float, float]]:
         interval = 0.1
-        dx, dy = interval * np.cos(yaw), interval * np.sin(yaw)
+        dx, dy = interval * math.cos(yaw), interval * math.sin(yaw)
         points = ((dx - dy, dx + dy), (dx, dy), (dx + dy, -dx + dy),
                   (-dy, dx), (0, 0), (dy, -dx),
                   (-dx - dy, dx - dy), (-dx, -dy), (-dx + dy, -dx - dy))
@@ -585,8 +595,9 @@ if __name__ == '__main__':
     if tg:
         env = FixedTgEnv(make_part(AlienGo))
         env.initObservation()
-        for i in range(1, 100000):
+        for i in range(1, 10000):
             *_, reset, _ = env.step(Action())
+
             # if reset:
             #     env.reset()
     else:
