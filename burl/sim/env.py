@@ -93,8 +93,17 @@ class QuadrupedEnv(object):
         if g_cfg.on_rack:
             return
         self._estimateTerrain(self._robot.retrieveFootXYsInWorldFrame())
-        self._env.resetBasePositionAndOrientation(self._robot.id, (0., 0., self._est_height + self._robot.INIT_HEIGHT),
-                                                  Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse())
+        height_inc = 0.
+        while True:
+            self._env.resetBasePositionAndOrientation(
+                self._robot.id, (0., 0., self._est_height + self._robot.INIT_HEIGHT + height_inc),
+                Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse())
+            self._env.performCollisionDetection()
+            for contact_point in self._env.getContactPoints(self._robot.id, self._terrain.id):
+                if contact_point[8] < -0.01:
+                    height_inc += 0.01
+                    continue
+            break
 
     def _prepareSimulation(self):
         pass

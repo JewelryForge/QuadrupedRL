@@ -47,18 +47,23 @@ class Rotation(NDArrayBased):
 
     @classmethod
     def from_quaternion(cls, q):
-        if not Quaternion.is_valid(q):
-            raise RuntimeError('Invalid Quaternion')
-        x, y, z, w = q
-        xx, xy, xz, xw = x * x, x * y, x * z, x * w
-        yy, yz, yw, zz, zw, ww = y * y, y * z, y * w, z * z, z * w, w * w
-        _matrix = ((1 - 2 * yy - 2 * zz, 2 * xy - 2 * zw, 2 * xz + 2 * yw),
-                   (2 * xy + 2 * zw, 1 - 2 * xx - 2 * zz, 2 * yz - 2 * xw),
-                   (2 * xz - 2 * yw, 2 * yz + 2 * xw, 1 - 2 * xx - 2 * yy))
-        return cls(_matrix, skip_check=True)
+        return cls(scipyRotation.from_quat(q).as_matrix())
+        # if not Quaternion.is_valid(q):
+        #     raise RuntimeError('Invalid Quaternion')
+        # x, y, z, w = q
+        # xx, xy, xz, xw = x * x, x * y, x * z, x * w
+        # yy, yz, yw, zz, zw, ww = y * y, y * z, y * w, z * z, z * w, w * w
+        # _matrix = ((1 - 2 * yy - 2 * zz, 2 * xy - 2 * zw, 2 * xz + 2 * yw),
+        #            (2 * xy + 2 * zw, 1 - 2 * xx - 2 * zz, 2 * yz - 2 * xw),
+        #            (2 * xz - 2 * yw, 2 * yz + 2 * xw, 1 - 2 * xx - 2 * yy))
+        # return cls(_matrix, skip_check=True)
+
+    @property
+    def T(self):
+        return Rotation(self.matrix.T, skip_check=True)
 
     def inverse(self):
-        return self.transpose()
+        return self.T
 
     def __str__(self):
         return self.__repr__()
@@ -161,19 +166,19 @@ class Quaternion(NDArrayBased):
 
     @property
     def x(self):
-        return self[0].view(float)
+        return self[0].item()
 
     @property
     def y(self):
-        return self[1].view(float)
+        return self[1].item()
 
     @property
     def z(self):
-        return self[2].view(float)
+        return self[2].item()
 
     @property
     def w(self):
-        return self[3].view(float)
+        return self[3].item()
 
 
 class Rpy(NDArrayBased):

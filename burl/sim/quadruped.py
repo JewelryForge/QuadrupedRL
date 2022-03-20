@@ -346,11 +346,14 @@ class Quadruped(object):
 
     @staticmethod
     def _rotateToRefFrame(reference, vector, *other_vectors):
-        _, reference_inv = pyb.invertTransform(TP_ZERO3, reference)
+        # transform = Rotation.from_quaternion(reference).T
+        # if not other_vectors:
+        #     return transform @ vector
+        # return [transform @ vec for vec in (vector, *other_vectors)]
+        _, ref_inv = pyb.invertTransform(TP_ZERO3, reference)
         if not other_vectors:
-            return pyb.multiplyTransforms(TP_ZERO3, reference_inv, vector, TP_Q0)[0]
-        return [pyb.multiplyTransforms(TP_ZERO3, reference_inv, vec, TP_Q0)[0]
-                for vec in (vector, *other_vectors)]
+            return pyb.multiplyTransforms(TP_ZERO3, ref_inv, vector, TP_Q0)[0]
+        return [pyb.multiplyTransforms(TP_ZERO3, ref_inv, vec, TP_Q0)[0] for vec in (vector, *other_vectors)]
 
     def _rotateFromWorldToBase(self, vector_world, *other_vectors):
         return self._rotateToRefFrame(self._base_pose.orientation, vector_world, *other_vectors)
@@ -752,7 +755,7 @@ class A1(Quadruped):
 
 
 class AlienGo(A1):
-    INIT_HEIGHT = 0.427
+    INIT_HEIGHT = 0.43
     NUM_MOTORS = 12
     LEG_NAMES = ('FR', 'FL', 'RR', 'RL')
     JOINT_TYPES = ('hip', 'thigh', 'calf', 'foot')

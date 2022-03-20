@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Union
+from typing import Union, Callable
 
 import numpy as np
 
@@ -30,11 +30,21 @@ class MfTimer(object):
     print(timer.time_spent)
     """
 
-    def __init__(self, func=None, *args, **kwargs):
-        if func:
-            self.start()
-            func(*args, **kwargs)
-            self.end()
+    @classmethod
+    def start_now(cls):
+        timer = MfTimer()
+        timer.start()
+        return timer
+
+    @classmethod
+    def record(cls, func: Callable, *args, **kwargs):
+        start_time = time.time()
+        func(*args, **kwargs)
+        end_time = time.time()
+        return end_time - start_time
+
+    def __init__(self):
+        self._start_time = self._end_time = None
 
     def start(self):
         self._start_time = time.time()
@@ -43,8 +53,10 @@ class MfTimer(object):
         self._start_time = time.time()
         return self
 
-    def end(self):
+    def end(self, verbose=False):
         self._end_time = time.time()
+        if verbose:
+            print(self.time_spent)
         return self.time_spent
 
     def __exit__(self, exc_type, exc_val, exc_tb):
