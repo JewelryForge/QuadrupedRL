@@ -69,6 +69,10 @@ class SingleEnvContainer(EnvContainer):
     def __init__(self, make_env):
         super().__init__(make_env, 1)
 
+    @property
+    def unwrapped(self) -> QuadrupedEnv:
+        return self._envs[0]
+
 
 # class EnvContainerMultiProcess(EnvContainer):
 #     def __init__(self, make_env, num_envs=None, num_processes=4):

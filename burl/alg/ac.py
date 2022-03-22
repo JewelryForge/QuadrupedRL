@@ -67,9 +67,9 @@ class Actor(nn.Module):
         self.distribution = None
 
     def forward(self, x):
-        extero_obs, proprio_obs = x[:, :self.extero_obs_dim], x[:, self.extero_obs_dim:]
-        extero_features, proprio_features = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
-        return self.action_layers(torch.concat((extero_features, proprio_features), dim=-1))
+        extero_obs, proprio_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
+        extero_feature, proprio_feature = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
+        return self.action_layers(torch.concat((extero_feature, proprio_feature), dim=-1))
 
     # @property
     # def std(self):

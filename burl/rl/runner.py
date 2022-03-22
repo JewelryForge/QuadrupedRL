@@ -1,4 +1,7 @@
+import math
 import os
+import sys
+import time
 from collections import deque
 
 import numpy as np
@@ -197,6 +200,7 @@ class Player(object):
 
             for _ in range(20000):
                 actions = policy(actor_obs)
+                self.loop_callback()
                 actor_obs, _, _, dones, info = self.env.step(actions)
                 actor_obs = actor_obs.to(g_cfg.dev)
 
@@ -205,6 +209,9 @@ class Player(object):
                     actor_obs_reset = self.env.reset(reset_ids)[0].to(g_cfg.dev)
                     actor_obs[reset_ids,] = actor_obs_reset
                     print('episode reward', float(info['episode_reward']))
+
+    def loop_callback(self):
+        pass
 
 
 class PolicyPlayer(Player):
@@ -218,3 +225,42 @@ class PolicyPlayer(Player):
             make_actor=make_part(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
                                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
         )
+
+
+class JoystickPlayer(PolicyPlayer):
+    def __init__(self, model_path, task_type='basic', gamepad_type='PS4'):
+        super().__init__(model_path, task_type)
+        from thirdparty.gamepad import gamepad, controllers
+        if not gamepad.available():
+            print('Please connect your gamepad...')
+            while not gamepad.available():
+                time.sleep(1.0)
+        try:
+            self.gamepad: gamepad.Gamepad = getattr(controllers, gamepad_type)()
+        except AttributeError:
+            raise RuntimeError(f'`{gamepad_type}` is not supported,'
+                               f'all {controllers.all_controllers}')
+        self.gamepad.startBackgroundUpdates()
+        print('Gamepad connected')
+
+    @staticmethod
+    def is_available():
+        from thirdparty.gamepad import gamepad
+        return gamepad.available()
+
+    def loop_callback(self):
+        if self.gamepad.isConnected():
+            x_speed = -self.gamepad.axis('LEFT-Y')
+            y_speed = -self.gamepad.axis('LEFT-X')
+            steering = -self.gamepad.axis('RIGHT-X')
+            steering = 1. if steering > 0.2 else -1. if steering < -0.2 else 0.
+            speed_norm = math.hypot(x_speed, y_speed)
+            if speed_norm:
+                self.env.unwrapped.task.cmd = (x_speed / speed_norm, y_speed / speed_norm, steering)
+            else:
+                self.env.unwrapped.task.cmd = (0., 0., steering)
+        else:
+            sys.exit(1)
+
+    def __del__(self):
+        self.gamepad.disconnect()

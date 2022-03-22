@@ -26,7 +26,14 @@ class BasicTask(RewardRegistry):
         if g_cfg.test_mode:
             self.load_plugin(StatisticsCollector())
 
-    cmd = property(lambda self: self._cmd)
+    @property
+    def cmd(self):
+        return self._cmd
+
+    @cmd.setter
+    def cmd(self, cmd):
+        self._cmd = np.asarray(cmd)
+
     env = property(lambda self: self._env)
     robot = property(lambda self: self._robot)
 

@@ -77,8 +77,8 @@ class TrainParam(object):
     device: str = 'cuda'
     extero_layer_dims: tuple[int, ...] = (72, 64)
     proprio_layer_dims: tuple[int, ...] = ()
-    action_layer_dims: tuple[int, ...] = (256, 128, 64)
-    # action_layer_dims: tuple[int, ...] = (512, 256, 128)
+    # action_layer_dims: tuple[int, ...] = (256, 128, 64)
+    action_layer_dims: tuple[int, ...] = (512, 256, 128)
 
 
 @dataclass

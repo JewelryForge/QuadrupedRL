@@ -15,7 +15,7 @@ from burl.rl.task import BasicTask
 from burl.sim.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.tg import TgStateMachine, vertical_tg
-from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
+from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE, sign
 from burl.utils.transforms import Rpy, Rotation, Quaternion
 
 __all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv']
@@ -225,7 +225,7 @@ class QuadrupedEnv(object):
                 self._force_indicator = _force_indicator
                 self._external_force_buffer = self._external_force
 
-            if (self._external_torque != 0).all():
+            if (self._external_torque != 0).any():
                 magnitude = math.hypot(*self._external_torque)
                 axis_z = self._external_torque / magnitude
                 assistant = np.array((0., 0., 1.) if any(axis_z != (0., 0., 1.)) else (1., 0., 0.))
@@ -244,29 +244,52 @@ class QuadrupedEnv(object):
                 self._tip_last_end = tip_end
 
             if self._cmd_buffer is not (cmd := self._task.cmd.copy()):
-                axis_x = np.array((*cmd[:2], 0))
-                axis_y = np.array((-axis_x[1], axis_x[0], 0))
-                last_end = axis_x * 0.1
-                phase, phase_inc = 0, cmd[2] / 3
-                # plot arrow ----->
-                for i, cmd_idc in enumerate(self._cmd_indicators):
-                    if i < 5:
-                        phase += phase_inc
-                    elif i == 5:
-                        phase += math.pi / 12
-                    else:
-                        phase -= math.pi / 6
-                    inc = ((axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15) * (1 if i < 5 else -1)
-                    end = last_end + inc
-                    _cmd_indicator = self._env.addUserDebugLine(
-                        lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
-                        lineWidth=5, lifeTime=1, parentObjectUniqueId=self._robot.id,
-                        replaceItemUniqueId=cmd_idc)
-                    if cmd_idc != -1 and _cmd_indicator != cmd_idc:
-                        self._env.removeUserDebugItem(cmd_idc)
-                    self._cmd_indicators[i] = _cmd_indicator
-                    if i < 5:
-                        last_end = end
+                if ((linear := cmd[:2]) != 0.).any():
+                    axis_x, axis_y = np.array((*linear, 0)), np.array((-linear[1], linear[0], 0))
+                    last_end = axis_x * 0.1
+                    phase, phase_inc = 0, cmd[2] / 3
+                    # plot arrow ----->
+                    for i, cmd_idc in enumerate(self._cmd_indicators):
+                        if i < 5:
+                            phase += phase_inc
+                            inc = (axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15
+                        else:
+                            phase += math.pi / 12 if i == 5 else -math.pi / 6
+                            inc = -(axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15
+                        end = last_end + inc
+                        _cmd_indicator = self._env.addUserDebugLine(
+                            lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
+                            lineWidth=5, lifeTime=1, parentObjectUniqueId=self._robot.id,
+                            replaceItemUniqueId=cmd_idc)
+                        # if cmd_idc != -1 and _cmd_indicator != cmd_idc:
+                        #     self._env.removeUserDebugItem(cmd_idc)
+                        self._cmd_indicators[i] = _cmd_indicator
+                        if i < 5:
+                            last_end = end
+                else:
+                    phase, phase_inc = 0, cmd[2] / 3
+                    radius = abs(cmd[2] / 6)
+                    last_end = (radius, 0., 0.)
+                    for i, cmd_idc in enumerate(self._cmd_indicators):
+                        if i < 5:
+                            phase += phase_inc
+                            end = np.array((math.cos(phase), math.sin(phase), 0.)) * radius
+                        else:
+                            if i == 5:
+                                _phase = phase + (-math.pi / 2 + math.pi / 12) * sign(cmd[2])
+                            else:
+                                _phase = phase + (-math.pi / 2 - math.pi / 4) * sign(cmd[2])
+                            length = radius * math.sin(abs(phase_inc) / 2) * 3
+                            end = last_end + np.array((math.cos(_phase), math.sin(_phase), 0.)) * length
+                        _cmd_indicator = self._env.addUserDebugLine(
+                            lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
+                            lineWidth=5, lifeTime=1, parentObjectUniqueId=self._robot.id,
+                            replaceItemUniqueId=cmd_idc)
+                        # if cmd_idc != -1 and _cmd_indicator != cmd_idc:
+                        #     self._env.removeUserDebugItem(cmd_idc)
+                        self._cmd_indicators[i] = _cmd_indicator
+                        if i < 5:
+                            last_end = end
 
     def setDisturbance(self, force=(0.,) * 3, torque=(0.,) * 3):
         self._external_force = np.asarray(force)
