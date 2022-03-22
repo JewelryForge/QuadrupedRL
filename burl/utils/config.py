@@ -60,13 +60,12 @@ class PPOParam(object):
     repeat_times: int = 8
     num_mini_batches: int = 1
     clip_ratio: float = 0.2
-    gamma: float = 0.995
+    gamma: float = 0.99
     lambda_gae: float = 0.95
     value_loss_coeff: float = 1.0
     entropy_coeff: float = 4e-3
     learning_rate: float = 1e-4
     max_grad_norm: float = 1.0
-    # desired_kl : float= 0.01
 
 
 @dataclass
@@ -79,7 +78,7 @@ class TrainParam(object):
     extero_layer_dims: tuple[int, ...] = (72, 64)
     proprio_layer_dims: tuple[int, ...] = ()
     action_layer_dims: tuple[int, ...] = (256, 128, 64)
-    # action_layer_dims = (512, 256, 128)
+    # action_layer_dims: tuple[int, ...] = (512, 256, 128)
 
 
 @dataclass

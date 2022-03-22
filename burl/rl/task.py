@@ -113,7 +113,7 @@ class RandomLinearCmdTask(BasicTask):
 
     def __init__(self, env, seed=None):
         random.seed(seed)
-        # self.stop_prob = 0.2
+        self.stop_prob = 0.2
         self.interval_range = (1000, 2500)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = 0
@@ -143,8 +143,11 @@ class RandomCmdTask(RandomLinearCmdTask):
     """Randomly updates command"""
 
     def random_cmd(self):
-        yaw = random.uniform(0, 2 * np.pi)
-        return np.array((math.cos(yaw), math.sin(yaw), random.choice((-1., 0, 0, 1.))))
+        angular_cmd = random.choice((-1., 0, 0, 1.))
+        if random.random() < self.stop_prob:
+            return np.array((0., 0., angular_cmd))
+        yaw = random.uniform(0, math.tau)
+        return np.array((math.cos(yaw), math.sin(yaw), angular_cmd))
         # return np.array((math.cos(yaw), math.sin(yaw), clip(random.gauss(0, 0.5), -1, 1)))
 
 

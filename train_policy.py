@@ -48,13 +48,14 @@ def main():
         g_cfg.sleeping_enabled = False
         g_cfg.lr_scheduler = 'fixed'
     log_warn(f'Training on {g_cfg.device}')
-    wandb.init(project='teacher-student', config=g_cfg.__dict__, name=g_cfg.run_name, save_code=True,
+    wandb.init(project='teacher-student', name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     if not g_cfg.log_dir:
         if g_cfg.use_wandb:
             g_cfg.log_dir = f'log/{get_timestamp(wandb.run.start_time)}#{wandb.run.name}@{wandb.run.id}'
         else:
             g_cfg.log_dir = f'log/{get_timestamp()}'
+    wandb.config.update(g_cfg.__dict__)
     runner = PolicyTrainer(g_cfg.task_type)
     runner.learn()
 
