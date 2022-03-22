@@ -13,7 +13,7 @@ from burl.sim.state import ExteroObservation, ProprioObservation, Action, Extend
 from burl.rl.task import get_task, CentralizedTask
 from burl.sim.env import FixedTgEnv, AlienGo
 from burl.sim.multi_env import EnvContainerMp2, EnvContainer, SingleEnvContainer
-from burl.utils import make_part, g_cfg, to_dev, MfTimer, log_info
+from burl.utils import make_part, g_cfg, to_dev, MfTimer, log_info, log_warn
 
 
 class Accountant(object):
@@ -232,7 +232,7 @@ class JoystickPlayer(PolicyPlayer):
         super().__init__(model_path, task_type)
         from thirdparty.gamepad import gamepad, controllers
         if not gamepad.available():
-            print('Please connect your gamepad...')
+            log_warn('Please connect your gamepad...')
             while not gamepad.available():
                 time.sleep(1.0)
         try:
@@ -241,7 +241,7 @@ class JoystickPlayer(PolicyPlayer):
             raise RuntimeError(f'`{gamepad_type}` is not supported,'
                                f'all {controllers.all_controllers}')
         self.gamepad.startBackgroundUpdates()
-        print('Gamepad connected')
+        log_info('Gamepad connected')
 
     @staticmethod
     def is_available():

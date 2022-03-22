@@ -174,9 +174,9 @@ class Hills(HeightFieldTerrain):
         np.random.seed(seed)
         super().__init__(heightfield, offset)
 
-    @staticmethod
-    def make(size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]):
-        return Hills(Hills.make_heightfield(size, resolution, *roughness_downsample))
+    @classmethod
+    def make(cls, size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]):
+        return cls(cls.make_heightfield(size, resolution, *roughness_downsample))
 
     @staticmethod
     def make_heightfield(size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]) -> HeightField:
