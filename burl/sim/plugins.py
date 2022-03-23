@@ -27,6 +27,7 @@ class StatisticsCollector(Plugin):
         self._torque_abs_sum = 0.
         self._torque_pen_sum = 0.0
         self._joint_motion_sum = 0.0
+        self._sim_step_counter = 0
         self._step_counter = 0
         self._publish = publish
         if self._publish:
@@ -43,7 +44,7 @@ class StatisticsCollector(Plugin):
         def wrap(reward_type):
             return reward_type()(cmd, env, rob)
 
-        self._step_counter += 1
+        self._sim_step_counter += 1
         self._torque_sum += rob.getLastAppliedTorques() ** 2
         self._torque_abs_sum += abs(rob.getLastAppliedTorques())
         self._torque_pen_sum += wrap(TorquePenalty)
@@ -91,14 +92,19 @@ class StatisticsCollector(Plugin):
             }
             self._udp_pub.send(data)
 
+    def on_step(self, task, robot, env):
+        self._step_counter += 1
+
     def on_reset(self, task, robot, env):
+        print('episode len:', self._step_counter)
         print('cot', robot.getCostOfTransport())
-        print('mse torque', np.sqrt(self._torque_sum / self._step_counter))
-        print('abs torque', self._torque_abs_sum / self._step_counter)
-        print('torque pen', self._torque_pen_sum / self._step_counter)
-        print('joint motion pen', self._joint_motion_sum / self._step_counter)
+        print('mse torque', np.sqrt(self._torque_sum / self._sim_step_counter))
+        print('abs torque', self._torque_abs_sum / self._sim_step_counter)
+        print('torque pen', self._torque_pen_sum / self._sim_step_counter)
+        print('joint motion pen', self._joint_motion_sum / self._sim_step_counter)
         self._torque_sum = 0.
         self._torque_abs_sum = 0.
         self._torque_pen_sum = 0.0
         self._joint_motion_sum = 0.0
+        self._sim_step_counter = 0
         self._step_counter = 0

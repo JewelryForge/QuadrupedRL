@@ -8,6 +8,7 @@ from burl.rl.runner import PolicyPlayer, JoystickPlayer
 if __name__ == '__main__':
     g_cfg.trn_type = 'curriculum'
     g_cfg.test_profile()
+    g_cfg.driving_mode = False
     # g_cfg.slow_down_rendering()
     g_cfg.add_disturbance = True
     g_cfg.random_dynamics = True
@@ -24,4 +25,4 @@ if __name__ == '__main__':
         player = JoystickPlayer(model_path)
     else:
         player = PolicyPlayer(model_path, 'randCmd')
-    player.play()
+    player.play(False)

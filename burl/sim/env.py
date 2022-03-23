@@ -15,7 +15,7 @@ from burl.rl.task import BasicTask
 from burl.sim.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.tg import TgStateMachine, vertical_tg
-from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE, sign
+from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE, sign, Angle
 from burl.utils.transforms import Rpy, Rotation, Quaternion
 
 __all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv']
@@ -157,6 +157,9 @@ class QuadrupedEnv(object):
             self._external_torque_buffer = None
             self._cmd_buffer = None
 
+        if g_cfg.driving_mode:
+            self._robot_yaw_filter = []
+
         self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
 
@@ -182,9 +185,20 @@ class QuadrupedEnv(object):
                 time_spent += time_to_sleep
         self._last_frame_time = time.time()
         time_ratio = period_coeff / g_cfg.sim_frequency / time_spent
-        if g_cfg.moving_camera:
+
+        if g_cfg.driving_mode:
+            x, y, _ = self._robot.position
+            z = self._robot.STANCE_HEIGHT + self.getTerrainHeight(x, y)
+            self._robot_yaw_filter.append(self._robot.rpy[2] - math.pi / 2)
+            if len(self._robot_yaw_filter) > 100:
+                self._robot_yaw_filter = self._robot_yaw_filter[-10:]
+            # To avoid carsick :)
+            mean = Angle.mean(self._robot_yaw_filter[-10:]) / math.pi * 180
+            self._env.resetDebugVisualizerCamera(1.5, mean, -20., (x, y, z))
+        elif g_cfg.moving_camera:
             yaw, pitch, dist = self._env.getDebugVisualizerCamera()[8:11]
-            (x, y, _), z = self._robot.position, self._robot.STANCE_HEIGHT
+            x, y, _ = self._robot.position
+            z = self._robot.STANCE_HEIGHT + self.getTerrainHeight(x, y)
             self._env.resetDebugVisualizerCamera(dist, yaw, pitch, (x, y, z))
 
         if g_cfg.show_time_ratio:

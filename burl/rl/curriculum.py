@@ -87,6 +87,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
         mini_rfn = random.uniform(0, 0.04)
         roughness = self.max_roughness * (random.random() if self.difficulty == self.max_difficulty
                                           else self.difficulty_degree)
+        # roughness = self.max_roughness
         if not self.terrain:
             from burl.sim.terrain import Hills
             self.terrain = Hills.make(size, resolution, (roughness, 20), (mini_rfn, 1))

@@ -47,6 +47,7 @@ class RenderParam(object):
     sleeping_enabled: bool = False
     time_ratio: float = 1.
     moving_camera: bool = True
+    driving_mode: bool = False
     extra_visualization: bool = True
     show_indicators: bool = True
     show_time_ratio: bool = True

@@ -1,9 +1,43 @@
 import math
+from collections.abc import Collection
+from functools import singledispatchmethod
+
 import numpy as np
 
+PI, TAU = math.pi, math.tau
 
-def ang_norm(x):  # [-pi, pi)
-    return x - ((x + math.pi) // math.tau) * math.tau
+
+class Angle(object):
+    @singledispatchmethod
+    @staticmethod
+    def norm(x):
+        if -PI <= x < PI:
+            return x
+        return x - int((x + PI) / TAU) * TAU
+
+    @norm.register(np.ndarray)
+    @staticmethod
+    def _(x: np.ndarray):
+        return x - ((x + PI) / TAU).astype(int) * TAU
+
+    @staticmethod
+    def mean(lst: Collection[float]):
+        _sum = last = lst[0]
+        for a in lst[1:]:
+            last = Angle.near(last, a)
+            _sum += last
+        return Angle.norm(_sum / len(lst))
+
+    @staticmethod
+    def near(x, y):
+        if x > y + PI:
+            y += TAU
+        elif x < y - PI:
+            y -= TAU
+        return y
+
+
+ang_norm = Angle.norm
 
 
 def unit(x) -> np.ndarray:

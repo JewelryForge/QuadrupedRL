@@ -193,7 +193,7 @@ class Player(object):
             actor_state_dict['log_std'] = torch.zeros_like(self.actor.log_std, device=g_cfg.dev)
             self.actor.load_state_dict(actor_state_dict)
 
-    def play(self):
+    def play(self, allow_reset=True):
         policy = self.actor.get_policy()
         with torch.inference_mode():
             actor_obs = to_dev(self.env.init_observations()[0])
@@ -204,7 +204,7 @@ class Player(object):
                 actor_obs, _, _, dones, info = self.env.step(actions)
                 actor_obs = actor_obs.to(g_cfg.dev)
 
-                if any(dones):
+                if any(dones) and allow_reset:
                     reset_ids = torch.nonzero(dones)
                     actor_obs_reset = self.env.reset(reset_ids)[0].to(g_cfg.dev)
                     actor_obs[reset_ids,] = actor_obs_reset
