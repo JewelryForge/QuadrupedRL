@@ -112,7 +112,7 @@ class RollPitchRatePenalty(Reward):
 
     def __call__(self, cmd, env, robot):
         r_rate, p_rate, _ = robot.getBaseRpyRate()
-        return -(self.dr_reshape(abs(r_rate)) + self.dp_reshape(abs(p_rate))) / 2
+        return 1 - (self.dr_reshape(abs(r_rate)) + self.dp_reshape(abs(p_rate))) / 2
         # return -(self.dr_reshape(r_rate) + self.dp_reshape(p_rate)) / 2
 
 
@@ -131,7 +131,7 @@ class VerticalLinearPenalty(Reward):
         self.reshape = quadratic_linear_reshape(upper)
 
     def __call__(self, cmd, env, robot):
-        return -self.reshape(robot.getBaseLinearVelocityInBaseFrame()[2])
+        return 1 - self.reshape(robot.getBaseLinearVelocityInBaseFrame()[2])
 
 
 class BodyPosturePenalty(Reward):
@@ -141,7 +141,7 @@ class BodyPosturePenalty(Reward):
 
     def __call__(self, cmd, env, robot):
         r, p, _ = env.getTerrainBasedRpyOfRobot()
-        return -(self.roll_reshape(r) + self.pitch_reshape(p)) / 2
+        return 1 - (self.roll_reshape(r) + self.pitch_reshape(p)) / 2
 
 
 class BodyHeightReward(Reward):
@@ -161,8 +161,8 @@ class JointMotionPenalty(Reward):
         self.acc_reshape = np.vectorize(quadratic_linear_reshape(acc_upper))
 
     def __call__(self, cmd, env, robot):
-        return -(self.vel_reshape(robot.getJointVelocities()).sum() +
-                 self.acc_reshape(robot.getJointAccelerations()).sum()) / 12
+        return 1 - (self.vel_reshape(robot.getJointVelocities()).sum() +
+                    self.acc_reshape(robot.getJointAccelerations()).sum()) / 12
 
 
 class TorqueGradientPenalty(Reward):
@@ -179,7 +179,7 @@ class FootSlipPenalty(Reward):
         self.reshape = np.vectorize(quadratic_linear_reshape(upper))
 
     def __call__(self, cmd, env, robot):
-        return -sum(self.reshape(robot.getFootSlipVelocity()))
+        return 1 - sum(self.reshape(robot.getFootSlipVelocity()))
 
 
 class HipAnglePenalty(Reward):
@@ -230,7 +230,7 @@ class BodyCollisionPenalty(Reward):
         contact_states = list(robot.getContactStates())
         for i in range(1, 5):
             contact_states[i * 3] = 0
-        return -sum(contact_states)
+        return 1 - sum(contact_states)
 
 
 class TorquePenalty(Reward):
@@ -238,7 +238,7 @@ class TorquePenalty(Reward):
         self.reshape = np.vectorize(quadratic_linear_reshape(upper))
 
     def __call__(self, cmd, env, robot):
-        return -sum(self.reshape(robot.getLastAppliedTorques() ** 2))
+        return 1 - sum(self.reshape(robot.getLastAppliedTorques() ** 2))
 
 
 class CostOfTransportReward(Reward):

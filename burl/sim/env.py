@@ -167,11 +167,6 @@ class QuadrupedEnv(object):
         self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, True)
         self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
 
-    def _setPhysicsParameters(self):
-        # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
-        self._env.setTimeStep(1 / g_cfg.sim_frequency)
-        self._env.setGravity(0, 0, -9.8)
-
     def _updateRendering(self):
         if (current := self._env.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
             self._reset_counter = current
@@ -305,6 +300,15 @@ class QuadrupedEnv(object):
                         if i < 5:
                             last_end = end
 
+    def _resetRendering(self):
+        if g_cfg.driving_mode:
+            self._robot_yaw_filter.clear()
+
+    def _setPhysicsParameters(self):
+        # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
+        self._env.setTimeStep(1 / g_cfg.sim_frequency)
+        self._env.setGravity(0, 0, -9.8)
+
     def setDisturbance(self, force=(0.,) * 3, torque=(0.,) * 3):
         self._external_force = np.asarray(force)
         self._external_torque = np.asarray(torque)
@@ -434,6 +438,8 @@ class QuadrupedEnv(object):
         self.moveRobotOnTerrain()
         self._prepareSimulation()
         self._robot.updateObservation()
+        if self._gui:
+            self._resetRendering()
         return self.makeObservation()
 
     def reload(self):

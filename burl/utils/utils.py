@@ -135,23 +135,53 @@ def _get_folder_with_specific_time(folders, time_=None):
             if ''.join(folder.split('_')[1].split('-')).startswith(str(time_)):
                 return folder
         else:
-            raise RuntimeError(f'Record with time {time_} not found')
+            raise RuntimeError(f'Record with time `{time_}` not found')
 
 
-def find_log(log_dir='log', fmt='model_*.pt', time_=None, epoch: int = None):
-    folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
-    folder = os.path.join(log_dir, _get_folder_with_specific_time(folders, time_))
+def _get_folder_with_specific_run_name(folders, run_name):
+    for folder in folders:
+        if folder.split('#')[1].split('@')[0] == run_name:
+            return folder
+    else:
+        raise RuntimeError(f'Record with run name `{run_name}` not found')
+
+
+def _get_folder_with_specific_run_id(folders, run_id):
+    for folder in folders:
+        if folder.split('@')[1] == run_id:
+            return folder
+    else:
+        raise RuntimeError(f'Record with run id `{run_id}` not found')
+
+
+def _get_folder(folders, run_name: str = None, run_id: str = None, time_: int | str = None):
+    if run_name:
+        return _get_folder_with_specific_run_name(folders, run_name)
+    elif run_id:
+        return _get_folder_with_specific_run_id(folders, run_id)
+    else:
+        return _get_folder_with_specific_time(folders, time_)
+
+
+def _get_model_of_specific_epoch(models, fmt, epoch):
     prefix, suffix = fmt.split('*')
-    final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in os.listdir(folder))
+    final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in models if m)
     if epoch:
         assert epoch <= final_epoch, f'Epoch {epoch} does not exist, max {final_epoch}'
     else:
         epoch = final_epoch
-    return os.path.join(folder, prefix + f'{epoch}' + suffix)
+    return prefix + str(epoch) + suffix
+
+
+def find_log(log_dir='log', fmt='model_*.pt', run_name: str = None, run_id: str = None,
+             time_: int | str = None, epoch: int = None):
+    folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
+    folder = os.path.join(log_dir, _get_folder(folders, run_name, run_id, time_))
+    return os.path.join(folder, _get_model_of_specific_epoch(os.listdir(folder), fmt, epoch))
 
 
 def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log', fmt='model_*.pt',
-                    time_=None, epoch: int = None):
+                    run_name: str = None, run_id: str = None, time_: int | str = None, epoch: int = None):
     """Find and download model file from remote"""
     ssh = f'ssh -p {port} {host}' if port else f'ssh {host}'
     scp = f'scp -P {port} {host}' if port else f'scp {host}'
@@ -160,18 +190,12 @@ def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log', 
     remote_logs.remove('')
     folders = sorted(remote_logs, key=str2time, reverse=True)
     print('remote log items: ', *folders)
-    folder = _get_folder_with_specific_time(folders, time_)
+    folder = _get_folder(folders, run_name, run_id, time_)
     dst_dir = os.path.join(log_dir, folder).replace('\\', '/')
 
     print(cmd := f'{ssh} ls {dst_dir}')
     models = os.popen(cmd).read().split('\n')
-    prefix, suffix = fmt.split('*')
-    final_epoch = max(int(m.removeprefix(prefix).removesuffix(suffix)) for m in models if m)
-    if epoch:
-        assert epoch <= final_epoch, f'Epoch {epoch} does not exist, max {final_epoch}'
-    else:
-        epoch = final_epoch
-    model_name = prefix + f'{epoch}' + suffix
+    model_name = _get_model_of_specific_epoch(models, fmt, epoch)
     remote_log = os.path.join(log_dir, folder, model_name)
     local_log_dir = os.path.join('log', 'remote-' + folder)
     if not os.path.exists(os.path.join(local_log_dir, model_name)):
