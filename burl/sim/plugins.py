@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import math
+import time
+from itertools import chain
+
 import numpy as np
+import pybullet as pyb
 
-from burl.utils import UdpPublisher
+from burl.utils import UdpPublisher, Angle, unit, vec_cross, sign
 
-__all__ = ['Plugin', 'StatisticsCollector']
+__all__ = ['Plugin', 'StatisticsCollector', 'InfoRenderer']
 
 
 class Plugin(object):
@@ -35,7 +40,7 @@ class StatisticsCollector(Plugin):
 
     def on_simulation_step(self, task, robot, env):
         from burl.sim.env import Quadruped, FixedTgEnv
-        from burl.rl.reward import TorquePenalty, JointMotionPenalty
+        from burl.rl.reward import TorquePenalty, JointMotionPenalty, OrthogonalLinearPenalty
 
         cmd = task.cmd
         env: FixedTgEnv
@@ -49,6 +54,7 @@ class StatisticsCollector(Plugin):
         self._torque_abs_sum += abs(rob.getLastAppliedTorques())
         self._torque_pen_sum += wrap(TorquePenalty)
         self._joint_motion_sum += wrap(JointMotionPenalty)
+        # print(wrap(OrthogonalLinearPenalty))
         # print(wrap(LinearVelocityReward))
         # print(rob.getJointVelocities())
         # print(rob.getJointAccelerations())
@@ -108,3 +114,184 @@ class StatisticsCollector(Plugin):
         self._joint_motion_sum = 0.0
         self._sim_step_counter = 0
         self._step_counter = 0
+
+
+class InfoRenderer(Plugin):
+    def __init__(self, extra_vis=True, show_time_ratio=True, show_indicators=True, driving_mode=True,
+                 moving_camera=False, allow_sleeping=True, single_step_rendering=False):
+        self.extra_vis, self.show_time_ratio, self.show_indicators = extra_vis, show_time_ratio, show_indicators
+        self.driving_mode, self.sleeping, self.single = driving_mode, allow_sleeping, single_step_rendering
+        self.moving_camera = driving_mode or moving_camera
+        if self.extra_vis:
+            self._contact_visual_shape = self._terrain_visual_shape = -1
+            self._contact_obj_ids = []
+            self._terrain_indicators = None
+
+        if self.show_indicators:
+            self._force_indicator = self._torque_indicator = -1
+            self._cmd_indicators = [-1] * 7
+            self._tip_axis_x = self._tip_axis_y = self._tip_last_end = None  # torque indicator plane
+            self._tip_phase = 0
+            self._external_force_buffer = self._external_torque_buffer = self._cmd_buffer = None
+
+        if self.show_time_ratio:
+            self._last_time_ratio = 0.
+            self._time_ratio_indicator = -1
+
+        if self.driving_mode:
+            self._robot_yaw_filter = []
+
+        self._last_frame_time = 0.
+
+    def on_step(self, task, robot, env):
+        if not self.single:
+            self.update_rendering(task, robot, env)
+
+    def on_simulation_step(self, task, robot, env):
+        if self.single:
+            self.update_rendering(task, robot, env)
+            env.client.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
+
+    def on_init(self, task, robot, env):
+        client = env.client
+        if self.extra_vis:
+            self._contact_visual_shape = client.createVisualShape(
+                shapeType=pyb.GEOM_BOX, halfExtents=(0.03, 0.03, 0.03), rgbaColor=(0.8, 0., 0., 0.6))
+            self._terrain_visual_shape = client.createVisualShape(
+                shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0., 0.8, 0., 0.6))
+            self._terrain_indicators = [client.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
+                                        for _ in range(36)]
+        if self.moving_camera and not self.driving_mode:
+            client.resetDebugVisualizerCamera(
+                1.5, 0., 0., (0., 0., robot.STANCE_HEIGHT + env.getTerrainHeight(0., 0.)))
+
+        self._last_frame_time = time.time()
+
+    def on_reset(self, task, robot, env):
+        if self.driving_mode:
+            self._robot_yaw_filter.clear()
+
+    def update_rendering(self, task, robot, env):
+        client: pyb = env.client
+        time_spent = time.time() - self._last_frame_time
+        freq = env.sim_freq if self.single else env.action_freq
+        if self.sleeping:
+            period = 1 / freq
+            if (time_to_sleep := period - time_spent) > 0:
+                time.sleep(time_to_sleep)
+                time_spent += time_to_sleep
+        self._last_frame_time = time.time()
+        time_ratio = 1 / freq / time_spent
+        if self.show_time_ratio:
+            if self._last_time_ratio != time_ratio:
+                _time_ratio_indicator = client.addUserDebugText(
+                    f'{time_ratio: .2f}', textPosition=(0., 0., 0.), textColorRGB=(1., 1., 1.),
+                    textSize=1, lifeTime=0, parentObjectUniqueId=robot.id,
+                    replaceItemUniqueId=self._time_ratio_indicator)
+                if self._time_ratio_indicator != -1 and _time_ratio_indicator != self._time_ratio_indicator:
+                    client.removeUserDebugItem(self._time_ratio_indicator)
+                self._time_ratio_indicator = _time_ratio_indicator
+                self._last_time_ratio = time_ratio
+
+        if self.moving_camera:
+            x, y, _ = robot.position
+            z = robot.STANCE_HEIGHT + env.getTerrainHeight(x, y)
+            if self.driving_mode:
+                self._robot_yaw_filter.append(robot.rpy.y - math.pi / 2)
+                if len(self._robot_yaw_filter) > 100:
+                    self._robot_yaw_filter = self._robot_yaw_filter[-10:]
+                # To avoid carsick :)
+                mean = Angle.mean(self._robot_yaw_filter[-10:]) / math.pi * 180
+                client.resetDebugVisualizerCamera(1.5, mean, -20., (x, y, z))
+            else:
+                yaw, pitch, dist = client.getDebugVisualizerCamera()[8:11]
+                client.resetDebugVisualizerCamera(dist, yaw, pitch, (x, y, z))
+
+        if self.extra_vis:
+            for obj in self._contact_obj_ids:
+                client.removeBody(obj)
+            self._contact_obj_ids.clear()
+            for cp in client.getContactPoints(bodyA=robot.id):
+                pos, normal, normal_force = cp[5], cp[7], cp[9]
+                if normal_force > 0.1:
+                    obj = client.createMultiBody(baseVisualShapeIndex=self._contact_visual_shape,
+                                                 basePosition=pos)
+                    self._contact_obj_ids.append(obj)
+            positions = chain(*[env.getAbundantTerrainInfo(x, y, robot.rpy.y)
+                                for x, y in robot.getFootXYsInWorldFrame()])
+            for idc, pos in zip(self._terrain_indicators, positions):
+                client.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
+        if self.show_indicators:
+            external_force, external_torque = env.getDisturbance()
+            if self._external_force_buffer is not external_force:
+                _force_indicator = client.addUserDebugLine(
+                    lineFromXYZ=(0., 0., 0.), lineToXYZ=external_force / 50, lineColorRGB=(1., 0., 0.),
+                    lineWidth=3, lifeTime=1,
+                    parentObjectUniqueId=robot.id,
+                    replaceItemUniqueId=self._force_indicator)
+                if self._force_indicator != -1 and _force_indicator != self._force_indicator:
+                    client.removeUserDebugItem(self._force_indicator)
+                self._force_indicator = _force_indicator
+                self._external_force_buffer = external_force
+
+            if (external_torque != 0).any():
+                magnitude = math.hypot(*external_torque)
+                axis_z = external_torque / magnitude
+                assis = np.array((0., 0., 1.) if any(axis_z != (0., 0., 1.)) else (1., 0., 0.))
+                self._tip_axis_x = unit(vec_cross(axis_z, assis))
+                self._tip_axis_y = vec_cross(axis_z, self._tip_axis_x)
+                if self._tip_last_end is None:
+                    self._tip_last_end = self._tip_axis_x * magnitude / 20
+                self._tip_phase += math.pi / 36
+                tip_end = (self._tip_axis_x * math.cos(self._tip_phase) +
+                           self._tip_axis_y * math.sin(self._tip_phase)) * magnitude / 20
+                _torque_indicator = client.addUserDebugLine(
+                    lineFromXYZ=self._tip_last_end, lineToXYZ=tip_end, lineColorRGB=(0., 0., 1.),
+                    lineWidth=5, lifeTime=0.1,
+                    parentObjectUniqueId=robot.id,
+                    replaceItemUniqueId=self._torque_indicator)
+                self._tip_last_end = tip_end
+
+            if self._cmd_buffer is not (cmd := task.cmd.copy()):
+                if ((linear := cmd[:2]) != 0.).any():
+                    axis_x, axis_y = np.array((*linear, 0)), np.array((-linear[1], linear[0], 0))
+                    last_end = axis_x * 0.1
+                    phase, phase_inc = 0, cmd[2] / 3
+                    # plot arrow ----->
+                    for i, cmd_idc in enumerate(self._cmd_indicators):
+                        if i < 5:
+                            phase += phase_inc
+                            inc = (axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15
+                        else:
+                            phase += math.pi / 12 if i == 5 else -math.pi / 6
+                            inc = -(axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15
+                        end = last_end + inc
+                        _cmd_indicator = client.addUserDebugLine(
+                            lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
+                            lineWidth=5, lifeTime=1, parentObjectUniqueId=robot.id,
+                            replaceItemUniqueId=cmd_idc)
+                        self._cmd_indicators[i] = _cmd_indicator
+                        if i < 5:
+                            last_end = end
+                else:
+                    phase, phase_inc = 0, cmd[2] / 3
+                    radius = abs(cmd[2] / 6)
+                    last_end = (radius, 0., 0.)
+                    for i, cmd_idc in enumerate(self._cmd_indicators):
+                        if i < 5:
+                            phase += phase_inc
+                            end = np.array((math.cos(phase), math.sin(phase), 0.)) * radius
+                        else:
+                            if i == 5:
+                                _phase = phase + (-math.pi / 2 + math.pi / 12) * sign(cmd[2])
+                            else:
+                                _phase = phase + (-math.pi / 2 - math.pi / 4) * sign(cmd[2])
+                            length = radius * math.sin(abs(phase_inc) / 2) * 3
+                            end = last_end + np.array((math.cos(_phase), math.sin(_phase), 0.)) * length
+                        _cmd_indicator = client.addUserDebugLine(
+                            lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
+                            lineWidth=5, lifeTime=1, parentObjectUniqueId=robot.id,
+                            replaceItemUniqueId=cmd_idc)
+                        self._cmd_indicators[i] = _cmd_indicator
+                        if i < 5:
+                            last_end = end
