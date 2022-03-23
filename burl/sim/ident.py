@@ -145,14 +145,14 @@ def train_actuator_net(actuator_net, dataset_class, lr=1e-3, num_epochs=1000, ba
             loss.backward()
             optim.step()
         train_loss /= train_len
-        log_info(f'Epoch {i:>4}/{num_epochs} train loss {np.mean(train_loss):.6f}')
+        log_info(f'Epoch {i:>4}/{num_epochs} train loss {train_loss:.6f}')
 
         for X, Y in test_loader:
             X, Y = X.to(device), Y.to(device)
             loss = criterion(net(X), Y)
             test_loss += loss.item()
         test_loss /= test_len
-        log_info(f'Epoch {i:>4}/{num_epochs} test loss {np.mean(test_loss):.6f}')
+        log_info(f'Epoch {i:>4}/{num_epochs} test loss {test_loss:.6f}')
         wandb.log({'Train/loss': train_loss, 'Test/loss': test_loss})
         if i % 10 == 0:
             torch.save({'model': net.state_dict(), 'hidden_dims': net.hidden_dims},

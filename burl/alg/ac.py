@@ -71,6 +71,12 @@ class Actor(nn.Module):
         extero_feature, proprio_feature = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
         return self.action_layers(torch.concat((extero_feature, proprio_feature), dim=-1))
 
+    def instruct(self, x):
+        extero_obs, proprio_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
+        extero_feature, proprio_feature = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
+        action = self.action_layers(torch.concat((extero_feature, proprio_feature), dim=-1))
+        return extero_feature, action
+
     # @property
     # def std(self):
     #     return self.log_std.exp()

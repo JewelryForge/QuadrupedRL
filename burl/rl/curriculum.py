@@ -84,7 +84,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
         Otherwise update its height field.
         """
         size, resolution = 30, 0.1
-        mini_rfn = random.uniform(0, 0.04)
+        mini_rfn = random.uniform(0, 0.02)
         roughness = self.max_roughness * (random.random() if self.difficulty == self.max_difficulty
                                           else self.difficulty_degree)
         # roughness = self.max_roughness

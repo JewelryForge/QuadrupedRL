@@ -8,7 +8,7 @@ from burl.rl.runner import PolicyPlayer, JoystickPlayer
 if __name__ == '__main__':
     g_cfg.trn_type = 'curriculum'
     g_cfg.test_profile()
-    g_cfg.driving_mode = False
+    g_cfg.driving_mode = True
     # g_cfg.slow_down_rendering()
     g_cfg.add_disturbance = True
     g_cfg.random_dynamics = True
@@ -20,9 +20,9 @@ if __name__ == '__main__':
     if remote:
         model_path = find_log_remote(host='csc', time_=None, epoch=None, log_dir='teacher-student/log')
     else:
-        model_path = find_log(time_=None, epoch=None)
+        model_path = find_log(time_='210744', epoch=None)
     if JoystickPlayer.is_available():
         player = JoystickPlayer(model_path)
     else:
         player = PolicyPlayer(model_path, 'randCmd')
-    player.play(False)
+    player.play(True)
