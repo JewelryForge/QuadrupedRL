@@ -514,8 +514,11 @@ class Quadruped(object):
     def getFootPositionInWorldFrame(self, leg):
         return self._observation.foot_states.positions[leg, :]
 
-    def getPrevFootPositionInWorldFrame(self, leg):
-        return self.getObservationHistoryFromIndex(-2).foot_states.positions[leg, :]
+    def getFootPositionsInWorldFrame(self):
+        return self._observation.foot_states.positions
+
+    def retrieveFootPositionsInWorldFrame(self):
+        return [link_state[0] for link_state in self._env.getLinkStates(self._body_id, self._foot_ids)]
 
     def getFootXYsInWorldFrame(self):
         return [self._observation.foot_states.positions[leg, :2] for leg in range(4)]

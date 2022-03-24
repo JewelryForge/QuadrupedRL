@@ -9,7 +9,7 @@ import numpy as np
 from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
 from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer
-from burl.sim.terrain import Terrain, Plain
+from burl.sim.terrain import Terrain, Plain, Hills
 from burl.utils import g_cfg
 
 __all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
@@ -23,6 +23,7 @@ class BasicTask(RewardRegistry):
         self.set_coeff(0.5)
 
         self.plugins: list[Plugin] = []
+        self.plugin_utils = {}
         if g_cfg.test_mode:
             self.load_plugin(StatisticsCollector())
         if g_cfg.rendering:
@@ -47,14 +48,10 @@ class BasicTask(RewardRegistry):
             terrain_inst = Plain()
             terrain_inst.spawn(self._env.client)
         elif terrain_type == 'curriculum':
-            for plg in self.plugins:
-                if hasattr(plg, 'generate_terrain'):
-                    terrain_inst = plg.generate_terrain(self._env.client)
-                    break
-            else:
-                raise RuntimeError('Not a TerrainCurriculum instance is registered')
-        elif terrain_type == 'rough':
-            raise NotImplementedError
+            terrain_inst = self.plugin_utils['generate_terrain'](self.env.client)
+        elif terrain_type == 'hills':
+            terrain_inst = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
+            terrain_inst.spawn(self._env.client)
         elif terrain_type == 'slope':
             raise NotImplementedError
         else:
@@ -63,16 +60,18 @@ class BasicTask(RewardRegistry):
 
     def load_plugin(self, plugin: Plugin):
         self.plugins.append(plugin)
+        for plg_util in plugin.utils:
+            self.plugin_utils[plg_util] = getattr(plugin, plg_util)
 
     def on_init(self):
-        """Called back before env.initObservation"""
+        """Called back after env init"""
         for plg in self.plugins:
             plg.on_init(self, self._robot, self._env)
 
-    def on_simulation_step(self):
+    def on_sim_step(self):
         """Called back after every simulation step"""
         for plg in self.plugins:
-            plg.on_simulation_step(self, self._robot, self._env)
+            plg.on_sim_step(self, self._robot, self._env)
 
     def on_step(self):
         """Called back after every env.step"""

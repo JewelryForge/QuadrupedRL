@@ -7,10 +7,11 @@ from typing import Union, Type
 
 import numpy as np
 
+from burl.sim.plugins import Plugin
 from burl.utils import g_cfg
 
 
-class GameInspiredCurriculum(object):
+class GameInspiredCurriculum(Plugin):
     """A curriculum prototype, with different difficulty between multi environments"""
 
     def __init__(self, max_difficulty: int, patience: int, aggressive=False):
@@ -50,17 +51,8 @@ class GameInspiredCurriculum(object):
         if self.difficulty < self.max_difficulty:
             self.difficulty += 1
 
-    def on_init(self, task, robot, env):
-        pass
-
-    def on_simulation_step(self, task, robot, env):
-        pass
-
     def on_step(self, task, robot, env):
         return {self.__class__.__name__: self.difficulty_degree}
-
-    def on_reset(self, task, robot, env):
-        pass
 
     def set_max_level(self):
         self.difficulty = self.max_difficulty
@@ -71,6 +63,8 @@ class GameInspiredCurriculum(object):
 
 
 class TerrainCurriculum(GameInspiredCurriculum):
+    utils = ['generate_terrain']
+
     def __init__(self, aggressive=False):
         super().__init__(100, 1, aggressive)
         self.max_roughness = 0.4
@@ -81,7 +75,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
     def generate_terrain(self, sim_env):
         """
         If no terrain has been spawned, create and spawn it.
-        Otherwise update its height field.
+        Otherwise, update its height field.
         """
         size, resolution = 30, 0.1
         mini_rfn = random.uniform(0, 0.02)
@@ -90,7 +84,7 @@ class TerrainCurriculum(GameInspiredCurriculum):
         # roughness = self.max_roughness
         if not self.terrain:
             from burl.sim.terrain import Hills
-            self.terrain = Hills.make(size, resolution, (roughness, 20), (mini_rfn, 1))
+            self.terrain = Hills.make(size, resolution, (roughness, 20), (mini_rfn, 2))
             self.terrain.spawn(sim_env)
         else:
             if self.difficulty:
@@ -98,12 +92,13 @@ class TerrainCurriculum(GameInspiredCurriculum):
                     sim_env, self.terrain.make_heightfield(size, resolution, (roughness, 20), (mini_rfn, 2)))
         return self.terrain
 
-    def on_simulation_step(self, task, robot, env):
+    def on_sim_step(self, task, robot, env):
         self.episode_linear_reward_sum += task.reward_details['LinearVelocityReward']
         self.episode_sim_count += 1
 
     def on_reset(self, task, robot, env):
-        self.register(not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6)
+        if self.episode_sim_count:
+            self.register(not env.is_failed and self.episode_linear_reward_sum / self.episode_sim_count > 0.6)
         self.generate_terrain(env.client)
         self.episode_linear_reward_sum = self.episode_sim_count = 0
 
@@ -155,14 +150,14 @@ class DisturbanceCurriculum(GameInspiredCurriculum):
         self.register(not env.is_failed)
         self.update_disturbance(env)
 
-    def on_simulation_step(self, task, robot, env):
+    def on_sim_step(self, task, robot, env):
         if env.sim_step >= self.last_update + self.update_interval:
             self.update_disturbance(env)
             self.update_interval = random.uniform(*self.interval_range)
             self.last_update = env.sim_step
 
 
-class CurriculumDistribution(object):
+class CurriculumDistribution(Plugin):
     """Defines how curriculum affects the environment"""
 
     def __init__(self, comm: mp.Queue, difficulty_getter: Callable[[], int], max_difficulty: int):
@@ -173,12 +168,6 @@ class CurriculumDistribution(object):
     @property
     def difficulty_degree(self):
         return self.difficulty / self.max_difficulty
-
-    def on_init(self, task, robot, env):
-        pass
-
-    def on_simulation_step(self, task, robot, env):
-        pass
 
     def on_step(self, task, robot, env):
         return {self.__class__.__name__: self.difficulty_degree}
@@ -238,7 +227,7 @@ class CentralizedCurriculum(object):
             self.difficulty = difficulty + 1
             self.buffer.clear()
 
-    def make_distribution(self):
+    def make_distribution(self) -> Plugin:
         return self.distribution(self.letter_box, lambda: self._difficulty.value, self.max_difficulty)
 
 
@@ -265,7 +254,7 @@ class DisturbanceCurriculumDistribution(CurriculumDistribution):
         self.last_update = 0
         self.update_disturbance(env)
 
-    def on_simulation_step(self, task, robot, env):
+    def on_sim_step(self, task, robot, env):
         if env.sim_step >= self.last_update + self.update_interval:
             self.update_disturbance(env)
             self.update_interval = random.uniform(*self.interval_range)
@@ -273,6 +262,8 @@ class DisturbanceCurriculumDistribution(CurriculumDistribution):
 
 
 class TerrainCurriculumDistribution(CurriculumDistribution):
+    utils = ['generate_terrain']
+
     def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
         super().__init__(comm, difficulty_getter, max_difficulty)
         self.max_roughness = 0.2
@@ -283,8 +274,8 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
 
     generate_terrain = TerrainCurriculum.generate_terrain
 
-    def on_simulation_step(self, task, robot, env):
-        TerrainCurriculum.on_simulation_step(self, task, robot, env)
+    def on_sim_step(self, task, robot, env):
+        TerrainCurriculum.on_sim_step(self, task, robot, env)
 
     def is_success(self, task, robot, env) -> bool:
         average_linear_reward = self.episode_linear_reward_sum / self.episode_sim_count

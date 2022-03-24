@@ -56,7 +56,6 @@ class QuadrupedEnv(object):
         self.moveRobotOnTerrain()
 
         self._setPhysicsParameters()
-        self._prepareSimulation()
         assert g_cfg.sim_frequency >= g_cfg.execution_frequency >= g_cfg.action_frequency
         self._num_action_repeats = int(g_cfg.sim_frequency / g_cfg.action_frequency)
         self._num_execution_repeats = int(g_cfg.sim_frequency / g_cfg.execution_frequency)
@@ -65,6 +64,8 @@ class QuadrupedEnv(object):
         self._action_history = deque(maxlen=10)
         self._external_force = np.array((0., 0., 0.))
         self._external_torque = np.array((0., 0., 0.))
+        self._task.on_init()
+        self._prepareSimulation()
 
     def _resetStates(self):
         self._sim_step_counter = 0
@@ -84,7 +85,6 @@ class QuadrupedEnv(object):
     sim_freq = property(lambda self: g_cfg.sim_frequency)
 
     def initObservation(self):
-        self._task.on_init()
         self._robot.updateObservation()
         return self.makeObservation()
 
@@ -92,17 +92,32 @@ class QuadrupedEnv(object):
         if g_cfg.on_rack:
             return
         self._estimateTerrain(self._robot.retrieveFootXYsInWorldFrame())
-        height_inc = 0.
+        init_height = self._est_height + self._robot.INIT_HEIGHT
+        orn = Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse()
         while True:
-            self._env.resetBasePositionAndOrientation(
-                self._robot.id, (0., 0., self._est_height + self._robot.INIT_HEIGHT + height_inc),
-                Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse())
+            self._env.resetBasePositionAndOrientation(self._robot.id, (0., 0., init_height), orn)
             self._env.performCollisionDetection()
-            for contact_point in self._env.getContactPoints(self._robot.id, self._terrain.id):
-                if contact_point[8] < -0.01:
-                    height_inc += 0.01
-                    continue
-            break
+            if not self._env.getContactPoints(self._robot.id, self._terrain.id):
+                break
+            init_height += 0.01
+
+    def robotStuckInTerrain(self):
+        try:
+            foot_xyz = self._robot.getFootPositionsInWorldFrame()
+        except AttributeError:
+            foot_xyz = self._robot.retrieveFootPositionsInWorldFrame()
+        for x, y, z in foot_xyz:
+            if z < self.getTerrainHeight(x, y) - 0.03:
+                print(z, self.getTerrainHeight(x, y))
+                return True
+        return False
+
+        # if not self._sim_step_counter:
+        #     self._env.performCollisionDetection()
+        # for contact_point in self._env.getContactPoints(self._robot.id, self._terrain.id):
+        #     if contact_point[8] < -0.01:
+        #         return True
+        # return False
 
     def _prepareSimulation(self):
         pass
@@ -132,6 +147,8 @@ class QuadrupedEnv(object):
             self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
             self._reset_counter = 0
 
+            self._env.resetDebugVisualizerCamera(
+                1.5, 0., 0., (0., 0., self._robot.STANCE_HEIGHT + self.getTerrainHeight(0., 0.)))
             self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, True)
             self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
             self._init_rendering = True
@@ -236,7 +253,7 @@ class QuadrupedEnv(object):
                 rewards.append(self._task.calc_reward())
                 for n, r in self._task.reward_details.items():
                     reward_details[n] = reward_details.get(n, 0) + r
-            self._task.on_simulation_step()
+            self._task.on_sim_step()
         if self._gui:
             self._updateRendering()
         for n in reward_details:

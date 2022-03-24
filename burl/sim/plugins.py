@@ -13,10 +13,12 @@ __all__ = ['Plugin', 'StatisticsCollector', 'InfoRenderer']
 
 
 class Plugin(object):
+    utils = []
+
     def on_init(self, task, robot, env):
         pass
 
-    def on_simulation_step(self, task, robot, env):
+    def on_sim_step(self, task, robot, env):
         pass
 
     def on_step(self, task, robot, env) -> dict | None:
@@ -38,7 +40,7 @@ class StatisticsCollector(Plugin):
         if self._publish:
             self._udp_pub = UdpPublisher(9870)
 
-    def on_simulation_step(self, task, robot, env):
+    def on_sim_step(self, task, robot, env):
         from burl.sim.env import Quadruped, FixedTgEnv
         from burl.rl.reward import TorquePenalty, JointMotionPenalty, OrthogonalLinearPenalty
 
@@ -147,7 +149,7 @@ class InfoRenderer(Plugin):
         if not self.single:
             self.update_rendering(task, robot, env)
 
-    def on_simulation_step(self, task, robot, env):
+    def on_sim_step(self, task, robot, env):
         if self.single:
             self.update_rendering(task, robot, env)
             env.client.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
