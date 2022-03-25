@@ -15,7 +15,7 @@ class Trajectory(Dataset):
 
     def add_transition(self, obs: torch.Tensor, action: torch.Tensor):
         if self.num_transitions >= self.max_size:
-            raise RuntimeError('Full trajectory')
+            raise RuntimeError('Trajectory overflow')
         self.obs_buffer[:, self.num_transitions] = obs.detach()
         self.action_buffer[:, self.num_transitions] = action.detach()
         self.num_transitions += 1
@@ -64,7 +64,7 @@ class Dagger(object):
 
     def insert_to_dataset(self, traj: Trajectory):
         if not self.train_num or (self.val_num and self.train_num / self.val_num > self.train_val_ratio):
-            self.train_dataset = ConcatDataset((self.train_dataset, traj))
+            self.train_dataset = ConcatDataset((self.train_dataset, traj))  # TODO: NOTICE GPU MEM
             self.train_num += len(traj)
         else:
             self.val_dataset = ConcatDataset((self.val_dataset, traj))

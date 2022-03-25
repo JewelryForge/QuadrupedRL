@@ -9,7 +9,7 @@ import torch
 import wandb
 
 from burl.alg import Actor, Critic, PPO
-from burl.sim.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
+from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ExtendedObservation
 from burl.rl.task import get_task, CentralizedTask
 from burl.sim.env import FixedTgEnv, AlienGo
 from burl.sim.multi_env import EnvContainerMp2, EnvContainer, SingleEnvContainer
@@ -63,7 +63,7 @@ class OnPolicyRunner(object):
                 timer.start()
                 for _ in range(g_cfg.storage_len):
                     actions = self.alg.act(actor_obs, critic_obs)
-                    actor_obs, critic_obs, rewards, dones, infos = self.env.step(actions)
+                    (actor_obs, critic_obs), rewards, dones, infos = self.env.step(actions)
                     actor_obs, critic_obs, rewards, dones = to_dev(actor_obs, critic_obs, rewards, dones)
                     self.alg.process_env_step(rewards, dones, infos['time_out'].to(g_cfg.dev))
                     cur_reward_sum += rewards
@@ -155,7 +155,7 @@ class PolicyTrainer(OnPolicyRunner):
         super().__init__(
             make_env=make_part(FixedTgEnv, make_robot=AlienGo,
                                make_task=self.task_prototype.make_distribution(get_task(task_type))),
-            make_actor=make_part(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+            make_actor=make_part(Actor, ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims,
                                  g_cfg.init_noise_std),
             make_critic=make_part(Critic, ExtendedObservation.dim, 1),
@@ -179,6 +179,7 @@ class PolicyTrainer(OnPolicyRunner):
 class Player(object):
     def __init__(self, model_path, make_env, make_actor):
         self.env = SingleEnvContainer(make_env)
+        self.env.unwrapped.setObservationTypes('noisy_extended')
         self.actor = make_actor().to(g_cfg.dev)
         log_info(f'Loading model {model_path}')
         model_info = torch.load(model_path)
@@ -201,7 +202,7 @@ class Player(object):
             for _ in range(20000):
                 actions = policy(actor_obs)
                 self.loop_callback()
-                actor_obs, _, _, dones, info = self.env.step(actions)
+                (actor_obs,), _, dones, info = self.env.step(actions)
                 actor_obs = actor_obs.to(g_cfg.dev)
 
                 if any(dones) and allow_reset:
@@ -222,7 +223,7 @@ class PolicyPlayer(Player):
             model_path,
             make_env=make_part(FixedTgEnv, make_robot=AlienGo,
                                make_task=task_prototype.make_distribution(get_task(task_type))),
-            make_actor=make_part(Actor, ExteroObservation.dim, ProprioObservation.dim, Action.dim,
+            make_actor=make_part(Actor, ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
         )
 

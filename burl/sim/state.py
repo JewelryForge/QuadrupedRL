@@ -54,7 +54,7 @@ def get_base_frequency():
     return TgStateMachine.base_frequency
 
 
-class StateSnapshot(ObservationBase):
+class ProprioObservation(ObservationBase):
     dim = 36
     _init = False
 
@@ -108,7 +108,7 @@ class StateSnapshot(ObservationBase):
         ))
 
 
-class ProprioObservation(StateSnapshot):
+class RealWorldObservation(ProprioObservation):
     dim = 60 + 73
     _init = False
 
@@ -128,7 +128,7 @@ class ProprioObservation(StateSnapshot):
         if cls._init:
             return
         cls._init = True
-        StateSnapshot._wb_init()
+        ProprioObservation._wb_init()
         joint_prev_pos_err_bias, joint_prev_pos_err_weight = zero12, (6.5, 4.5, 3.5) * 4
         ftg_phases_bias, ftg_phases_weight = zero8, (1.,) * 8
         ftg_frequencies_bias, ftg_frequencies_weight = (get_base_frequency(),) * 4, (100.,) * 4
@@ -138,7 +138,7 @@ class ProprioObservation(StateSnapshot):
         joint_prev_pos_target_bias, joint_prev_pos_target_weight = get_robot_type().STANCE_POSTURE, (2.,) * 12
         base_frequency_bias, base_frequency_weight = (get_base_frequency(),), (1.,)
         cls.biases = np.concatenate((
-            StateSnapshot.biases,
+            ProprioObservation.biases,
             joint_prev_pos_err_bias,
             ftg_phases_bias,
             ftg_frequencies_bias,
@@ -150,7 +150,7 @@ class ProprioObservation(StateSnapshot):
         ))
 
         cls.weights = np.concatenate((
-            StateSnapshot.weights,
+            ProprioObservation.weights,
             joint_prev_pos_err_weight,
             ftg_phases_weight,
             ftg_frequencies_weight,
@@ -233,13 +233,13 @@ class ExteroObservation(ObservationBase):
         ))
 
 
-class ExtendedObservation(ExteroObservation, ProprioObservation):
-    dim = ExteroObservation.dim + ProprioObservation.dim
+class ExtendedObservation(ExteroObservation, RealWorldObservation):
+    dim = ExteroObservation.dim + RealWorldObservation.dim
     _init = False
 
     def __init__(self):
         ExteroObservation.__init__(self)
-        ProprioObservation.__init__(self)
+        RealWorldObservation.__init__(self)
 
     @classmethod
     def _wb_init(cls):
@@ -247,13 +247,13 @@ class ExtendedObservation(ExteroObservation, ProprioObservation):
             return
         cls._init = True
         ExteroObservation._wb_init()
-        ProprioObservation._wb_init()
-        cls.biases = np.concatenate((ExteroObservation.biases, ProprioObservation.biases))
-        cls.weights = np.concatenate((ExteroObservation.weights, ProprioObservation.weights))
+        RealWorldObservation._wb_init()
+        cls.biases = np.concatenate((ExteroObservation.biases, RealWorldObservation.biases))
+        cls.weights = np.concatenate((ExteroObservation.weights, RealWorldObservation.weights))
 
     def to_array(self):
         return np.concatenate((ExteroObservation.to_array(self),
-                               ProprioObservation.to_array(self)))
+                               RealWorldObservation.to_array(self)))
 
 
 class Action(ArrayAttr):
@@ -348,6 +348,6 @@ class ObservationRaw(object):
 
 if __name__ == '__main__':
     ExteroObservation()
-    ProprioObservation()
+    RealWorldObservation()
     ExtendedObservation()
     ExteroObservation()

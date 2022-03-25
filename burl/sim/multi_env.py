@@ -9,6 +9,8 @@ from burl.sim.env import QuadrupedEnv
 
 __all__ = ['EnvContainer', 'EnvContainerMp2', 'SingleEnvContainer']
 
+SINGLE = np.float32
+
 
 class EnvContainer(object):
     @overload
@@ -36,7 +38,7 @@ class EnvContainer(object):
 
     @staticmethod
     def merge_results(results):
-        actor_obs, critic_obs, rewards, dones, infos = zip(*results)
+        observations, rewards, dones, infos = zip(*results)
 
         def _merge_dict_recursively(_infos: list[dict]):
             _infos_merged = {}
@@ -47,19 +49,19 @@ class EnvContainer(object):
                     _infos_merged[_k] = torch.Tensor(np.array([_info[_k] for _info in _infos]))
             return _infos_merged
 
-        return (torch.as_tensor(np.array(actor_obs, dtype=np.float32)),
-                torch.as_tensor(np.array(critic_obs, dtype=np.float32)),
-                torch.as_tensor(np.array(rewards, dtype=np.float32)),
-                torch.as_tensor(np.array(dones, dtype=np.float32)),
+        return (tuple(torch.from_numpy(np.array(obs, dtype=SINGLE)) for obs in zip(*observations)),
+                torch.from_numpy(np.array(rewards, dtype=SINGLE)),
+                torch.from_numpy(np.array(dones, dtype=SINGLE)),
                 _merge_dict_recursively(infos))
 
     def reset(self, ids):
-        actor_obs, critic_obs = zip(*[self._envs[i].reset() for i in ids])
-        return torch.Tensor(np.array(actor_obs)), torch.Tensor(np.array(critic_obs))
+        observations = zip(*[self._envs[i].reset() for i in ids])
+        return tuple(torch.from_numpy(np.array(obs, dtype=SINGLE)) for obs in observations)
 
     def init_observations(self):
+        observations = zip(*[env.initObservation() for env in self._envs])
         # TO MY ASTONISHMENT, A LIST COMPREHENSION IS FASTER THAN A GENERATOR!!!
-        return [torch.Tensor(np.asarray(o)) for o in zip(*[env.initObservation() for env in self._envs])]
+        return tuple(torch.from_numpy(np.array(obs, dtype=SINGLE)) for obs in observations)
 
     def close(self):
         pass

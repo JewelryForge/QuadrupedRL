@@ -11,7 +11,7 @@ from pybullet_utils.bullet_client import BulletClient
 
 from burl.rl.task import BasicTask
 from burl.sim.quadruped import A1, AlienGo, Quadruped
-from burl.sim.state import StateSnapshot, ProprioObservation, ExtendedObservation, Action
+from burl.sim.state import ProprioObservation, RealWorldObservation, ExtendedObservation, Action
 from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Quaternion
@@ -25,21 +25,22 @@ class QuadrupedEnv(object):
     Provides interface for reinforcement learning, including making observation and calculating rewards.
     """
 
-    ALLOWED_OBSERVATION_TYPES = {'snapshot': 'makeStateSnapshot',
-                                 'proprio': 'makeProprioObservation',
-                                 'noisy_proprio': 'makeNoisyProprioObservation',
-                                 'extended': 'makeExtendedObservation',
-                                 'noisy_extended': 'makeNoisyExtendedObservation'}
+    ALLOWED_OBS_TYPES = {'proprio': lambda self: self.makeProprioObs(),
+                         'noisy_proprio': lambda self: self.makeProprioObs(noisy=True),
+                         'real_world': lambda self: self.makeRealWorldObs(),
+                         'noisy_real_world': lambda self: self.makeRealWorldObs(noisy=True),
+                         'extended': lambda self: self.makeExtendedObs(),
+                         'noisy_extended': lambda self: self.makeExtendedObs(noisy=True)}
 
     def __init__(self, make_robot: Callable[..., Quadruped],
                  make_task: Callable[..., BasicTask] = BasicTask,
-                 observation_type: tuple[str] = ('snapshot',)):
+                 obs_types: tuple[str] = ()):
         self._gui = g_cfg.rendering
         self._env = BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb  # for pylint
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
-        for obs_type in observation_type:
-            assert obs_type in self.ALLOWED_OBSERVATION_TYPES, f'Unknown Observation Type {obs_type}'
-        self._observation_type = observation_type
+        for obs_type in obs_types:
+            assert obs_type in self.ALLOWED_OBS_TYPES, f'Unknown Observation Type {obs_type}'
+        self._obs_types = obs_types
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
@@ -66,6 +67,12 @@ class QuadrupedEnv(object):
         self._external_torque = np.array((0., 0., 0.))
         self._task.on_init()
         self._prepareSimulation()
+
+    def setObservationTypes(self, obs_types: str | tuple[str], *other_obs_types: str):
+        if isinstance(obs_types, str):
+            self._obs_types = (obs_types,) + other_obs_types
+        else:
+            self._obs_types = obs_types
 
     def _resetStates(self):
         self._sim_step_counter = 0
@@ -170,24 +177,20 @@ class QuadrupedEnv(object):
         return self._external_force, self._external_torque
 
     def makeObservation(self):
-        if isinstance(self._observation_type, str):
-            return getattr(self, self.ALLOWED_OBSERVATION_TYPES[self._observation_type])()
-        else:
-            obs_dict = {}.fromkeys(self.ALLOWED_OBSERVATION_TYPES, None)
-            observations = []
-            for obs_type in self._observation_type:
-                if obs_dict[obs_type] is None:
-                    func_name = self.ALLOWED_OBSERVATION_TYPES[obs_type]
-                    obs = getattr(self, func_name)()
-                    obs_dict[obs_type] = obs
-                else:
-                    obs = obs_dict[obs_type]
-                observations.append(obs.standard())
-            return observations
+        obs_dict = {}
+        observations = []
+        for obs_type in self._obs_types:
+            if obs_type not in obs_dict:
+                obs = self.ALLOWED_OBS_TYPES[obs_type](self)
+                obs_dict[obs_type] = obs
+            else:
+                obs = obs_dict[obs_type]
+            observations.append(obs.standard())
+        return observations
 
-    def makeStateSnapshot(self, obs=None, noisy=False):
+    def makeProprioObs(self, obs=None, noisy=False):
         if obs is None:
-            obs = StateSnapshot()
+            obs = ProprioObservation()
         r = self._robot
         obs.command = self._task.cmd
         obs.gravity_vector = r.getGravityVector(noisy)
@@ -197,17 +200,17 @@ class QuadrupedEnv(object):
         obs.joint_vel = r.getJointVelocities(noisy)
         return obs
 
-    def makeProprioObservation(self, obs=None, noisy=False):
+    def makeRealWorldObs(self, obs=None, noisy=False):
         raise NotImplementedError
 
-    def makeNoisyProprioObservation(self, obs=None):
-        return self.makeProprioObservation(obs, noisy=True)
+    def makeNoisyRealWorldObs(self, obs=None):
+        return self.makeRealWorldObs(obs, noisy=True)
 
-    def makeExtendedObservation(self, obs=None, noisy=False):
+    def makeExtendedObs(self, obs=None, noisy=False):
         raise NotImplementedError
 
-    def makeNoisyExtendedObservation(self, obs=None):
-        return self.makeExtendedObservation(obs, noisy=True)
+    def makeNoisyExtendedObs(self, obs=None):
+        return self.makeExtendedObs(obs, noisy=True)
 
     def _estimateTerrain(self, xy_points=None):
         self._terrain_samples.clear()
@@ -268,7 +271,7 @@ class QuadrupedEnv(object):
         if task_info := self._task.on_step():
             info['task_info'] = task_info
         # log_debug(f'Step time: {time.time() - start}')
-        return (*self.makeObservation(),
+        return (self.makeObservation(),
                 mean_reward,
                 self._is_failed or time_out,
                 info)
@@ -361,8 +364,8 @@ class QuadrupedEnv(object):
 
 class IkEnv(QuadrupedEnv):
     def __init__(self, make_robot: Callable[..., Quadruped], make_task=BasicTask,
-                 observation_type=('extended', 'extended'), ik_type='analytical', horizontal_frame=False):
-        super().__init__(make_robot, make_task, observation_type)
+                 obs_types=(), ik_type='analytical', horizontal_frame=False):
+        super().__init__(make_robot, make_task, obs_types)
         self._commands: Opt[np.ndarray] = None
         if ik_type == 'analytical':
             self._ik = self._robot.analyticalInverseKinematics
@@ -400,16 +403,16 @@ class FixedTgEnv(IkEnv):
                 'AlienGo': make_part(vertical_tg, h=0.12)}
 
     def __init__(self, make_robot: Callable[..., Quadruped],
-                 make_task=BasicTask, observation_type=('noisy_extended', 'extended'),
+                 make_task=BasicTask, obs_types=('noisy_extended', 'extended'),
                  ik_type='analytical', horizontal_frame=False):
-        super().__init__(make_robot, make_task, observation_type, ik_type, horizontal_frame)
+        super().__init__(make_robot, make_task, obs_types, ik_type, horizontal_frame)
         self._stm = TgStateMachine(1 / g_cfg.action_frequency,
                                    self.tg_types[self._robot.__class__.__name__])
 
-    def makeProprioObservation(self, obs=None, noisy=False):
+    def makeRealWorldObs(self, obs=None, noisy=False):
         if obs is None:
-            obs = ProprioObservation()
-        obs = self.makeStateSnapshot(obs, noisy=noisy)
+            obs = RealWorldObservation()
+        obs = self.makeProprioObs(obs, noisy=noisy)
         r = self._robot
         obs.joint_prev_pos_err = r.getJointPosErrHistoryFromIndex(-1, noisy)
         obs.ftg_frequencies = self._stm.frequency
@@ -429,10 +432,10 @@ class FixedTgEnv(IkEnv):
         obs.base_frequency = (self._stm.base_frequency,)
         return obs
 
-    def makeExtendedObservation(self, obs=None, noisy=False):
+    def makeExtendedObs(self, obs=None, noisy=False):
         if obs is None:
             obs = ExtendedObservation()
-        obs: ExtendedObservation = self.makeProprioObservation(obs, noisy=noisy)
+        obs: ExtendedObservation = self.makeRealWorldObs(obs, noisy=noisy)
         r = self._robot
         foot_xy = r.getFootXYsInWorldFrame()
         obs.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.rpy.y) for x, y in foot_xy])

@@ -125,9 +125,9 @@ class Critic(nn.Module):
 
 
 if __name__ == '__main__':
-    from burl.sim.state import ExteroObservation, ProprioObservation, Action, ExtendedObservation
+    from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ExtendedObservation
 
-    actor = Actor(ExteroObservation.dim, ProprioObservation.dim, Action.dim)
+    actor = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim)
     critic = Critic(ExtendedObservation.dim)
     print(actor, critic, sep='\n')
     print(actor(torch.unsqueeze(torch.Tensor(ExtendedObservation().to_array()), dim=0)))

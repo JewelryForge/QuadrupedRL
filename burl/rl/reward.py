@@ -118,7 +118,7 @@ class RollPitchRatePenalty(Reward):
 
 class OrthogonalLinearPenalty(Reward):
     def __init__(self, linear_upper=0.3):
-        self.reshape = quadratic_linear_reshape(linear_upper)
+        self.reshape = tanh2_reshape(0, linear_upper)
 
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()[:2]

@@ -19,6 +19,7 @@ if __name__ == '__main__':
     remote = False
     if remote:
         model_path = find_log_remote(host='csc', time_=None, epoch=None, log_dir='teacher-student/log')
+        # model_path = find_log_remote(host='huzhou', time_=None, epoch=None, log_dir='teacher-student/log')
     else:
         model_path = find_log(time_='210744', epoch=None)
     if JoystickPlayer.is_available():
