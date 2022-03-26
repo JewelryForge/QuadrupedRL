@@ -80,6 +80,7 @@ class QuadrupedEnv(object):
         self._is_failed = False
         self._terrain_samples = []
         self._est_height = 0.0
+        self._est_robot_height = deque(maxlen=2)
 
     sim_time = property(lambda self: self._sim_step_counter / g_cfg.sim_frequency)
     sim_step = property(lambda self: self._sim_step_counter)
@@ -90,9 +91,10 @@ class QuadrupedEnv(object):
     is_failed = property(lambda self: self._is_failed)
     action_freq = property(lambda self: g_cfg.action_frequency)
     sim_freq = property(lambda self: g_cfg.sim_frequency)
+    exec_freq = property(lambda self: g_cfg.execution_frequency)
 
     def initObservation(self):
-        self._robot.updateObservation()
+        self.updateObservation()
         return self.makeObservation()
 
     def moveRobotOnTerrain(self):
@@ -186,7 +188,7 @@ class QuadrupedEnv(object):
             else:
                 obs = obs_dict[obs_type]
             observations.append(obs.standard())
-        return observations
+        return tuple(observations)
 
     def makeProprioObs(self, obs=None, noisy=False):
         if obs is None:
@@ -223,7 +225,12 @@ class QuadrupedEnv(object):
             self._terrain_samples.append((x, y, z))
         self._est_height = est_h / len(xy_points)
 
-    def step(self, action: ARRAY_LIKE) -> tuple[Any, float, bool, dict]:
+    def updateObservation(self):
+        self._robot.updateObservation()
+        self._estimateTerrain()
+        self._est_robot_height.append(self.getTerrainBasedHeightOfRobot())
+
+    def step(self, action: ARRAY_LIKE) -> tuple[tuple[Any], float, bool, dict]:
         """
         Given motor angles, calculate motor torques, step simulation, optionally update rendering
         and get observations and rewards.
@@ -250,9 +257,8 @@ class QuadrupedEnv(object):
             self._applyDisturbanceOnRobot()
             self._env.stepSimulation()
             self._sim_step_counter += 1
-            self._estimateTerrain()
             if update_execution:
-                self._robot.updateObservation()
+                self.updateObservation()
                 rewards.append(self._task.calc_reward())
                 for n, r in self._task.reward_details.items():
                     reward_details[n] = reward_details.get(n, 0) + r
@@ -293,7 +299,7 @@ class QuadrupedEnv(object):
         self._robot.reset()
         self.moveRobotOnTerrain()
         self._prepareSimulation()
-        self._robot.updateObservation()
+        self.updateObservation()
         return self.makeObservation()
 
     def reload(self):
@@ -305,7 +311,7 @@ class QuadrupedEnv(object):
         self._robot.reset(reload=True)
         self.moveRobotOnTerrain()
         self._prepareSimulation()
-        self._robot.updateObservation()
+        self.updateObservation()
         return self.makeObservation()
 
     def close(self):
@@ -330,6 +336,9 @@ class QuadrupedEnv(object):
 
     def getTerrainHeight(self, x, y) -> float:
         return self._terrain.get_height(x, y)
+
+    def getTerrainBasedVerticalVelocityOfRobot(self):
+        return (self._est_robot_height[-1] - self._est_robot_height[-2]) * self.exec_freq
 
     def getTerrainBasedHeightOfRobot(self) -> float:
         return self._robot.position[2] - self._est_height

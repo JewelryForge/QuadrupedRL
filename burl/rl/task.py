@@ -9,14 +9,14 @@ import numpy as np
 from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
 from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer
-from burl.sim.terrain import Terrain, Plain, Hills
+from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slope, Stairs
 from burl.utils import g_cfg
 
 __all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
 
 
 class BasicTask(RewardRegistry):
-    def __init__(self, env, cmd=(1.0, 0.0, 0.0)):
+    def __init__(self, env, cmd=(0.0, 0.0, 0.0)):
         super().__init__(np.asarray(cmd), env, env.robot)
         for reward, weight in g_cfg.rewards_weights:
             self.add_reward(reward, weight)
@@ -46,16 +46,19 @@ class BasicTask(RewardRegistry):
     def make_terrain(self, terrain_type: str) -> Terrain:
         if terrain_type == 'plain':
             terrain_inst = Plain()
-            terrain_inst.spawn(self._env.client)
-        elif terrain_type == 'curriculum':
-            terrain_inst = self.plugin_utils['generate_terrain'](self.env.client)
         elif terrain_type == 'hills':
             terrain_inst = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
-            terrain_inst.spawn(self._env.client)
         elif terrain_type == 'slope':
-            raise NotImplementedError
+            terrain_inst = Slope.make(20, 0.05, 0.17, 2.0)
+        elif terrain_type == 'steps':
+            terrain_inst = Steps.make(20, 0.05, 1.0, 0.4)
+        elif terrain_type == 'stairs':
+            terrain_inst = Stairs.make(20, 0.05, 0.15, 0.3)
+        elif terrain_type == 'curriculum':
+            return self.plugin_utils['generate_terrain'](self.env.client)
         else:
             raise RuntimeError(f'Unknown terrain type {terrain_type}')
+        terrain_inst.spawn(self._env.client)
         return terrain_inst
 
     def load_plugin(self, plugin: Plugin):
@@ -127,8 +130,8 @@ class RandomLinearCmdTask(BasicTask):
         self.stop_prob = 0.2
         self.interval_range = (1000, 2500)
         self.update_interval = random.uniform(*self.interval_range)
-        self.last_update = 0
-        super().__init__(env, self.random_cmd())
+        self.last_update = -1
+        super().__init__(env)
 
     def random_cmd(self):
         # if random.random() < self.stop_prob:
@@ -138,12 +141,12 @@ class RandomLinearCmdTask(BasicTask):
 
     def reset(self):
         self.update_interval = random.uniform(*self.interval_range)
-        self.last_update = 0
-        self._cmd = self.random_cmd()
+        self.last_update = -1
+        self._cmd = np.array((0., 0., 0.))
         super().reset()
 
     def on_step(self):
-        if self._env.sim_step >= self.last_update + self.update_interval:
+        if self.last_update == -1 or self._env.sim_step >= self.last_update + self.update_interval:
             self._cmd = self.random_cmd()
             self.last_update = self._env.sim_step
             self.update_interval = random.uniform(*self.interval_range)

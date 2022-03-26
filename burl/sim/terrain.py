@@ -1,4 +1,6 @@
+import math
 import time
+import random
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Union
@@ -9,7 +11,7 @@ from scipy.interpolate import interp2d
 
 from burl.utils import unit, vec_cross
 
-__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'Steps', 'Slope', 'Hills']
+__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'Steps', 'Slope', 'Stairs', 'Hills']
 
 
 class Terrain(object):
@@ -59,10 +61,10 @@ class HeightField:
 
 
 class HeightFieldTerrain(Terrain):
-    def __init__(self, heightfield: HeightField, offset=(0., 0., 0.)):
+    def __init__(self, heightfield: HeightField):
         super().__init__()
         self.heightfield = heightfield.data
-        self.offset = np.asarray(offset, dtype=float)
+        self.offset = None
         self.y_dim, self.x_dim = self.heightfield.shape
         if isinstance(heightfield.size, Iterable):
             self.x_size = self.y_size = heightfield.size
@@ -71,7 +73,8 @@ class HeightFieldTerrain(Terrain):
         self.x_rsl = self.y_rsl = heightfield.resolution
         self.terrain_shape_id = -1
 
-    def spawn(self, sim_env, replace_id=-1):
+    def spawn(self, sim_env, replace_id=-1, offset=(0., 0., 0.)):
+        self.offset = np.asarray(offset)
         self.terrain_shape_id = sim_env.createCollisionShape(
             shapeType=pyb.GEOM_HEIGHTFIELD, flags=pyb.GEOM_CONCAVE_INTERNAL_EDGE,
             meshScale=(self.x_rsl, self.y_rsl, 1.0),
@@ -156,23 +159,84 @@ class HeightFieldTerrain(Terrain):
 
 
 class Steps(HeightFieldTerrain):
-    pass
+    @classmethod
+    def make(cls, size, resolution, step_width, max_step_height):
+        return cls(cls.make_heightfield(size, resolution, step_width, max_step_height))
+
+    @staticmethod
+    def make_heightfield(size, resolution, step_width, max_step_height):
+        step = int(step_width / resolution)
+        data_size = int(size / resolution) + 1
+        num_steps = int(data_size / step) + 1
+        height_field_data = np.zeros((data_size, data_size))
+        for i in range(num_steps):
+            for j in range(num_steps):
+                x_start, x_stop, y_start, y_stop = i * step, (i + 1) * step, j * step, (j + 1) * step
+                height_field_data[y_start:y_stop, x_start:x_stop] = random.uniform(0., max_step_height)
+        return HeightField(height_field_data, size, resolution)
 
 
 class Slope(HeightFieldTerrain):
-    pass
-    # def __init__(self, slope, size, resolution, offset=(0., 0., 0.)):
-    #     data_size = int(size / resolution) + 1
-    #     x = np.linspace(-size / 2, size / 2, data_size)
-    #     y = x.copy()
-    #     height_field = np.tile(x * np.tan(slope), (len(y), 1))
-    #     super().__init__(height_field, resolution, offset)
+    @classmethod
+    def make(cls, size, resolution, slope, slope_width, axis='x'):
+        return cls(cls.make_heightfield(size, resolution, slope, slope_width, axis))
+
+    @staticmethod
+    def make_heightfield(size, resolution, slope, slope_width, axis):
+        step = int(slope_width * 2 / resolution)
+        data_size = int(size / resolution) + 1
+        num_steps = int(data_size / step) + 1
+        slope = math.tan(slope)
+        height_field_data = np.zeros((data_size, data_size))
+        for i in range(num_steps):
+            x_start, x_stop = i * step, int((i + 0.5) * step)
+            for j in range(x_start, min(x_stop, data_size)):
+                height_field_data[:, j] = (j - x_start) * slope * resolution
+            x_start, x_stop = x_stop, (i + 1) * step
+            for j in range(x_start, min(x_stop, data_size)):
+                height_field_data[:, j] = (x_stop - j) * slope * resolution
+        return HeightField(Slope.rotate(height_field_data, axis), size, resolution)
+
+    @staticmethod
+    def rotate(height_field_data, axis):
+        if axis == 'x':
+            return height_field_data
+        elif axis == 'y':
+            return height_field_data.T
+        raise RuntimeError('Unknown axis')
+
+
+class Stairs(HeightFieldTerrain):
+    @classmethod
+    def make(cls, size, resolution, slope, slope_width, axis='x'):
+        return cls(cls.make_heightfield(size, resolution, slope, slope_width, axis))
+
+    @staticmethod
+    def make_heightfield(size, resolution, stair_height, stair_width, axis):
+        step = int(stair_width * 2 / resolution)
+        data_size = int(size / resolution) + 1
+        num_steps = int(data_size / step) + 1
+        height_field_data = np.zeros((data_size, data_size))
+        height = -stair_height * int(num_steps / 2)
+        for i in range(num_steps):
+            x_start, x_stop = i * step, (i + 1) * step
+            height_field_data[:, x_start:x_stop] = height
+            height += stair_height
+        return HeightField(Slope.rotate(height_field_data, axis), size, resolution)
+
+    @staticmethod
+    def rotate(height_field_data, axis):
+        if axis == '+x':
+            return height_field_data
+        elif axis == '+y':
+            return height_field_data.T
+        raise RuntimeError('Unknown axis')
 
 
 class Hills(HeightFieldTerrain):
-    def __init__(self, heightfield, offset=(0., 0., 0.), seed=None):
+    def __init__(self, heightfield, seed=None):
         np.random.seed(seed)
-        super().__init__(heightfield, offset)
+        super().__init__(heightfield)
 
     @classmethod
     def make(cls, size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]):
@@ -207,7 +271,6 @@ class Hills(HeightFieldTerrain):
 
 
 if __name__ == '__main__':
-    import random
     from burl.sim.env import AlienGo
 
     pyb.connect(pyb.GUI)

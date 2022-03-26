@@ -131,7 +131,8 @@ class VerticalLinearPenalty(Reward):
         self.reshape = quadratic_linear_reshape(upper)
 
     def __call__(self, cmd, env, robot):
-        return 1 - self.reshape(robot.getBaseLinearVelocityInBaseFrame()[2])
+        return 1 - self.reshape(env.getTerrainBasedVerticalVelocityOfRobot())
+        # return 1 - self.reshape(robot.getBaseLinearVelocityInBaseFrame()[2])
 
 
 class BodyPosturePenalty(Reward):
