@@ -17,15 +17,15 @@ class Actor(nn.Module):
     """
     activation = nn.Tanh
 
-    def __init__(self, extero_obs_dim, proprio_obs_dim, action_dim,
+    def __init__(self, extero_obs_dim, real_world_obs_dim, action_dim,
                  extero_layer_dims=(72, 64),
-                 proprio_layer_dims=(),
+                 locomotion_layer_dims=(),
                  action_layer_dims=(256, 128, 64),
                  init_noise_std=0.1):
         super().__init__()
-        self.input_dim = extero_obs_dim + proprio_obs_dim
-        self.extero_obs_dim, self.proprio_obs_dim, self.output_dim = extero_obs_dim, proprio_obs_dim, action_dim
-        extero_layers, proprio_layers, action_layers = [], [], []
+        self.input_dim = extero_obs_dim + real_world_obs_dim
+        self.extero_obs_dim, self.real_world_obs_dim, self.output_dim = extero_obs_dim, real_world_obs_dim, action_dim
+        extero_layers, locomotion_layers, action_layers = [], [], []
         self.extero_obs_dim = extero_feature_dim = extero_obs_dim
         if extero_layer_dims:
             for dim in extero_layer_dims:
@@ -33,14 +33,14 @@ class Actor(nn.Module):
                 extero_layers.append(self.activation())
                 extero_feature_dim = dim
 
-        self.proprio_obs_dim = proprio_feature_dim = proprio_obs_dim
-        if proprio_layer_dims:
+        self.real_world_obs_dim = locomotion_feature_dim = real_world_obs_dim
+        if locomotion_layer_dims:
             for dim in extero_layer_dims:
-                proprio_layers.append(nn.Linear(proprio_feature_dim, dim))
-                proprio_layers.append(self.activation())
-                proprio_feature_dim = dim
+                locomotion_layers.append(nn.Linear(locomotion_feature_dim, dim))
+                locomotion_layers.append(self.activation())
+                locomotion_feature_dim = dim
 
-        action_feature_dim = extero_feature_dim + proprio_feature_dim
+        action_feature_dim = extero_feature_dim + locomotion_feature_dim
         for dim in action_layer_dims:
             action_layers.append(nn.Linear(action_feature_dim, dim))
             action_layers.append(self.activation())
@@ -48,7 +48,7 @@ class Actor(nn.Module):
         action_layers.append(nn.Linear(action_feature_dim, action_dim))
 
         self.extero_layers = nn.Sequential(*extero_layers)
-        self.proprio_layers = nn.Sequential(*proprio_layers)
+        self.locomotion_layers = nn.Sequential(*locomotion_layers)
         self.action_layers = nn.Sequential(*action_layers)
 
         layer_norm(self.action_layers[-1], std=0.1)  # output layer for action
@@ -67,14 +67,14 @@ class Actor(nn.Module):
         self.distribution = None
 
     def forward(self, x):
-        extero_obs, proprio_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
-        extero_feature, proprio_feature = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
-        return self.action_layers(torch.concat((extero_feature, proprio_feature), dim=-1))
+        extero_obs, real_world_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
+        extero_feature, locomotion_feature = self.extero_layers(extero_obs), self.locomotion_layers(real_world_obs)
+        return self.action_layers(torch.concat((extero_feature, locomotion_feature), dim=-1))
 
-    def instruct(self, x):
-        extero_obs, proprio_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
-        extero_feature, proprio_feature = self.extero_layers(extero_obs), self.proprio_layers(proprio_obs)
-        action = self.action_layers(torch.concat((extero_feature, proprio_feature), dim=-1))
+    def get_encoded(self, x):
+        extero_obs, real_world_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
+        extero_feature, locomotion_feature = self.extero_layers(extero_obs), self.locomotion_layers(real_world_obs)
+        action = self.action_layers(torch.concat((extero_feature, locomotion_feature), dim=-1))
         return extero_feature, action
 
     # @property

@@ -12,7 +12,7 @@ from burl.alg import Actor, Critic, PPO
 from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ExtendedObservation
 from burl.rl.task import get_task, CentralizedTask
 from burl.sim.env import FixedTgEnv, AlienGo
-from burl.sim.multi_env import EnvContainerMp2, EnvContainer, SingleEnvContainer
+from burl.sim.parallel import EnvContainerMp2, EnvContainer, SingleEnvContainer
 from burl.utils import make_part, g_cfg, to_dev, MfTimer, log_info, log_warn
 
 

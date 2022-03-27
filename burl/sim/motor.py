@@ -5,7 +5,7 @@ import collections
 import numpy as np
 import torch
 
-from burl.sim.ident import ActuatorNet, ActuatorNetWithHistory
+from burl.sim.identify import ActuatorNet, ActuatorNetWithHistory
 
 __all__ = ['MotorSim', 'PdMotorSim', 'ActuatorNetSim', 'ActuatorNetWithHistorySim']
 
