@@ -219,17 +219,22 @@ if __name__ == '__main__':
 
     import matplotlib.pyplot as plt
 
+    plt.figure(dpi=200)
     plt.subplot(4, 1, 1)
     plt.plot(error)
     plt.ylabel('error')
+    plt.xticks([])
     plt.subplot(4, 1, 2)
     plt.plot(error_rate)
+    plt.xticks([])
     plt.ylabel('error_rate')
     plt.subplot(4, 1, 3)
     plt.plot(velocity)
+    plt.xticks([])
     plt.ylabel('velocity')
     plt.subplot(4, 1, 4)
     plt.plot(torque, linewidth=1)
     plt.ylabel('torque')
     plt.plot(predicted, 'r', linewidth=0.5)
+    plt.legend(['raw', 'pred'])
     plt.show()

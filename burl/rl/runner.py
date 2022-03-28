@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import os
 import sys
@@ -8,11 +10,14 @@ import numpy as np
 import torch
 import wandb
 
-from burl.alg import Actor, Critic, PPO
-from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ExtendedObservation
+from burl.alg.ac import Actor, Critic
+from burl.alg.dagger import SlidingWindow
+from burl.alg.ppo import PPO
+from burl.alg.student import Student
 from burl.rl.task import get_task, CentralizedTask
 from burl.sim.env import FixedTgEnv, AlienGo
 from burl.sim.parallel import EnvContainerMp2, EnvContainer, SingleEnvContainer
+from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ExtendedObservation, ProprioInfo
 from burl.utils import make_part, g_cfg, to_dev, MfTimer, log_info, log_warn
 
 
@@ -176,92 +181,116 @@ class PolicyTrainer(OnPolicyRunner):
         self.task_prototype.update_curricula()
 
 
-class Player(object):
-    def __init__(self, model_path, make_env, make_actor):
-        self.env = SingleEnvContainer(make_env)
-        self.env.unwrapped.setObservationTypes('noisy_extended')
-        self.actor = make_actor().to(g_cfg.dev)
-        log_info(f'Loading model {model_path}')
+class TeacherPlayer(object):
+    def __init__(self, model_path, task_type='basic'):
+        task_prototype = CentralizedTask()
+        self.env = SingleEnvContainer(make_part(FixedTgEnv, AlienGo,
+                                                task_prototype.make_distribution(get_task(task_type)),
+                                                'noisy_extended'))
+        self.policy = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
+                            g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims).to(g_cfg.dev)
         model_info = torch.load(model_path)
-        try:
-            self.actor.load_state_dict(model_info['actor_state_dict'], strict=False)
-        except KeyError:
-            model_state_dict = model_info['model_state_dict']
-            actor_state_dict = {}
-            for k, v in model_state_dict.items():
-                if k.startswith('actor.'):
-                    actor_state_dict[k.removeprefix('actor.')] = v
-            actor_state_dict['log_std'] = torch.zeros_like(self.actor.log_std, device=g_cfg.dev)
-            self.actor.load_state_dict(actor_state_dict)
+        log_info(f'Loading model {model_path}')
+        self.policy.load_state_dict(model_info['actor_state_dict'], strict=False)
 
     def play(self, allow_reset=True):
-        policy = self.actor.get_policy()
+        policy = self.policy.get_policy()
         with torch.inference_mode():
-            actor_obs = to_dev(self.env.init_observations()[0])
+            obs = to_dev(self.env.init_observations()[0])
 
             for _ in range(20000):
-                actions = policy(actor_obs)
+                actions = policy(obs)
                 self.loop_callback()
-                (actor_obs,), _, dones, info = self.env.step(actions)
-                actor_obs = actor_obs.to(g_cfg.dev)
+                (obs,), _, dones, info = self.env.step(actions)
+                obs = obs.to(g_cfg.dev)
 
                 if any(dones) and allow_reset:
                     reset_ids = torch.nonzero(dones)
-                    actor_obs_reset = self.env.reset(reset_ids)[0].to(g_cfg.dev)
-                    actor_obs[reset_ids,] = actor_obs_reset
+                    obs_reset = self.env.reset(reset_ids)[0].to(g_cfg.dev)
+                    obs[reset_ids,] = obs_reset
                     print('episode reward', float(info['episode_reward']))
 
     def loop_callback(self):
         pass
 
 
-class PolicyPlayer(Player):
+class StudentPlayer(object):
     def __init__(self, model_path, task_type='basic'):
         task_prototype = CentralizedTask()
+        self.env = SingleEnvContainer(make_part(
+            FixedTgEnv, AlienGo, task_prototype.make_distribution(get_task(task_type)),
+            obs_types=('noisy_proprio_info', 'noisy_realworld')))
+        teacher = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
+                        g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
+        self.policy = Student(teacher).to(g_cfg.dev)
+        model_info = torch.load(model_path)
+        log_info(f'Loading model {model_path}')
+        self.policy.load_state_dict(model_info['student_state_dict'], strict=False)
+        self.history = SlidingWindow(ProprioInfo.dim, 2000, 100, 'cuda')
 
-        super().__init__(
-            model_path,
-            make_env=make_part(FixedTgEnv, make_robot=AlienGo,
-                               make_task=task_prototype.make_distribution(get_task(task_type))),
-            make_actor=make_part(Actor, ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
-                                 g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
-        )
+    def play(self, allow_reset=True):
+        policy = self.policy.get_policy()
+        with torch.inference_mode():
+            proprio_info, realworld_obs = to_dev(*self.env.init_observations())
 
+            for _ in range(20000):
+                self.history.add_transition(proprio_info)
+                actions = policy(self.history.get_window(), realworld_obs)
+                self.loop_callback()
+                (proprio_info, realworld_obs), _, dones, info = self.env.step(actions)
+                proprio_info, realworld_obs = to_dev(proprio_info, realworld_obs)
 
-class JoystickPlayer(PolicyPlayer):
-    def __init__(self, model_path, task_type='basic', gamepad_type='PS4'):
-        super().__init__(model_path, task_type)
-        from thirdparty.gamepad import gamepad, controllers
-        if not gamepad.available():
-            log_warn('Please connect your gamepad...')
-            while not gamepad.available():
-                time.sleep(1.0)
-        try:
-            self.gamepad: gamepad.Gamepad = getattr(controllers, gamepad_type)()
-        except AttributeError:
-            raise RuntimeError(f'`{gamepad_type}` is not supported,'
-                               f'all {controllers.all_controllers}')
-        self.gamepad.startBackgroundUpdates()
-        log_info('Gamepad connected')
-
-    @staticmethod
-    def is_available():
-        from thirdparty.gamepad import gamepad
-        return gamepad.available()
+                if any(dones) and allow_reset:
+                    reset_ids = torch.nonzero(dones)
+                    proprio_info, realworld_obs = to_dev(*self.env.reset(reset_ids))
+                    print('episode reward', float(info['episode_reward']))
+                    self.history.clear()
 
     def loop_callback(self):
-        if self.gamepad.isConnected():
-            x_speed = -self.gamepad.axis('LEFT-Y')
-            y_speed = -self.gamepad.axis('LEFT-X')
-            steering = -self.gamepad.axis('RIGHT-X')
-            steering = 1. if steering > 0.2 else -1. if steering < -0.2 else 0.
-            speed_norm = math.hypot(x_speed, y_speed)
-            if speed_norm:
-                self.env.unwrapped.task.cmd = (x_speed / speed_norm, y_speed / speed_norm, steering)
-            else:
-                self.env.unwrapped.task.cmd = (0., 0., steering)
-        else:
-            sys.exit(1)
+        pass
 
-    def __del__(self):
-        self.gamepad.disconnect()
+
+def JoystickPlayer(base_player, gamepad_type='PS4'):
+    class _JoystickPlayer(base_player):
+        def __init__(self, model_path, task_type='basic'):
+            super().__init__(model_path, task_type)
+            from thirdparty.gamepad import gamepad, controllers
+            if not gamepad.available():
+                log_warn('Please connect your gamepad...')
+                while not gamepad.available():
+                    time.sleep(1.0)
+            try:
+                self.gamepad: gamepad.Gamepad = getattr(controllers, gamepad_type)()
+            except AttributeError:
+                raise RuntimeError(f'`{gamepad_type}` is not supported,'
+                                   f'all {controllers.all_controllers}')
+            self.gamepad.startBackgroundUpdates()
+            log_info('Gamepad connected')
+
+        @staticmethod
+        def is_available():
+            from thirdparty.gamepad import gamepad
+            return gamepad.available()
+
+        def loop_callback(self):
+            if self.gamepad.isConnected():
+                x_speed = -self.gamepad.axis('LEFT-Y')
+                y_speed = -self.gamepad.axis('LEFT-X')
+                steering = -self.gamepad.axis('RIGHT-X')
+                steering = 1. if steering > 0.2 else -1. if steering < -0.2 else 0.
+                speed_norm = math.hypot(x_speed, y_speed)
+                if speed_norm:
+                    self.env.unwrapped.task.cmd = (x_speed / speed_norm, y_speed / speed_norm, steering)
+                else:
+                    self.env.unwrapped.task.cmd = (0., 0., steering)
+            else:
+                sys.exit(1)
+
+        def __del__(self):
+            self.gamepad.disconnect()
+
+    return _JoystickPlayer
+
+
+JoystickTeacherPlayer = JoystickPlayer(TeacherPlayer)
+JoystickStudentPlayer = JoystickPlayer(StudentPlayer)

@@ -173,8 +173,8 @@ def _get_model_of_specific_epoch(models, fmt, epoch):
     return prefix + str(epoch) + suffix
 
 
-def find_log(log_dir='log', fmt='model_*.pt', run_name: str = None, run_id: str = None,
-             time_: int | str = None, epoch: int = None):
+def find_log(run_name: str = None, run_id: str = None, time_: int | str = None,
+             epoch: int = None, log_dir='log', fmt='model_*.pt'):
     folders = sorted(os.listdir(log_dir), key=str2time, reverse=True)
     folder = os.path.join(log_dir, _get_folder(folders, run_name, run_id, time_))
     return os.path.join(folder, _get_model_of_specific_epoch(os.listdir(folder), fmt, epoch))

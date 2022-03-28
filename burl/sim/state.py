@@ -72,7 +72,7 @@ class ProprioObservation(ObservationBase):
         if cls._init:
             return
         cls._init = True
-        super()._wb_init()
+        ObservationBase._wb_init()
         command_bias, command_weight = zero3, (1.,) * 3
         gravity_vector_bias, gravity_vector_weight = (0., 0., .99), (5., 5., 20.)
         base_linear_bias, base_linear_weight = zero3, (2.,) * 3
@@ -105,6 +105,48 @@ class ProprioObservation(ObservationBase):
             self.base_angular,
             self.joint_pos,
             self.joint_vel
+        ))
+
+
+class ProprioInfo(ProprioObservation):
+    dim = 60
+    _init = False
+
+    def __init__(self):
+        super().__init__()
+        self.joint_pos_target = zero12
+        self.ftg_phases = zero8
+        self.ftg_frequencies = zero4
+
+    @classmethod
+    def _wb_init(cls):
+        if cls._init:
+            return
+        cls._init = True
+        ProprioObservation._wb_init()
+        joint_pos_target_bias, joint_pos_target_weight = get_robot_type().STANCE_POSTURE, (2.,) * 12
+        ftg_phases_bias, ftg_phases_weight = zero8, (1.,) * 8
+        ftg_frequencies_bias, ftg_frequencies_weight = (get_base_frequency(),) * 4, (100.,) * 4
+        cls.biases = np.concatenate((
+            ProprioObservation.biases,
+            joint_pos_target_bias,
+            ftg_phases_bias,
+            ftg_frequencies_bias
+        ))
+
+        cls.weights = np.concatenate((
+            ProprioObservation.weights,
+            joint_pos_target_weight,
+            ftg_phases_weight,
+            ftg_frequencies_weight
+        ))
+
+    def to_array(self):
+        return np.concatenate((
+            super().to_array(),
+            self.joint_pos_target,
+            self.ftg_phases,
+            self.ftg_frequencies
         ))
 
 

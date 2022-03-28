@@ -18,7 +18,7 @@ class Trajectory(Dataset):
         if self.num_transitions >= self.max_len:
             raise RuntimeError('Trajectory overflow')
         self.proprio_obs_buffer[:, self.num_transitions] = proprio_obs.detach()
-        for obs, buffer in zip(other_obs, self.other_buffers, strict=True):
+        for obs, buffer in zip(other_obs, self.other_buffers):
             buffer[:, self.num_transitions] = obs.detach()
         self.num_transitions += 1
 
@@ -26,16 +26,18 @@ class Trajectory(Dataset):
         return self.num_transitions
 
     def get_proprio_history(self):
-        proprio_obs_history = self.proprio_obs_buffer[:, -self.history_len:]
         if (padding := self.history_len - self.num_transitions) > 0:
-            proprio_obs_history = f.pad(proprio_obs_history, (padding, 0))
-        return proprio_obs_history
+            proprio_history = f.pad(self.proprio_obs_buffer[:, 0:self.num_transitions], (padding, 0))
+        else:
+            proprio_history = self.proprio_obs_buffer[:, self.num_transitions - self.history_len:self.num_transitions]
+        return proprio_history
 
     def __getitem__(self, idx):
         if idx < 0:
             idx = self.num_transitions - idx - 2
-        proprio_obs_history = self.proprio_obs_buffer[:, idx - self.history_len + 1:idx + 1]
-        if (padding := self.history_len - idx - 1) > 0:
+        padding = self.history_len - idx - 1
+        proprio_obs_history = self.proprio_obs_buffer[:, max(-padding, 0): idx + 1]
+        if padding > 0:
             proprio_obs_history = f.pad(proprio_obs_history, (padding, 0))
         other_obs = [buffer[:, idx] for buffer in self.other_buffers]
         return proprio_obs_history, *other_obs
@@ -43,7 +45,7 @@ class Trajectory(Dataset):
 
 class SlidingWindow(object):
     def __init__(self, obs_dim, max_len, history_len, device):
-        self.obs_buffer = torch.zeros(obs_dim, max_len, device=device)
+        self.obs_buffer = torch.zeros(1, obs_dim, max_len, device=device)
         self.max_len, self.history_len = max_len, history_len
         self.num_transitions = 0
 
@@ -51,15 +53,18 @@ class SlidingWindow(object):
         if self.num_transitions >= self.max_len:
             self.num_transitions = self.history_len - 1
             self.obs_buffer[:self.num_transitions] = self.obs_buffer[-self.num_transitions:]
-        self.obs_buffer[:, self.num_transitions] = proprio_obs.detach()
+        self.obs_buffer[..., self.num_transitions] = proprio_obs.detach()
         self.num_transitions += 1
 
     def get_window(self):
-        idx = self.num_transitions
-        obs_history = self.obs_buffer[:, idx - self.history_len:idx]
-        if (padding := self.history_len - idx) > 0:
-            obs_history = f.pad(obs_history, (padding, 0))
+        if (padding := self.history_len - self.num_transitions) > 0:
+            obs_history = f.pad(self.obs_buffer[..., 0:self.num_transitions], (padding, 0))
+        else:
+            obs_history = self.obs_buffer[..., self.num_transitions - self.history_len:self.num_transitions]
         return obs_history
+
+    def clear(self):
+        self.num_transitions = 0
 
 
 class Dagger(object):
@@ -78,13 +83,14 @@ class Dagger(object):
 
         def _policy(teacher_obs: torch.Tensor | tuple[torch.Tensor],
                     student_obs: torch.Tensor | tuple[torch.Tensor]) -> torch.Tensor:
+            tp, sp = teacher.get_policy(), student.get_policy()
             if teacher_prop == 1.0:
-                return teacher(*teacher_obs) if isinstance(teacher_obs, tuple) else teacher(teacher_obs)
+                return tp(*teacher_obs) if isinstance(teacher_obs, tuple) else tp(teacher_obs)
             elif (student_prop := 1 - teacher_prop) == 1.0:
-                return student(*student_obs) if isinstance(student_obs, tuple) else student(student_obs)
+                return sp(*student_obs) if isinstance(student_obs, tuple) else sp(student_obs)
             else:
-                teacher_action = teacher(*teacher_obs) if isinstance(teacher_obs, tuple) else teacher(teacher_obs)
-                student_action = student(*student_obs) if isinstance(student_obs, tuple) else student(student_obs)
+                teacher_action = tp(*teacher_obs) if isinstance(teacher_obs, tuple) else tp(teacher_obs)
+                student_action = sp(*student_obs) if isinstance(student_obs, tuple) else sp(student_obs)
                 return teacher_action * teacher_prop + student_action * student_prop
 
         return _policy
@@ -94,23 +100,23 @@ class Dagger(object):
             for idx in torch.nonzero(dones):
                 self.insert_into_dataset(self.trajectories[idx])
                 self.trajectories[idx] = self.init_traj()
-        for idx, traj, p_obs, *o_obs in enumerate(
-                zip(self.trajectories, proprio_obs, *other_obs, strict=True)):
+        for idx, (traj, p_obs, *o_obs) in enumerate(
+                zip(self.trajectories, proprio_obs, *other_obs)):
             traj.add_transition(p_obs, *o_obs)
 
     def get_obs(self):
         observations = [traj[-1] for traj in self.trajectories]
-        return [torch.stack(obs) for *obs in zip(*observations)]
+        return [torch.stack(obs) for obs in zip(*observations)]
 
     def get_proprio_history(self):
         return torch.stack([traj.get_proprio_history() for traj in self.trajectories])
 
-    def insert_into_dataset(self, traj: Trajectory):
-        if not self.train_num or (self.val_num and self.train_num / self.val_num > self.train_val_ratio):
-            self.train_dataset = ConcatDataset((self.train_dataset, traj))  # TODO: NOTICE GPU MEM
+    def insert_into_dataset(self, traj: Trajectory):  # TODO: NOTICE GPU MEM
+        if not self.train_num or (self.val_num and self.train_num / self.val_num < self.train_val_ratio):
+            self.train_dataset = ConcatDataset((self.train_dataset, traj)) if self.train_dataset else traj
             self.train_num += len(traj)
         else:
-            self.val_dataset = ConcatDataset((self.val_dataset, traj))
+            self.val_dataset = ConcatDataset((self.val_dataset, traj)) if self.val_dataset else traj
             self.val_num += len(traj)
 
     @staticmethod

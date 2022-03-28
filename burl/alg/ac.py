@@ -35,7 +35,7 @@ class Actor(nn.Module):
 
         self.real_world_obs_dim = locomotion_feature_dim = real_world_obs_dim
         if locomotion_layer_dims:
-            for dim in extero_layer_dims:
+            for dim in locomotion_layer_dims:
                 locomotion_layers.append(nn.Linear(locomotion_feature_dim, dim))
                 locomotion_layers.append(self.activation())
                 locomotion_feature_dim = dim
@@ -75,7 +75,7 @@ class Actor(nn.Module):
         extero_obs, real_world_obs = x[..., :self.extero_obs_dim], x[..., self.extero_obs_dim:]
         extero_feature, locomotion_feature = self.extero_layers(extero_obs), self.locomotion_layers(real_world_obs)
         action = self.action_layers(torch.concat((extero_feature, locomotion_feature), dim=-1))
-        return extero_feature, action
+        return extero_feature, action.tanh()
 
     # @property
     # def std(self):

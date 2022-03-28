@@ -152,5 +152,5 @@ class EnvContainerMp2(EnvContainer):
     def reset(self, ids):
         for i in ids:
             self._conn2[i].send((self.CMD_RESET,))
-        actor_obs, critic_obs = zip(*[self._conn2[i].recv() for i in ids])
-        return torch.Tensor(np.array(actor_obs)), torch.Tensor(np.array(critic_obs))
+        observations = zip(*[self._conn2[i].recv() for i in ids])
+        return tuple([torch.Tensor(np.asarray(obs)) for obs in observations])

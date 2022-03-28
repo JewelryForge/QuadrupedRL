@@ -11,7 +11,7 @@ from pybullet_utils.bullet_client import BulletClient
 
 from burl.rl.task import BasicTask
 from burl.sim.quadruped import A1, AlienGo, Quadruped
-from burl.sim.state import ProprioObservation, RealWorldObservation, ExtendedObservation, Action
+from burl.sim.state import ProprioObservation, RealWorldObservation, ExtendedObservation, Action, ProprioInfo
 from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Quaternion
@@ -27,6 +27,8 @@ class QuadrupedEnv(object):
 
     ALLOWED_OBS_TYPES = {'proprio': lambda self, obs=None: self.makeProprioObs(obs),
                          'noisy_proprio': lambda self, obs=None: self.makeProprioObs(obs, noisy=True),
+                         'proprio_info': lambda self, obs=None: self.makeProprioInfo(obs),
+                         'noisy_proprio_info': lambda self, obs=None: self.makeProprioInfo(obs, noisy=True),
                          'realworld': lambda self, obs=None: self.makeRealWorldObs(obs),
                          'noisy_realworld': lambda self, obs=None: self.makeRealWorldObs(obs, noisy=True),
                          'extended': lambda self, obs=None: self.makeExtendedObs(obs),
@@ -34,13 +36,11 @@ class QuadrupedEnv(object):
 
     def __init__(self, make_robot: Callable[..., Quadruped],
                  make_task: Callable[..., BasicTask] = BasicTask,
-                 obs_types: tuple[str, ...] = ()):
+                 obs_types: tuple[str, ...] | str = ()):
         self._gui = g_cfg.rendering
         self._env = BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb  # for pylint
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
-        for obs_type in obs_types:
-            assert obs_type in self.ALLOWED_OBS_TYPES, f'Unknown Observation Type {obs_type}'
-        self._obs_types = obs_types
+        self.setObservationTypes(obs_types)
         # self._loadEgl()
         if self._gui:
             self._prepareRendering()
@@ -73,6 +73,8 @@ class QuadrupedEnv(object):
             self._obs_types = (obs_types,) + other_obs_types
         else:
             self._obs_types = obs_types
+        for obs_type in self._obs_types:
+            assert obs_type in self.ALLOWED_OBS_TYPES, f'Unknown Observation Type {obs_type}'
 
     def _resetStates(self):
         self._sim_step_counter = 0
@@ -212,6 +214,15 @@ class QuadrupedEnv(object):
         obs.joint_pos = r.getJointPositions(noisy)
         obs.joint_vel = r.getJointVelocities(noisy)
         return obs
+
+    def makeNoisyProprioObs(self, obs=None):
+        return self.makeProprioObs(obs, noisy=True)
+
+    def makeProprioInfo(self, obs=None, noisy=False):
+        raise NotImplementedError
+
+    def makeNoisyProprioInfo(self, obs=None):
+        return self.makeProprioInfo(obs, noisy=True)
 
     def makeRealWorldObs(self, obs=None, noisy=False):
         raise NotImplementedError
@@ -429,6 +440,15 @@ class FixedTgEnv(IkEnv):
         super().__init__(make_robot, make_task, obs_types, ik_type, horizontal_frame)
         self._stm = TgStateMachine(1 / g_cfg.action_frequency,
                                    self.tg_types[self._robot.__class__.__name__])
+
+    def makeProprioInfo(self, obs=None, noisy=False):
+        if obs is None:
+            obs = ProprioInfo()
+        obs = self._setObsBaseAttr(obs, 'noisy_proprio' if noisy else 'proprio')
+        obs.joint_pos_target = self._action_history[-1] if self._action_history else self._robot.STANCE_POSTURE
+        obs.ftg_frequencies = self._stm.frequency
+        obs.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
+        return obs
 
     def makeRealWorldObs(self, obs=None, noisy=False):
         if obs is None:

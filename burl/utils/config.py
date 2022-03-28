@@ -12,7 +12,7 @@ class Options(object):
     use_wandb: bool = True
     add_disturbance: bool = True
     trn_type: str = 'plain'
-    tg_init: str = 'fixed'
+    tg_init: str = 'symmetric'
     lr_scheduler: str = ''
     task_type: str = 'basic'
     random_dynamics: bool = False
@@ -70,6 +70,13 @@ class PPOParam(object):
 
 
 @dataclass
+class ImitationParam(object):
+    model_path: str = ''
+    batch_size: int = 2000
+    num_steps_each_epoch: int = 2000
+
+
+@dataclass
 class TrainParam(object):
     num_iterations: int = 10000
     num_envs: int = 16
@@ -97,7 +104,7 @@ class RuntimeParam(object):
                                                       ('BodyCollisionPenalty', 0.04),
                                                       ('TorquePenalty', 0.02),
                                                       ('JointMotionPenalty', 0.02),
-                                                      ('JointConstraintPenalty', 0.02),
+                                                      ('JointConstraintPenalty', 0.04),
                                                       ('AliveReward', 0.0),
                                                       # ('TrivialStridePenalty', 0.06),
                                                       # ('TorqueGradientPenalty', 0.04),
@@ -114,13 +121,14 @@ class DisturbanceParam(object):
     torque_magnitude: tuple[float, float, float] = (2.5, 5., 5.)  # x y z
 
 
-class TaskParam(Options, SimParam, RenderParam, TrainParam,
+class TaskParam(Options, SimParam, RenderParam, TrainParam, ImitationParam,
                 PPOParam, DisturbanceParam, RuntimeParam):
     def __init__(self):
         Options.__init__(self)
         SimParam.__init__(self)
         RenderParam.__init__(self)
         TrainParam.__init__(self)
+        ImitationParam.__init__(self)
         PPOParam.__init__(self)
         DisturbanceParam.__init__(self)
         RuntimeParam.__init__(self)
