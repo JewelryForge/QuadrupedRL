@@ -25,16 +25,16 @@ class QuadrupedEnv(object):
     Provides interface for reinforcement learning, including making observation and calculating rewards.
     """
 
-    ALLOWED_OBS_TYPES = {'proprio': lambda self: self.makeProprioObs(),
-                         'noisy_proprio': lambda self: self.makeProprioObs(noisy=True),
-                         'real_world': lambda self: self.makeRealWorldObs(),
-                         'noisy_real_world': lambda self: self.makeRealWorldObs(noisy=True),
-                         'extended': lambda self: self.makeExtendedObs(),
-                         'noisy_extended': lambda self: self.makeExtendedObs(noisy=True)}
+    ALLOWED_OBS_TYPES = {'proprio': lambda self, obs=None: self.makeProprioObs(obs),
+                         'noisy_proprio': lambda self, obs=None: self.makeProprioObs(obs, noisy=True),
+                         'realworld': lambda self, obs=None: self.makeRealWorldObs(obs),
+                         'noisy_realworld': lambda self, obs=None: self.makeRealWorldObs(obs, noisy=True),
+                         'extended': lambda self, obs=None: self.makeExtendedObs(obs),
+                         'noisy_extended': lambda self, obs=None: self.makeExtendedObs(obs, noisy=True)}
 
     def __init__(self, make_robot: Callable[..., Quadruped],
                  make_task: Callable[..., BasicTask] = BasicTask,
-                 obs_types: tuple[str] = ()):
+                 obs_types: tuple[str, ...] = ()):
         self._gui = g_cfg.rendering
         self._env = BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb  # for pylint
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -81,6 +81,7 @@ class QuadrupedEnv(object):
         self._terrain_samples = []
         self._est_height = 0.0
         self._est_robot_height = deque(maxlen=2)
+        self._make_obs_buffer = {}
 
     sim_time = property(lambda self: self._sim_step_counter / g_cfg.sim_frequency)
     sim_step = property(lambda self: self._sim_step_counter)
@@ -179,16 +180,26 @@ class QuadrupedEnv(object):
         return self._external_force, self._external_torque
 
     def makeObservation(self):
-        obs_dict = {}
         observations = []
         for obs_type in self._obs_types:
-            if obs_type not in obs_dict:
+            if obs_type not in self._make_obs_buffer:
                 obs = self.ALLOWED_OBS_TYPES[obs_type](self)
-                obs_dict[obs_type] = obs
+                self._make_obs_buffer[obs_type] = obs
             else:
-                obs = obs_dict[obs_type]
+                obs = self._make_obs_buffer[obs_type]
             observations.append(obs.standard())
         return tuple(observations)
+
+    def _setObsBaseAttr(self, obs, base_obs_type: str):
+        if base_obs_type in self._make_obs_buffer:
+            base_obs = self._make_obs_buffer[base_obs_type]
+        else:
+            base_obs = self.ALLOWED_OBS_TYPES[base_obs_type](self)
+            self._make_obs_buffer[base_obs_type] = base_obs
+        for k, v in base_obs.__dict__.items():
+            if not k.startswith('_'):
+                setattr(obs, k, v)
+        return obs
 
     def makeProprioObs(self, obs=None, noisy=False):
         if obs is None:
@@ -226,6 +237,7 @@ class QuadrupedEnv(object):
         self._est_height = est_h / len(xy_points)
 
     def updateObservation(self):
+        self._make_obs_buffer.clear()
         self._robot.updateObservation()
         self._estimateTerrain()
         self._est_robot_height.append(self.getTerrainBasedHeightOfRobot())
@@ -421,7 +433,7 @@ class FixedTgEnv(IkEnv):
     def makeRealWorldObs(self, obs=None, noisy=False):
         if obs is None:
             obs = RealWorldObservation()
-        obs = self.makeProprioObs(obs, noisy=noisy)
+        obs = self._setObsBaseAttr(obs, 'noisy_proprio' if noisy else 'proprio')
         r = self._robot
         obs.joint_prev_pos_err = r.getJointPosErrHistoryFromIndex(-1, noisy)
         obs.ftg_frequencies = self._stm.frequency
@@ -444,7 +456,7 @@ class FixedTgEnv(IkEnv):
     def makeExtendedObs(self, obs=None, noisy=False):
         if obs is None:
             obs = ExtendedObservation()
-        obs: ExtendedObservation = self.makeRealWorldObs(obs, noisy=noisy)
+        obs: ExtendedObservation = self._setObsBaseAttr(obs, 'noisy_realworld' if noisy else 'realworld')
         r = self._robot
         foot_xy = r.getFootXYsInWorldFrame()
         obs.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.rpy.y) for x, y in foot_xy])

@@ -347,7 +347,4 @@ class ObservationRaw(object):
 
 
 if __name__ == '__main__':
-    ExteroObservation()
-    RealWorldObservation()
-    ExtendedObservation()
-    ExteroObservation()
+    print(ProprioObservation().__dict__)

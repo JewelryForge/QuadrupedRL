@@ -181,8 +181,8 @@ class Slope(HeightFieldTerrain):
     def make(cls, size, resolution, slope, slope_width, axis='x'):
         return cls(cls.make_heightfield(size, resolution, slope, slope_width, axis))
 
-    @staticmethod
-    def make_heightfield(size, resolution, slope, slope_width, axis):
+    @classmethod
+    def make_heightfield(cls, size, resolution, slope, slope_width, axis):
         step = int(slope_width * 2 / resolution)
         data_size = int(size / resolution) + 1
         num_steps = int(data_size / step) + 1
@@ -195,10 +195,10 @@ class Slope(HeightFieldTerrain):
             x_start, x_stop = x_stop, (i + 1) * step
             for j in range(x_start, min(x_stop, data_size)):
                 height_field_data[:, j] = (x_stop - j) * slope * resolution
-        return HeightField(Slope.rotate(height_field_data, axis), size, resolution)
+        return HeightField(cls.rotate(height_field_data, axis), size, resolution)
 
-    @staticmethod
-    def rotate(height_field_data, axis):
+    @classmethod
+    def rotate(cls, height_field_data, axis):
         if axis == 'x':
             return height_field_data
         elif axis == 'y':
@@ -208,11 +208,11 @@ class Slope(HeightFieldTerrain):
 
 class Stairs(HeightFieldTerrain):
     @classmethod
-    def make(cls, size, resolution, slope, slope_width, axis='x'):
+    def make(cls, size, resolution, slope, slope_width, axis='+x'):
         return cls(cls.make_heightfield(size, resolution, slope, slope_width, axis))
 
-    @staticmethod
-    def make_heightfield(size, resolution, stair_height, stair_width, axis):
+    @classmethod
+    def make_heightfield(cls, size, resolution, stair_height, stair_width, axis):
         step = int(stair_width * 2 / resolution)
         data_size = int(size / resolution) + 1
         num_steps = int(data_size / step) + 1
@@ -222,14 +222,18 @@ class Stairs(HeightFieldTerrain):
             x_start, x_stop = i * step, (i + 1) * step
             height_field_data[:, x_start:x_stop] = height
             height += stair_height
-        return HeightField(Slope.rotate(height_field_data, axis), size, resolution)
+        return HeightField(cls.rotate(height_field_data, axis), size, resolution)
 
-    @staticmethod
-    def rotate(height_field_data, axis):
+    @classmethod
+    def rotate(cls, height_field_data, axis):
         if axis == '+x':
             return height_field_data
         elif axis == '+y':
             return height_field_data.T
+        elif axis == '-x':
+            return np.fliplr(height_field_data)
+        elif axis == '-y':
+            return np.flipud(height_field_data.T)
         raise RuntimeError('Unknown axis')
 
 
@@ -242,8 +246,8 @@ class Hills(HeightFieldTerrain):
     def make(cls, size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]):
         return cls(cls.make_heightfield(size, resolution, *roughness_downsample))
 
-    @staticmethod
-    def make_heightfield(size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]) -> HeightField:
+    @classmethod
+    def make_heightfield(cls, size, resolution, *roughness_downsample: tuple[NUMERIC, NUMERIC]) -> HeightField:
         height_field_data = None
         for roughness, downsample in roughness_downsample:
             sample_rsl = downsample * resolution
@@ -275,10 +279,12 @@ if __name__ == '__main__':
 
     pyb.connect(pyb.GUI)
     pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, 0)
-    t = Hills.make(3, 0.1, (0.4, 20))
+    t = Stairs.make_heightfield(20, 0.05, 0.15, 0.3, '+y')
+    # t.data += Hills.make_heightfield(20, 0.05, (0.02, 1)).data
+    t = Stairs(t)
     t.spawn(pyb)
-    robot = AlienGo()
-    robot.spawn()
+    # robot = AlienGo()
+    # robot.spawn()
 
     pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, 1)
     pyb.setGravity(0, 0, -10)
@@ -286,52 +292,52 @@ if __name__ == '__main__':
 
     pyb.changeVisualShape(t.id, -1, rgbaColor=(1, 1, 1, 1))
 
-    terrain_visual_shape = pyb.createVisualShape(shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0., 0.8, 0., 0.6))
-    ray_hit_shape = pyb.createVisualShape(shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0.8, 0., 0., 0.6))
-    cylinder_shape = pyb.createVisualShape(shapeType=pyb.GEOM_CYLINDER, radius=0.005, length=0.11,
-                                           rgbaColor=(0., 0, 0.8, 0.6))
-    box_shape = pyb.createVisualShape(shapeType=pyb.GEOM_BOX, halfExtents=(0.03, 0.03, 0.03),
-                                      rgbaColor=(0.8, 0., 0., 0.6))
-
-    from burl.utils.transforms import Quaternion
-
-    points, vectors, ray_hits = [], [], []
-
-    for _x in np.linspace(-1, 1, 10):
-        for _y in np.linspace(-1, 1, 10):
-            h = t.get_height(_x, _y)
-            points.append(pyb.createMultiBody(baseVisualShapeIndex=terrain_visual_shape,
-                                              basePosition=(_x, _y, h)))
-            n = t.get_normal(_x, _y)
-            y_ax = unit(np.cross(n, (1, 0, 0)))
-            x_ax = unit(np.cross(y_ax, n))
-            vectors.append(pyb.createMultiBody(
-                baseVisualShapeIndex=cylinder_shape, basePosition=(_x, _y, h),
-                baseOrientation=Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T)))
-            ray_hits.append(pyb.createMultiBody(
-                baseVisualShapeIndex=ray_hit_shape, basePosition=pyb.rayTest((_x, _y, 2), (_x, _y, -1))[0][3]
-            ))
-
-    cor = t.get_peak((-0.5, 0.5), (-0.5, 0.5))
-    box_id = pyb.createMultiBody(baseVisualShapeIndex=box_shape,
-                                 basePosition=cor, baseOrientation=(0., 0., 0., 1.))
-
-    for i in range(10):
-        time.sleep(5)
-        pyb.resetBasePositionAndOrientation(robot.id, (0., 0., 3.), (0., 0., 0., 1.))
-        t.replace_heightfield(pyb, Hills.make_heightfield(3, 0.1, (random.random(), 20)))
-        idx = 0
-        for _x in np.linspace(-1, 1, 10):
-            for _y in np.linspace(-1, 1, 10):
-                h = t.get_height(_x, _y)
-                pyb.resetBasePositionAndOrientation(points[idx], (_x, _y, h), (0., 0., 0., 1.))
-                pyb.resetBasePositionAndOrientation(ray_hits[idx], pyb.rayTest((_x, _y, 2), (_x, _y, -1))[0][3],
-                                                    (0., 0., 0., 1.))
-                n = t.get_normal(_x, _y)
-                y_ax = unit(np.cross(n, (1, 0, 0)))
-                x_ax = unit(np.cross(y_ax, n))
-                pyb.resetBasePositionAndOrientation(vectors[idx], (_x, _y, h),
-                                                    Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T))
-                idx += 1
-        pyb.resetBasePositionAndOrientation(box_id, t.get_peak((-0.5, 0.5), (-0.5, 0.5)), (0., 0., 0., 1.))
+    # terrain_visual_shape = pyb.createVisualShape(shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0., 0.8, 0., 0.6))
+    # ray_hit_shape = pyb.createVisualShape(shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0.8, 0., 0., 0.6))
+    # cylinder_shape = pyb.createVisualShape(shapeType=pyb.GEOM_CYLINDER, radius=0.005, length=0.11,
+    #                                        rgbaColor=(0., 0, 0.8, 0.6))
+    # box_shape = pyb.createVisualShape(shapeType=pyb.GEOM_BOX, halfExtents=(0.03, 0.03, 0.03),
+    #                                   rgbaColor=(0.8, 0., 0., 0.6))
+    #
+    # from burl.utils.transforms import Quaternion
+    #
+    # points, vectors, ray_hits = [], [], []
+    #
+    # for _x in np.linspace(-1, 1, 10):
+    #     for _y in np.linspace(-1, 1, 10):
+    #         h = t.get_height(_x, _y)
+    #         points.append(pyb.createMultiBody(baseVisualShapeIndex=terrain_visual_shape,
+    #                                           basePosition=(_x, _y, h)))
+    #         n = t.get_normal(_x, _y)
+    #         y_ax = unit(np.cross(n, (1, 0, 0)))
+    #         x_ax = unit(np.cross(y_ax, n))
+    #         vectors.append(pyb.createMultiBody(
+    #             baseVisualShapeIndex=cylinder_shape, basePosition=(_x, _y, h),
+    #             baseOrientation=Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T)))
+    #         ray_hits.append(pyb.createMultiBody(
+    #             baseVisualShapeIndex=ray_hit_shape, basePosition=pyb.rayTest((_x, _y, 2), (_x, _y, -1))[0][3]
+    #         ))
+    #
+    # cor = t.get_peak((-0.5, 0.5), (-0.5, 0.5))
+    # box_id = pyb.createMultiBody(baseVisualShapeIndex=box_shape,
+    #                              basePosition=cor, baseOrientation=(0., 0., 0., 1.))
+    #
+    # for i in range(10):
+    #     time.sleep(5)
+    #     pyb.resetBasePositionAndOrientation(robot.id, (0., 0., 3.), (0., 0., 0., 1.))
+    #     t.replace_heightfield(pyb, Hills.make_heightfield(3, 0.1, (random.random(), 20)))
+    #     idx = 0
+    #     for _x in np.linspace(-1, 1, 10):
+    #         for _y in np.linspace(-1, 1, 10):
+    #             h = t.get_height(_x, _y)
+    #             pyb.resetBasePositionAndOrientation(points[idx], (_x, _y, h), (0., 0., 0., 1.))
+    #             pyb.resetBasePositionAndOrientation(ray_hits[idx], pyb.rayTest((_x, _y, 2), (_x, _y, -1))[0][3],
+    #                                                 (0., 0., 0., 1.))
+    #             n = t.get_normal(_x, _y)
+    #             y_ax = unit(np.cross(n, (1, 0, 0)))
+    #             x_ax = unit(np.cross(y_ax, n))
+    #             pyb.resetBasePositionAndOrientation(vectors[idx], (_x, _y, h),
+    #                                                 Quaternion.from_rotation(np.array((x_ax, y_ax, n)).T))
+    #             idx += 1
+    #     pyb.resetBasePositionAndOrientation(box_id, t.get_peak((-0.5, 0.5), (-0.5, 0.5)), (0., 0., 0., 1.))
     time.sleep(300)

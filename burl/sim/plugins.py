@@ -81,7 +81,7 @@ class StatisticsCollector(Plugin):
         if self._publish:
             data = {
                 'joint_states': {
-                    'joint_pos': rob.getJointPositions().tolist(),
+                    'joint_pos': (rob.getJointPositions() - rob.STANCE_POSTURE).tolist(),
                     'commands': rob.getLastCommand().tolist(),
                     'joint_vel': rob.getJointVelocities().tolist(),
                     'joint_acc': rob.getJointAccelerations().tolist(),

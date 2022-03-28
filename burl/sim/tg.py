@@ -174,20 +174,16 @@ class TgStateMachine(PhaseRoller):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
-
-    # g_cfg.tg_init = 'symmetric'
-    # stm = LocomotionStateMachine(0.01)
-    # print(stm.phases)
-    # for _ in range(10):
-    #     stm._init_phases()
-    #     print(stm.phases)
-
-    # tg = designed_tg()
-    # tg2 = end_trajectory_generator()
-    x = np.linspace(-2, 2, 1000)
-    # y1 = [tg(x) for x in x]
-    # y2 = [tg2(x) for x in x]
-    # plt.plot(x, y1)
-    # plt.plot(x, y2)
-    # plt.legend(['des', 'raw'])
+    tg = vertical_tg()
+    x = np.linspace(-2 * np.pi, 2 * np.pi, 1000)
+    x1 = np.tile(np.linspace(0, 2 * np.pi, 500), 2)
+    y1 = tg(x1)[:, 2]
+    x2 = ang_norm(np.tile(np.linspace(-np.pi, np.pi, 500), 2))
+    y2 = tg(x2)[:, 2]
+    plt.plot(x, y1)
+    plt.plot(x, y2)
+    plt.ylim(-0.01, 0.1)
+    plt.xlabel('phase')
+    plt.ylabel('z')
+    plt.legend(['leg 1, 3', 'leg 2, 4'])
     plt.show()

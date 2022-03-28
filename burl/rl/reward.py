@@ -69,6 +69,15 @@ def quadratic_linear_reshape(upper):
     return _reshape
 
 
+def soft_constrain(thr, upper):
+    def _reshape(v):
+        if (excess := abs(v) - thr) > 0:
+            return -(excess / upper) ** 2
+        return 0.
+
+    return _reshape
+
+
 class LinearVelocityReward(Reward):
     def __init__(self, forward=0.8, lateral=0.4):
         self.forward, self.lateral = forward, lateral
@@ -190,6 +199,19 @@ class HipAnglePenalty(Reward):
     def __call__(self, cmd, env, robot):
         hip_angles = robot.getJointPositions()[(0, 3, 6, 9),]
         return -sum(self.reshape(hip_angles)) / 4
+
+
+class JointConstraintPenalty(Reward):
+    def __init__(self, constraints=(0.3, 0.5, 0.5), upper=0.1):
+        self.hip_reshape = np.vectorize(soft_constrain(constraints[0], upper))
+        self.thigh_reshape = np.vectorize(soft_constrain(constraints[1], upper))
+        self.shank_reshape = np.vectorize(soft_constrain(constraints[2], upper))
+
+    def __call__(self, cmd, env, robot):
+        joint_angles = robot.getJointPositions() - robot.STANCE_POSTURE
+        return 1 + (self.hip_reshape(joint_angles[((0, 3, 6, 9),)]).sum() +
+                    self.thigh_reshape(joint_angles[((1, 4, 7, 10),)]).sum() +
+                    self.shank_reshape(joint_angles[((2, 5, 8, 11),)]).sum()) / 12
 
 
 class TrivialStridePenalty(Reward):
