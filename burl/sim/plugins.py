@@ -9,7 +9,7 @@ import pybullet as pyb
 
 from burl.utils import UdpPublisher, Angle, unit, vec_cross, sign
 
-__all__ = ['Plugin', 'StatisticsCollector', 'InfoRenderer']
+__all__ = ['Plugin', 'StatisticsCollector', 'InfoRenderer', 'VideoRecorder']
 
 
 class Plugin(object):
@@ -297,3 +297,52 @@ class InfoRenderer(Plugin):
                         self._cmd_indicators[i] = _cmd_indicator
                         if i < 5:
                             last_end = end
+
+
+class CameraImageRecorder(Plugin):
+    def __init__(self, fps, size=(1024, 768), dst='record.avi', single_step_rendering=False):
+        try:
+            import cv2
+            self.size = size
+            self.enabled = True
+            self.single = single_step_rendering
+            self.writer = cv2.VideoWriter(dst, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps, size)
+        except ModuleNotFoundError:
+            self.enabled = False
+            print('`opencv-python` is required for recording')
+
+    def on_step(self, task, robot, env):
+        if self.enabled and not self.single:
+            self.write_camera_image(env.client)
+
+    def on_sim_step(self, task, robot, env):
+        if self.enabled and self.single:
+            self.write_camera_image(env.client)
+
+    def on_reset(self, task, robot, env):
+        self.writer.release()
+        self.enabled = False
+
+    def write_camera_image(self, sim_env):
+        _, _, view_mat, proj_mat, *_ = sim_env.getDebugVisualizerCamera()
+        _, _, rgba, *_ = sim_env.getCameraImage(*self.size, view_mat, proj_mat)
+        bgr = rgba[..., 2::-1]
+        self.writer.write(bgr)
+
+
+class VideoRecorder(Plugin):
+    def __init__(self, dst='record.mp4'):
+        self.dst, self.enabled = dst, True
+        self.log_id = -1
+
+    def on_init(self, task, robot, env):
+        print('start recording')
+        self.log_id = env.client.startStateLogging(pyb.STATE_LOGGING_VIDEO_MP4, self.dst)
+
+    # def on_step(self, task, robot, env):
+    #     env.client.getCameraImage(600, 400)
+
+    def on_reset(self, task, robot, env):
+        if self.enabled:
+            env.client.stopStateLogging(self.log_id)
+            self.enabled = False

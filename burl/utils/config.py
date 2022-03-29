@@ -53,6 +53,7 @@ class RenderParam(object):
     show_time_ratio: bool = True
     plot_trajectory: bool = False
     single_step_rendering: bool = False
+    record: bool = False
 
 
 @dataclass

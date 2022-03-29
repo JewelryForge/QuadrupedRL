@@ -8,7 +8,7 @@ import numpy as np
 
 from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
-from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer
+from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer, VideoRecorder
 from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slope, Stairs
 from burl.utils import g_cfg
 
@@ -26,6 +26,9 @@ class BasicTask(RewardRegistry):
         self.plugin_utils = {}
         if g_cfg.test_mode:
             self.load_plugin(StatisticsCollector())
+        if g_cfg.record:
+            self.load_plugin(VideoRecorder())
+            g_cfg.show_time_ratio = False
         if g_cfg.rendering:
             self.load_plugin(InfoRenderer(g_cfg.extra_visualization, g_cfg.show_time_ratio,
                                           g_cfg.show_indicators, g_cfg.driving_mode,
