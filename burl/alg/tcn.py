@@ -66,21 +66,21 @@ class TCNEncoderNoPadding(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1 = CausalConv(60, 38, 5, stride=1, padding=0, dilation=1)
-        self.skip_conv1 = nn.Sequential(nn.Conv1d(60, 38, 1, stride=1, padding=0, dilation=1), Chomp1d(4))
+        self.skip_conv1 = nn.Sequential(Chomp1d(4), nn.Conv1d(60, 38, 1, stride=1, padding=0, dilation=1))
         self.relu = nn.ReLU()
         self.dsp1 = nn.Conv1d(38, 38, 3, stride=2, padding=0, dilation=1)
         self.conv2 = CausalConv(38, 38, 5, stride=1, padding=0, dilation=2)
-        self.skip_conv2 = nn.Sequential(nn.Conv1d(38, 38, 1, stride=1, padding=0, dilation=1), Chomp1d(8))
+        self.skip_conv2 = nn.Sequential(Chomp1d(8), nn.Conv1d(38, 38, 1, stride=1, padding=0, dilation=1))
         self.dsp2 = nn.Conv1d(38, 38, 3, stride=2, padding=0, dilation=1)
         self.conv3 = CausalConv(38, 38, 5, stride=1, padding=0, dilation=4)
-        self.skip_conv3 = nn.Sequential(nn.Conv1d(38, 38, 1, stride=1, padding=0, dilation=1), Chomp1d(16))
-        self.dsp3 = nn.Conv1d(38, 38, 3, stride=2, padding=1, dilation=1)
-        self.linear = nn.Linear(76, 64)
+        self.skip_conv3 = nn.Sequential(Chomp1d(16), nn.Conv1d(38, 38, 1, stride=1, padding=0, dilation=1))
+        self.dsp3 = nn.Conv1d(38, 38, 3, stride=2, padding=0, dilation=1)
+        self.linear = nn.Linear(4 * 38, 64)  # history len 123
         self.layers = nn.Sequential(
             Add(self.conv1, self.skip_conv1), self.relu, self.dsp1,
             Add(self.conv2, self.skip_conv2), self.relu, self.dsp2,
             Add(self.conv3, self.skip_conv3), self.relu, self.dsp3,
-            # nn.Flatten(), self.linear
+            nn.Flatten(), self.linear
         )
 
     def forward(self, x):
@@ -88,10 +88,11 @@ class TCNEncoderNoPadding(nn.Module):
 
 
 if __name__ == '__main__':
-    feature = torch.randn(2, 60, 100)
     net = TCNEncoder()
-    print(net(feature).shape)
-    # for i in range(100, 200):
+    import torchsummary
+
+    torchsummary.summary(net, (60, 100), device='cpu')
+    # for i in range(100, 150):
     #     feature = torch.randn(2, 60, i)
     #     net = TCNEncoderNoPadding()
     #     print(i, net(feature).shape)

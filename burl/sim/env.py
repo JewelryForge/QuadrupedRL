@@ -47,7 +47,8 @@ class QuadrupedEnv(object):
             self._init_rendering = False
         self._resetStates()
 
-        self._robot: Quadruped = make_robot(execution_frequency=g_cfg.execution_frequency,
+        self._robot: Quadruped = make_robot(latency=g_cfg.latency_range,
+                                            execution_frequency=g_cfg.execution_frequency,
                                             random_dynamics=g_cfg.random_dynamics,
                                             motor_latencies=g_cfg.motor_latencies,
                                             actuator_net=g_cfg.actuator_net)
@@ -325,17 +326,17 @@ class QuadrupedEnv(object):
         self.updateObservation()
         return self.makeObservation()
 
-    def reload(self):
-        self._task.reset()
-        self._resetStates()
-        self._env.resetSimulation()
-        self._setPhysicsParameters()
-        self._terrain.spawn(self._env)
-        self._robot.reset(reload=True)
-        self.moveRobotOnTerrain()
-        self._prepareSimulation()
-        self.updateObservation()
-        return self.makeObservation()
+    # def reload(self):
+    #     self._task.reset()
+    #     self._resetStates()
+    #     self._env.resetSimulation()
+    #     self._setPhysicsParameters()
+    #     self._terrain.spawn(self._env)
+    #     self._robot.reset(reload=True)
+    #     self.moveRobotOnTerrain()
+    #     self._prepareSimulation()
+    #     self.updateObservation()
+    #     return self.makeObservation()
 
     def close(self):
         self._env.disconnect()

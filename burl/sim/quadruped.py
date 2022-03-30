@@ -60,7 +60,7 @@ class Quadruped(object):
     SHOULDER_FRAME = 2
     INIT_FRAME = 3
 
-    def __init__(self, execution_frequency=500, latency=0., motor_latencies=(0., 0.),
+    def __init__(self, execution_frequency=500, latency: float | tuple[float, float] = 0., motor_latencies=(0., 0.),
                  random_dynamics=False, self_collision_enabled=False, actuator_net=None):
         """
         Initialize inner states and motor models.
@@ -88,13 +88,14 @@ class Quadruped(object):
                                                     **motor_common_param)
         else:
             raise NotImplementedError(f'Unknown Actuator Net Type {actuator_net}')
-        self._latency = latency
+        self.setLatency(latency)
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
         self._body_id = None
 
         self._observation_history: deque[ObservationRaw] = deque(maxlen=100)
         self._observation_noisy_history: deque[ObservationRaw] = deque(maxlen=100)
+        self._observation_noisy_buffer: deque[ObservationRaw] = deque(maxlen=20)
         self._command_history: deque[np.ndarray] = deque(maxlen=100)
         self._torque_history: deque[np.ndarray] = deque(maxlen=100)
         self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
@@ -134,11 +135,11 @@ class Quadruped(object):
         self._observation: Opt[ObservationRaw] = None
         self._step_counter = -1
         self._sum_work = 0.0
-        if isinstance(self._latency, float):
-            self._latency_steps = int(self._latency * self._frequency)
-        else:
-            lower, upper = self._latency
-            self._latency_steps = int(random.uniform(lower, upper) * self._frequency)
+        if isinstance(self._latency, tuple):
+            self._setLatencySteps(random.uniform(*self._latency))
+
+    def _setLatencySteps(self, latency):
+        self._latency_steps = int(latency * self._frequency)
 
     def _loadRobotOnRack(self):
         path = os.path.join(burl.urdf_path, self.URDF_FILE)
@@ -193,6 +194,13 @@ class Quadruped(object):
             self._env.enableJointForceTorqueSensor(self._body_id, self._getJointId(leg, 3), True)
         self._base_dynamics = DynamicsInfo(self._env.getDynamicsInfo(self._body_id, 0))
         self._leg_dynamics = [DynamicsInfo(self._env.getDynamicsInfo(self._body_id, i)) for i in self._motor_ids[:3]]
+
+    def setLatency(self, latency):
+        self._latency = latency
+        if isinstance(latency, float):
+            self._setLatencySteps(latency)
+        else:
+            self._setLatencySteps(random.uniform(*latency))
 
     def setDynamics(self, foot_lateral_friction=(0.4,) * 4,
                     foot_spinning_friction=(0.2,) * 4,
@@ -294,18 +302,18 @@ class Quadruped(object):
         self._observation.foot_states = self._getFootStates()
         self._observation.contact_states = ContactStates(self._getContactStates())
         self._observation_history.append(self._observation)
-        observation_noisy = self._estimateObservation()
-        self._observation_noisy_history.append(observation_noisy)
-        self._motor.update_observation(self.getJointPositions(noisy=True),
-                                       self.getJointVelocities(noisy=True))
+        observation_noisy, observation_noisy_delayed = self._estimateObservation()
+        self._motor.update_observation(observation_noisy.joint_states.position[(self._motor_ids,)],
+                                       observation_noisy.joint_states.velocity[(self._motor_ids,)])
         self._updateLocomotionInfos()
-        return self._observation, observation_noisy
+        return self._observation, observation_noisy_delayed
 
     def clearObservations(self):
         """Clear all saved observations, besides those of motor"""
         self._resetStates()
         self._observation_history.clear()
         self._observation_noisy_history.clear()
+        self._observation_noisy_buffer.clear()
         self._command_history.clear()
         self._torque_history.clear()
         self._cot_buffer.clear()
@@ -410,10 +418,9 @@ class Quadruped(object):
                 self._strides[i], self._slips[i], self._foot_clearances[i] = (0., 0.), 0., 0.
                 self._max_foot_heights[i] = max(self._max_foot_heights[i], foot_pos_world[2])
 
-    def _estimateObservation(self, noisy=True):
+    def _estimateObservation(self, noisy=False):
         """Add noise on observation"""
-        idx = 0 if len(self._observation_history) <= self._latency_steps else -self._latency_steps - 1
-        observation = self._observation_history[idx]
+        observation = self._observation_history[-1]
         if noisy:
             observation_noisy = ObservationRaw(BaseState(), JointStates())
             add_noise = np.random.normal
@@ -424,9 +431,15 @@ class Quadruped(object):
                                                             add_noise(observation.base_state.twist_Base.angular, 5e-2))
             observation_noisy.joint_states.position = add_noise(observation.joint_states.position, 5e-3)
             observation_noisy.joint_states.velocity = add_noise(observation.joint_states.velocity, 1e-1)
-            return observation_noisy
         else:
-            return observation
+            observation_noisy = observation
+        self._observation_noisy_buffer.append(observation_noisy)
+        if len(self._observation_history) <= self._latency_steps:
+            observation_noisy_delayed = self._observation_noisy_buffer[0]
+        else:
+            observation_noisy_delayed = self._observation_noisy_buffer.popleft()
+        self._observation_noisy_history.append(observation_noisy_delayed)
+        return observation_noisy, observation_noisy_delayed
 
     @property
     def position(self):  # without latency and noise
@@ -587,7 +600,7 @@ class Quadruped(object):
 
     def _getIndexFromMoment(self, moment):
         assert moment < 0
-        return -1 - int((self._latency - moment) * self._frequency)
+        return -1 - int(-moment * self._frequency)
 
     def getCmdHistoryFromMoment(self, moment):
         return self.getCmdHistoryFromIndex(self._getIndexFromMoment(moment))

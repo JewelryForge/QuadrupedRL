@@ -225,8 +225,8 @@ class StudentPlayer(object):
         self.policy = Student(teacher).to(g_cfg.dev)
         model_info = torch.load(model_path)
         log_info(f'Loading model {model_path}')
-        self.policy.load_state_dict(model_info['student_state_dict'], strict=False)
-        self.history = SlidingWindow(ProprioInfo.dim, 2000, 100, 'cuda')
+        self.policy.load_state_dict(model_info['student_state_dict'])
+        self.history = SlidingWindow(ProprioInfo.dim, 2000, g_cfg.history_len, 'cuda')
 
     def play(self, allow_reset=True):
         policy = self.policy.get_policy()

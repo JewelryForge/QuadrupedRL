@@ -16,6 +16,7 @@ if __name__ == '__main__':
     g_cfg.add_disturbance = True
     g_cfg.random_dynamics = True
     g_cfg.actuator_net = 'history'
+    # g_cfg.latency_range = (0.02, 0.03)
     init_logger()
     set_logger_level('debug')
     remote = False

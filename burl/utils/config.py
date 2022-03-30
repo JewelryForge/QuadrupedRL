@@ -24,6 +24,7 @@ class Options(object):
 @dataclass
 class PhysicsParam(object):
     self_collision_enabled: bool = False
+    latency_range: tuple[float, float] = (0., 0.)
     motor_latencies: tuple[float, float] = (0., 0.)
     joint_friction: float = 0.025
     foot_lateral_friction: float = 0.4
@@ -75,6 +76,7 @@ class ImitationParam(object):
     model_path: str = ''
     batch_size: int = 2000
     num_steps_each_epoch: int = 2000
+    history_len: int = 100
 
 
 @dataclass

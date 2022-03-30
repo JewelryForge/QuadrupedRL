@@ -174,7 +174,7 @@ class ImitationRunner(object):
             make_part(FixedTgEnv, AlienGo, task_prototype.make_distribution(get_task(task_type)),
                       obs_types=('noisy_proprio_info', 'noisy_realworld', 'noisy_extended')),
             teacher,
-            make_part(Dagger, g_cfg.num_envs, 2000, 100,
+            make_part(Dagger, g_cfg.num_envs, 2000, g_cfg.history_len,
                       ProprioInfo.dim, RealWorldObservation.dim, g_cfg.extero_layer_dims[-1], Action.dim,
                       device=g_cfg.dev),
             make_part(AdamW, lr=g_cfg.learning_rate, weight_decay=1e-2),
