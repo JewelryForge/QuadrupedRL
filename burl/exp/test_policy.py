@@ -1,6 +1,7 @@
 import sys
+from os.path import dirname, abspath
 
-sys.path.append('.')
+sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
 
 from burl.utils import g_cfg, set_logger_level, init_logger, find_log, find_log_remote, make_part
 from burl.rl.runner import TeacherPlayer, JoystickTeacherPlayer as JoystickPlayer
@@ -24,7 +25,7 @@ if __name__ == '__main__':
         model_path = find_csc(run_name='', time_=None, epoch=None)
         # model_path = find_huzhou(run_name='2.8.0.21m2', time_=None, epoch=None)
     else:
-        model_path = find_log(run_name='2.8.0.22m2', time_=None, epoch=None)
+        model_path = find_log(run_name='2.8.0.25', time_=None, epoch=None)
     if JoystickPlayer.is_available():
         player = JoystickPlayer(model_path)
     else:

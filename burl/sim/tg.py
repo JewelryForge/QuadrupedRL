@@ -160,7 +160,7 @@ class TgStateMachine(PhaseRoller):
         self._lower_frequency, self._upper_frequency = lower_frequency, upper_frequency
         self._tg = make_tg()
 
-    def update(self, frequency_offsets):
+    def update(self, frequency_offsets):  # FIXME: how freq_offsets works?
         frequency_offsets = np.asarray(frequency_offsets)
         self._frequency = self.base_frequency + frequency_offsets
         self._frequency = np.clip(self._frequency, self._lower_frequency, self._upper_frequency)
@@ -174,6 +174,7 @@ class TgStateMachine(PhaseRoller):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
+
     tg = vertical_tg()
     x = np.linspace(-2 * np.pi, 2 * np.pi, 1000)
     x1 = np.tile(np.linspace(0, 2 * np.pi, 500), 2)

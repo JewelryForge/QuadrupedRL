@@ -6,3 +6,4 @@ wandb
 *.pyc
 tg_net
 ident
+cmake-build-debug

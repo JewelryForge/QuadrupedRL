@@ -1,6 +1,7 @@
 import sys
 
-sys.path.append('.')
+from os.path import dirname, abspath
+sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
 from burl.rl.runner import PolicyTrainer
 from burl.utils import g_cfg, log_warn, init_logger, parse_args, find_log
 import wandb

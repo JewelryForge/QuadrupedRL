@@ -1,6 +1,7 @@
 import sys
+from os.path import dirname, abspath
 
-sys.path.append('.')
+sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
 
 from burl.utils import g_cfg, set_logger_level, init_logger, find_log, find_log_remote, make_part
 from burl.rl.runner import StudentPlayer, JoystickStudentPlayer as JoystickPlayer

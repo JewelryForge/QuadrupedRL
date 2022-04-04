@@ -1,5 +1,5 @@
 import math
-from collections.abc import Collection
+from collections.abc import Sequence
 from functools import singledispatchmethod
 
 import numpy as np
@@ -21,7 +21,7 @@ class Angle(object):
         return x - ((x + PI) / TAU).astype(int) * TAU
 
     @staticmethod
-    def mean(lst: Collection[float]):
+    def mean(lst: Sequence[float]):
         _sum = last = lst[0]
         for a in lst[1:]:
             last = Angle.near(last, a)
