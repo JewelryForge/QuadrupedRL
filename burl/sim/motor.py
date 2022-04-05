@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import collections
+import os
 
 import numpy as np
 import torch
 
+import burl
 from burl.sim.identify import ActuatorNet, ActuatorNetWithHistory
+from burl.utils import make_part
 
-__all__ = ['MotorSim', 'PdMotorSim', 'ActuatorNetSim', 'ActuatorNetWithHistorySim']
+__all__ = ['MotorSim', 'PdMotorSim', 'ActuatorNetSim', 'ActuatorNetWithHistorySim', 'ActuatorNetManager']
 
 
 class MotorSim(object):
@@ -92,12 +95,10 @@ class PdMotorSim(MotorSim):
 
 
 class ActuatorNetSim(MotorSim):
-    def __init__(self, model_path, device='cpu', frequency=500, input_latency=0., output_latency=0.,
+    def __init__(self, net, frequency=500, input_latency=0., output_latency=0.,
                  joint_limits=None, torque_limits=None, cmd_clip=0.2):
         super().__init__(frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
-        model_info = torch.load(model_path, map_location={'cuda:0': device})
-        self.net = ActuatorNet(hidden_dims=model_info['hidden_dims']).to(device)
-        self.net.load_state_dict(model_info['model'])
+        self.net = net
 
     def calc_torque(self):
         last_residue = self._residue_history[-2] if len(self._residue_history) > 1 else self._residue
@@ -105,14 +106,10 @@ class ActuatorNetSim(MotorSim):
         return self.net.calc_torque(self._residue, residue_rate, self._vel)
 
 
-class ActuatorNetWithHistorySim(MotorSim):
-    def __init__(self, model_path, device='cpu', frequency=500, input_latency=0., output_latency=0.,
+class ActuatorNetWithHistorySim(ActuatorNetSim):
+    def __init__(self, net, frequency=500, input_latency=0., output_latency=0.,
                  joint_limits=None, torque_limits=None, cmd_clip=0.2):
-        # 'cuda' is not advised in modern cpus
-        super().__init__(frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
-        model_info = torch.load(model_path, map_location={'cuda:0': device})
-        self.net = ActuatorNetWithHistory(hidden_dims=model_info['hidden_dims']).to(device)
-        self.net.load_state_dict(model_info['model'])
+        super().__init__(net, frequency, input_latency, output_latency, joint_limits, torque_limits, cmd_clip)
 
     def calc_torque(self):
         return self.net.calc_torque(self._residue,
@@ -130,6 +127,33 @@ class ActuatorNetWithHistorySim(MotorSim):
         elif len(seq) <= idx:
             return seq[-1]
         return seq[idx]
+
+
+class ActuatorNetManager(object):
+    def __init__(self, actuator_type, model_path=None, device='cpu', share_memory=True):
+        # 'cuda' is not advised in modern cpus
+        if actuator_type == 'history':
+            self.actuator_class = ActuatorNetWithHistory
+            self.actuator_sim_class = ActuatorNetWithHistorySim
+            if not model_path:
+                model_path = os.path.join(burl.rsc_path, 'actuator_net_with_history.pt')
+        elif actuator_type == 'single':
+            self.actuator_class = ActuatorNet
+            self.actuator_sim_class = ActuatorNetSim
+            if not model_path:
+                model_path = os.path.join(burl.rsc_path, 'actuator_net.pt')
+        else:
+            raise RuntimeError(f'Unknown actuator type `{actuator_type}`')
+
+        model_info = torch.load(model_path, map_location={'cuda:0': device})
+        self._net = self.actuator_class(hidden_dims=model_info['hidden_dims']).to(device)
+        self._net.load_state_dict(model_info['model'])
+        if share_memory:
+            self._net.share_memory()
+
+    @property
+    def make_motor(self):
+        return make_part(self.actuator_sim_class, self._net)
 
 
 if __name__ == '__main__':

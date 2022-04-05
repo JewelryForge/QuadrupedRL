@@ -12,9 +12,9 @@ from burl.alg.dagger import Dagger
 from burl.alg.student import Student
 from burl.rl.runner import Accountant
 from burl.rl.task import get_task, CentralizedTask
-from burl.sim.env import FixedTgEnv
+from burl.sim.env import FixedTgEnv, robot_auto_maker
+from burl.sim.motor import ActuatorNetManager
 from burl.sim.parallel import EnvContainerMp2, EnvContainer
-from burl.sim.quadruped import AlienGo
 from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ProprioInfo
 from burl.utils import g_cfg, to_dev, MfTimer, log_info, make_part
 
@@ -169,9 +169,15 @@ class ImitationRunner(object):
         log_info(f'Loading model {model_path}')
         teacher.load_state_dict(model_info['actor_state_dict'])
         task_prototype = CentralizedTask()
+        if g_cfg.actuator_net:
+            self.acnet_manager = ActuatorNetManager(g_cfg.actuator_net)
+        else:
+            self.acnet_manager = g_cfg.actuator_net
+        make_robot = robot_auto_maker(actuator_net=self.acnet_manager)
+
         self.obj = ImitationLearning(
             g_cfg.num_envs,
-            make_part(FixedTgEnv, AlienGo, task_prototype.spawner(get_task(task_type)),
+            make_part(FixedTgEnv, make_robot, task_prototype.spawner(get_task(task_type)),
                       obs_types=('noisy_proprio_info', 'noisy_realworld', 'noisy_extended')),
             teacher,
             make_part(Dagger, g_cfg.num_envs, 2000, g_cfg.history_len,

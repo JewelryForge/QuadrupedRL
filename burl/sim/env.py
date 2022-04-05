@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from typing import Any, Callable, Optional as Opt
+from typing import Any, Callable, Optional as Opt, Type
 
 import numpy as np
 import pybullet as pyb
@@ -16,7 +16,24 @@ from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Quaternion
 
-__all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv']
+__all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv', 'robot_auto_maker']
+
+
+def robot_auto_maker(robot_class: Type[Quadruped] = AlienGo,
+                     latency=None,
+                     random_dynamics=None,
+                     motor_latencies=None,
+                     actuator_net=None):
+    if not latency:
+        latency = g_cfg.latency_range
+    if not random_dynamics:
+        random_dynamics = g_cfg.random_dynamics
+    if not motor_latencies:
+        motor_latencies = g_cfg.motor_latencies
+    if not actuator_net:
+        actuator_net = g_cfg.actuator_net
+    return make_part(robot_class, latency=latency, random_dynamics=random_dynamics,
+                     motor_latencies=motor_latencies, actuator_net=actuator_net)
 
 
 class QuadrupedEnv(object):
@@ -47,11 +64,7 @@ class QuadrupedEnv(object):
             self._init_rendering = False
         self._resetStates()
 
-        self._robot: Quadruped = make_robot(latency=g_cfg.latency_range,
-                                            execution_frequency=g_cfg.execution_frequency,
-                                            random_dynamics=g_cfg.random_dynamics,
-                                            motor_latencies=g_cfg.motor_latencies,
-                                            actuator_net=g_cfg.actuator_net)
+        self._robot: Quadruped = make_robot(execution_frequency=self.exec_freq)
         self._task = make_task(env=self)
         self._terrain = self._task.make_terrain(g_cfg.trn_type)
         self._robot.spawn(self._env, g_cfg.on_rack)
@@ -172,7 +185,7 @@ class QuadrupedEnv(object):
 
     def _setPhysicsParameters(self):
         # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
-        self._env.setTimeStep(1 / g_cfg.sim_frequency)
+        self._env.setTimeStep(1 / self.sim_freq)
         self._env.setGravity(0, 0, -9.8)
 
     def setDisturbance(self, force=(0.,) * 3, torque=(0.,) * 3):
@@ -345,7 +358,7 @@ class QuadrupedEnv(object):
         if len(self._action_history) < 3:
             return 0.0
         actions = [self._action_history[-i - 1] for i in range(3)]
-        return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * g_cfg.action_frequency ** 2
+        return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * self.action_freq ** 2
 
     def getAbundantTerrainInfo(self, x, y, yaw) -> list[tuple[float, float, float]]:
         interval = 0.1
@@ -439,7 +452,7 @@ class FixedTgEnv(IkEnv):
                  make_task=BasicTask, obs_types=('noisy_extended', 'extended'),
                  ik_type='analytical', horizontal_frame=False):
         super().__init__(make_robot, make_task, obs_types, ik_type, horizontal_frame)
-        self._stm = TgStateMachine(1 / g_cfg.action_frequency,
+        self._stm = TgStateMachine(1 / self.action_freq,
                                    self.tg_types[self._robot.__class__.__name__])
 
     def makeProprioInfo(self, obs=None, noisy=False):
@@ -540,7 +553,7 @@ if __name__ == '__main__':
     np.set_printoptions(precision=3, linewidth=1000)
     tg = True
     if tg:
-        env = FixedTgEnv(make_part(AlienGo))
+        env = FixedTgEnv(robot_auto_maker())
         env.initObservation()
         for i in range(1, 10000):
             *_, reset, _ = env.step(Action())

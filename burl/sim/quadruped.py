@@ -11,9 +11,9 @@ import pybullet as pyb
 import pybullet_data
 
 import burl
+from burl.sim.motor import PdMotorSim, ActuatorNetManager
 from burl.sim.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
-from burl.sim.motor import PdMotorSim, ActuatorNetSim, ActuatorNetWithHistorySim
-from burl.utils import ang_norm, JointInfo, DynamicsInfo, ARRAY_LIKE
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, ARRAY_LIKE, make_part
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 __all__ = ['Quadruped', 'A1', 'AlienGo']
@@ -61,7 +61,7 @@ class Quadruped(object):
     INIT_FRAME = 3
 
     def __init__(self, execution_frequency=500, latency: float | tuple[float, float] = 0., motor_latencies=(0., 0.),
-                 random_dynamics=False, self_collision_enabled=False, actuator_net=None):
+                 random_dynamics=False, self_collision_enabled=False, actuator_net: str | ActuatorNetManager = None):
         """
         Initialize inner states and motor models.
         Explicitly call method `spawn` to load its urdf model to a certain pybullet client.
@@ -80,14 +80,13 @@ class Quadruped(object):
                                   joint_limits=np.array(getattr(self, 'JOINT_LIMITS', None)).reshape(-1, 2),
                                   torque_limits=self.TORQUE_LIMITS)
         if not actuator_net:
-            self._motor = PdMotorSim(self.P_PARAMS, self.D_PARAMS, **motor_common_param)
-        elif actuator_net == 'single':
-            self._motor = ActuatorNetSim(os.path.join(burl.rsc_path, 'actuator_net.pt'), **motor_common_param)
-        elif actuator_net == 'history':
-            self._motor = ActuatorNetWithHistorySim(os.path.join(burl.rsc_path, 'actuator_net_with_history.pt'),
-                                                    **motor_common_param)
+            make_motor = make_part(PdMotorSim, self.P_PARAMS, self.D_PARAMS)
+        elif isinstance(actuator_net, str):
+            make_motor = ActuatorNetManager(actuator_net, share_memory=False).make_motor
         else:
-            raise NotImplementedError(f'Unknown Actuator Net Type {actuator_net}')
+            make_motor = actuator_net.make_motor
+        self._motor = make_motor(**motor_common_param)
+
         self.setLatency(latency)
         self._rand_dyn, self._self_collision = random_dynamics, self_collision_enabled
         self._resetStates()
