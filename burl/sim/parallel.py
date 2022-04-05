@@ -1,9 +1,9 @@
-from typing import overload, Callable
 from collections.abc import Iterable
-import multiprocessing as mp
+from typing import overload, Callable
 
 import numpy as np
 import torch
+import torch.multiprocessing as mp
 
 from burl.sim.env import QuadrupedEnv
 
@@ -23,12 +23,8 @@ class EnvContainer(object):
 
     def __init__(self, make_env, num_envs=None):
         self.num_envs = num_envs
-        if isinstance(make_env, Iterable):
-            self._envs: list[QuadrupedEnv] = [make_env() for make_env in make_env]
-            self.num_envs = len(self._envs)
-        else:
-            self._envs: list[QuadrupedEnv] = [make_env() for _ in range(self.num_envs)]
-        self._envs[0].task.report()
+        self.make_env = make_env
+        self._envs = []
 
     def step(self, actions: torch.Tensor):
         return self.merge_results([e.step(a) for e, a in zip(self._envs, actions.cpu().numpy())])
@@ -59,6 +55,12 @@ class EnvContainer(object):
         return tuple(torch.from_numpy(np.array(obs, dtype=SINGLE)) for obs in observations)
 
     def init_observations(self):
+        if isinstance(self.make_env, Iterable):
+            self._envs: list[QuadrupedEnv] = [make() for make in self.make_env]
+            self.num_envs = len(self._envs)
+        else:
+            self._envs: list[QuadrupedEnv] = [self.make_env() for _ in range(self.num_envs)]
+        self._envs[0].task.report()
         observations = zip(*[env.initObservation() for env in self._envs])
         # TO MY ASTONISHMENT, A LIST COMPREHENSION IS FASTER THAN A GENERATOR!!!
         return tuple(torch.from_numpy(np.array(obs, dtype=SINGLE)) for obs in observations)
@@ -109,15 +111,18 @@ class EnvContainerMp2(EnvContainer):
 
     def __init__(self, make_env, num_envs=None):
         super().__init__(make_env, num_envs)
-        # mp.set_start_method(method='spawn', force=True)
-        self._conn1, self._conn2 = zip(*[mp.Pipe(duplex=True) for _ in range(self.num_envs)])
-        self._processes = [mp.Process(target=self.step_in_process, args=(env, conn,))
-                           for env, conn in zip(self._envs, self._conn1)]
-        for p in self._processes:
-            p.start()
+        self._conn_in_proc, self._conn, self._processes = [], [], []
+        for _ in range(self.num_envs):
+            conn1, conn2 = mp.Pipe(duplex=True)
+            proc = mp.Process(target=self.step_in_process, args=(make_env, conn1))
+            proc.start()
+            self._conn_in_proc.append(conn1)
+            self._conn.append(conn2)
+            self._processes.append(proc)
 
     @staticmethod
-    def step_in_process(env, conn):
+    def step_in_process(make_env, conn):
+        env = make_env()
         obs = env.initObservation()
         conn.send(obs)
         while True:
@@ -134,23 +139,23 @@ class EnvContainerMp2(EnvContainer):
                 raise RuntimeError(f'Unknown action_type {action_type}')
 
     def step(self, actions: torch.Tensor):
-        for action, conn in zip(actions.cpu().numpy(), self._conn2):
+        for action, conn in zip(actions.cpu().numpy(), self._conn):
             conn.send((self.CMD_ACT, action))
-        results = [conn.recv() for conn in self._conn2]
+        results = [conn.recv() for conn in self._conn]
         return self.merge_results(results)
 
     def close(self):
-        for conn in self._conn2:
+        for conn in self._conn:
             conn.send((self.CMD_EXIT,))
         for proc in self._processes:
             proc.join()
 
     def init_observations(self):
-        results = [conn.recv() for conn in self._conn2]
+        results = [conn.recv() for conn in self._conn]
         return (torch.Tensor(np.asarray(o)) for o in zip(*results))
 
     def reset(self, ids):
         for i in ids:
-            self._conn2[i].send((self.CMD_RESET,))
-        observations = zip(*[self._conn2[i].recv() for i in ids])
+            self._conn[i].send((self.CMD_RESET,))
+        observations = zip(*[self._conn[i].recv() for i in ids])
         return tuple([torch.Tensor(np.asarray(obs)) for obs in observations])

@@ -171,7 +171,7 @@ class ImitationRunner(object):
         task_prototype = CentralizedTask()
         self.obj = ImitationLearning(
             g_cfg.num_envs,
-            make_part(FixedTgEnv, AlienGo, task_prototype.make_distribution(get_task(task_type)),
+            make_part(FixedTgEnv, AlienGo, task_prototype.spawner(get_task(task_type)),
                       obs_types=('noisy_proprio_info', 'noisy_realworld', 'noisy_extended')),
             teacher,
             make_part(Dagger, g_cfg.num_envs, 2000, g_cfg.history_len,

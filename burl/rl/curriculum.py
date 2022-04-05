@@ -227,8 +227,11 @@ class CentralizedCurriculum(object):
             self.difficulty = difficulty + 1
             self.buffer.clear()
 
+    def value_getter(self):
+        return self._difficulty.value
+
     def make_distribution(self) -> Plugin:
-        return self.distribution(self.letter_box, lambda: self._difficulty.value, self.max_difficulty)
+        return self.distribution(self.letter_box, self.value_getter, self.max_difficulty)
 
 
 class DisturbanceCurriculumDistribution(CurriculumDistribution):

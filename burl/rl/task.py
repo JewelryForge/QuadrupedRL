@@ -10,7 +10,7 @@ from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
 from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer, VideoRecorder
 from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slope, Stairs
-from burl.utils import g_cfg
+from burl.utils import g_cfg, make_part
 
 __all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
 
@@ -190,14 +190,14 @@ class CentralizedTask(object):
             if g_cfg.trn_type == 'curriculum':
                 self.curriculum_prototypes.append(TerrainCurriculum(aggressive))
 
-    def make_distribution(self, task_class: Type[BasicTask], *args, **kwargs):
-        def _make_distribution(env):
-            task_inst = task_class(env, *args, **kwargs)
-            for crm in self.curriculum_prototypes:
-                task_inst.load_plugin(crm.make_distribution())
-            return task_inst
+    def spawner(self, task_class: Type[BasicTask], args=(), **kwargs):
+        return make_part(self.make_distribution, task_class, args=args, **kwargs)
 
-        return _make_distribution
+    def make_distribution(self, task_class: Type[BasicTask], env, args=(), **kwargs):
+        task_inst = task_class(env, *args, **kwargs)
+        for crm in self.curriculum_prototypes:
+            task_inst.load_plugin(crm.make_distribution())
+        return task_inst
 
     def update_curricula(self):
         for crm in self.curriculum_prototypes:

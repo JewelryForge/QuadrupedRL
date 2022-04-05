@@ -52,7 +52,7 @@ class QuadrupedEnv(object):
                                             random_dynamics=g_cfg.random_dynamics,
                                             motor_latencies=g_cfg.motor_latencies,
                                             actuator_net=g_cfg.actuator_net)
-        self._task = make_task(self)
+        self._task = make_task(env=self)
         self._terrain = self._task.make_terrain(g_cfg.trn_type)
         self._robot.spawn(self._env, g_cfg.on_rack)
         self.moveRobotOnTerrain()

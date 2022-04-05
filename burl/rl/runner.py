@@ -159,7 +159,7 @@ class PolicyTrainer(OnPolicyRunner):
         self.task_prototype = CentralizedTask()
         super().__init__(
             make_env=make_part(FixedTgEnv, make_robot=AlienGo,
-                               make_task=self.task_prototype.make_distribution(get_task(task_type))),
+                               make_task=self.task_prototype.spawner(get_task(task_type))),
             make_actor=make_part(Actor, ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                                  g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims,
                                  g_cfg.init_noise_std),
@@ -185,7 +185,7 @@ class TeacherPlayer(object):
     def __init__(self, model_path, task_type='basic'):
         task_prototype = CentralizedTask()
         self.env = SingleEnvContainer(make_part(FixedTgEnv, AlienGo,
-                                                task_prototype.make_distribution(get_task(task_type)),
+                                                task_prototype.spawner(get_task(task_type)),
                                                 'noisy_extended'))
         self.policy = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                             g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims).to(g_cfg.dev)
@@ -218,7 +218,7 @@ class StudentPlayer(object):
     def __init__(self, model_path, task_type='basic'):
         task_prototype = CentralizedTask()
         self.env = SingleEnvContainer(make_part(
-            FixedTgEnv, AlienGo, task_prototype.make_distribution(get_task(task_type)),
+            FixedTgEnv, AlienGo, task_prototype.spawner(get_task(task_type)),
             obs_types=('noisy_proprio_info', 'noisy_realworld')))
         teacher = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                         g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
