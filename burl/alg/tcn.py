@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Union
 
 import torch
 import torch.nn as nn
@@ -17,7 +17,7 @@ class CausalConv(nn.Module):
     """input: ... old ... new"""
 
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int = 1,
-                 padding: str | int = 0, dilation: int = 1):
+                 padding: Union[str, int] = 0, dilation: int = 1):
         super().__init__()
         self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, stride, 0, dilation)
         if padding != 0 and padding != 'valid':

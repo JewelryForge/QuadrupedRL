@@ -1,9 +1,10 @@
 import sys
-
 from os.path import dirname, abspath
+
 sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
+from burl.exp import find_log, parse_args
 from burl.rl.runner import PolicyTrainer
-from burl.utils import g_cfg, log_warn, init_logger, parse_args, find_log
+from burl.utils import g_cfg, log_warn, init_logger
 import wandb
 
 resume_params = {'run_id': None, 'time': None, 'epoch': None}

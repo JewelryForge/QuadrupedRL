@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import math
 from collections import deque
-from typing import Any, Callable, Optional as Opt, Type
+from typing import Any, Callable, Optional as Opt, Type, Union
 
 import numpy as np
 import pybullet as pyb
@@ -53,7 +51,7 @@ class QuadrupedEnv(object):
 
     def __init__(self, make_robot: Callable[..., Quadruped],
                  make_task: Callable[..., BasicTask] = BasicTask,
-                 obs_types: tuple[str, ...] | str = ()):
+                 obs_types: Union[tuple[str, ...], str] = ()):
         self._gui = g_cfg.rendering
         self._env = BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb  # for pylint
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -81,7 +79,7 @@ class QuadrupedEnv(object):
         self._external_torque = np.array((0., 0., 0.))
         self._task.on_init()
 
-    def setObservationTypes(self, obs_types: str | tuple[str], *other_obs_types: str):
+    def setObservationTypes(self, obs_types: Union[str, tuple[str]], *other_obs_types: str):
         if isinstance(obs_types, str):
             self._obs_types = (obs_types,) + other_obs_types
         else:
@@ -502,7 +500,7 @@ class FixedTgEnv(IkEnv):
         obs.external_torque = self._external_torque
         return obs
 
-    def step(self, action: Action | np.ndarray):
+    def step(self, action: Union[Action, np.ndarray]):
         if not isinstance(action, Action):
             action = Action.from_array(action)
         self._stm.update((0.,) * 4)

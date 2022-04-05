@@ -2,12 +2,9 @@ import sys
 from os.path import dirname, abspath
 
 sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
-
-from burl.utils import g_cfg, set_logger_level, init_logger, find_log, find_log_remote, make_part
+from burl.exp import find_log, find_csc
+from burl.utils import g_cfg, set_logger_level, init_logger
 from burl.rl.runner import TeacherPlayer, JoystickTeacherPlayer as JoystickPlayer
-
-find_csc = make_part(find_log_remote, host='csc')
-find_huzhou = make_part(find_log_remote, host='huzhou')
 
 if __name__ == '__main__':
     g_cfg.trn_type = 'curriculum'

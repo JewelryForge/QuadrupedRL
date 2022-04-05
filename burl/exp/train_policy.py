@@ -1,10 +1,11 @@
+import os
 import sys
 from os.path import dirname, abspath
 
 sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
-from burl.exp import update_cfg_from_args
+from burl.exp import teacher_log_dir as log_dir, get_timestamp, update_cfg_from_args
 from burl.rl.runner import PolicyTrainer
-from burl.utils import g_cfg, log_warn, init_logger, get_timestamp
+from burl.utils import g_cfg, log_warn, init_logger
 import wandb
 
 
@@ -25,9 +26,10 @@ def main():
                mode=None if g_cfg.use_wandb else 'disabled')
     if not g_cfg.log_dir:
         if g_cfg.use_wandb:
-            g_cfg.log_dir = f'log/{get_timestamp(wandb.run.start_time)}#{wandb.run.name}@{wandb.run.id}'
+            start_time, run_name, run_id = wandb.run.start_time, wandb.run.name, wandb.run.id
+            g_cfg.log_dir = os.path.join(log_dir, f'{get_timestamp(start_time)}#{run_name}@{run_id}')
         else:
-            g_cfg.log_dir = f'log/{get_timestamp()}'
+            g_cfg.log_dir = os.path.join(log_dir, f'{get_timestamp()}')
     wandb.config.update(g_cfg.__dict__)
     runner = PolicyTrainer(g_cfg.task_type)
     runner.learn()

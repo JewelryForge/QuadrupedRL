@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import math
 import os.path
 import random
 from collections import deque
-from typing import Optional as Opt
+from typing import Optional as Opt, Union
 
 import numpy as np
 import pybullet as pyb
@@ -51,8 +49,8 @@ class Quadruped(object):
     FOOT_RADIUS: float
     TORQUE_LIMITS: tuple
     ROBOT_SIZE: tuple
-    P_PARAMS: float | tuple
-    D_PARAMS: float | tuple
+    P_PARAMS: Union[float, tuple]
+    D_PARAMS: Union[float, tuple]
 
     WORLD_FRAME = -1
     BASE_FRAME = 0
@@ -60,8 +58,11 @@ class Quadruped(object):
     SHOULDER_FRAME = 2
     INIT_FRAME = 3
 
-    def __init__(self, execution_frequency=500, latency: float | tuple[float, float] = 0., motor_latencies=(0., 0.),
-                 random_dynamics=False, self_collision_enabled=False, actuator_net: str | ActuatorNetManager = None):
+    def __init__(self, execution_frequency=500,
+                 latency: Union[float, tuple[float, float]] = 0.,
+                 motor_latencies=(0., 0.),
+                 random_dynamics=False, self_collision_enabled=False,
+                 actuator_net: Union[str, ActuatorNetManager] = None):
         """
         Initialize inner states and motor models.
         Explicitly call method `spawn` to load its urdf model to a certain pybullet client.
@@ -164,7 +165,7 @@ class Quadruped(object):
             joint_type = self.JOINT_TYPES.index(joint_type)
         return self._getJointId(leg, joint_type)
 
-    def _getJointId(self, leg: int | str, joint_type: int | str = 0):
+    def _getJointId(self, leg: Union[int, str], joint_type: Union[int, str] = 0):
         if joint_type < 0:
             joint_type += 4
         return self._joint_ids[leg * 4 + joint_type]

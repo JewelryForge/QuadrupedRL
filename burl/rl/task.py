@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 import random
 from typing import Type
@@ -84,7 +82,7 @@ class BasicTask(RewardRegistry):
         info = {}
         for plg in self.plugins:
             if plg_info := plg.on_step(self, self._robot, self._env):
-                info |= plg_info
+                info.update(plg_info)
         return info
 
     def reset(self):

@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import math
 import time
 from itertools import chain
+from typing import Union
 
 import numpy as np
 import pybullet as pyb
@@ -21,7 +20,7 @@ class Plugin(object):
     def on_sim_step(self, task, robot, env):
         pass
 
-    def on_step(self, task, robot, env) -> dict | None:
+    def on_step(self, task, robot, env) -> Union[dict, None]:
         pass
 
     def on_reset(self, task, robot, env):

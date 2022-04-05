@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Union
 
 import torch
 import torch.nn.functional as f
@@ -81,8 +81,8 @@ class Dagger(object):
     def get_policy(self, teacher, student):
         teacher_prop = self.get_teacher_prop(self.num_epochs)
 
-        def _policy(teacher_obs: torch.Tensor | tuple[torch.Tensor],
-                    student_obs: torch.Tensor | tuple[torch.Tensor]) -> torch.Tensor:
+        def _policy(teacher_obs: Union[torch.Tensor, tuple[torch.Tensor]],
+                    student_obs: Union[torch.Tensor, tuple[torch.Tensor]]) -> torch.Tensor:
             tp, sp = teacher.get_policy(), student.get_policy()
             if teacher_prop == 1.0:
                 return tp(*teacher_obs) if isinstance(teacher_obs, tuple) else tp(teacher_obs)

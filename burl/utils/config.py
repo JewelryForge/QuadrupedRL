@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
+from typing import Union
+
 import torch
 
 
@@ -16,7 +16,7 @@ class Options(object):
     lr_scheduler: str = ''
     task_type: str = 'basic'
     random_dynamics: bool = False
-    actuator_net: str | None = None
+    actuator_net: Union[str, None] = None
     use_centralized_curriculum: bool = False
     aggressive: bool = False
 
