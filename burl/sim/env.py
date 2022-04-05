@@ -67,7 +67,6 @@ class QuadrupedEnv(object):
         self._external_force = np.array((0., 0., 0.))
         self._external_torque = np.array((0., 0., 0.))
         self._task.on_init()
-        self._prepareSimulation()
 
     def setObservationTypes(self, obs_types: str | tuple[str], *other_obs_types: str):
         if isinstance(obs_types, str):
@@ -98,6 +97,7 @@ class QuadrupedEnv(object):
     exec_freq = property(lambda self: g_cfg.execution_frequency)
 
     def initObservation(self):
+        self._prepareSimulation()
         self.updateObservation()
         return self.makeObservation()
 

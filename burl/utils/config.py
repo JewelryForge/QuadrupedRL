@@ -24,7 +24,7 @@ class Options(object):
 @dataclass
 class PhysicsParam(object):
     self_collision_enabled: bool = False
-    latency_range: tuple[float, float] = (0., 0.)
+    latency_range: tuple[float, float] = (0., 0.03)
     motor_latencies: tuple[float, float] = (0., 0.)
     joint_friction: float = 0.025
     foot_lateral_friction: float = 0.4
@@ -66,7 +66,7 @@ class PPOParam(object):
     gamma: float = 0.99
     lambda_gae: float = 0.95
     value_loss_coeff: float = 1.0
-    entropy_coeff: float = 4e-3
+    entropy_coeff: float = 3e-3
     learning_rate: float = 1e-4
     max_grad_norm: float = 1.0
 
