@@ -103,6 +103,19 @@ class SingleEnvContainer(EnvContainer):
 #                 p.join()
 #         return self.merge_results(results)
 
+class torch_single_thread(object):
+    def __init__(self):
+        self.num_threads = torch.get_num_threads()
+        # self.num_interop_threads = torch.get_num_interop_threads()
+
+    def __enter__(self):
+        torch.set_num_threads(1)
+        # torch.set_num_interop_threads(1)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        torch.set_num_threads(self.num_threads)
+        # torch.set_num_interop_threads(self.num_interop_threads)
+
 
 class EnvContainerMp2(EnvContainer):
     CMD_RESET = 0
@@ -123,6 +136,8 @@ class EnvContainerMp2(EnvContainer):
     @staticmethod
     def step_in_process(make_env, conn):
         env = make_env()
+        # Explicitly prohibit multithread AcNet calculation
+        torch.set_num_threads(1)
         obs = env.initObservation()
         conn.send(obs)
         while True:

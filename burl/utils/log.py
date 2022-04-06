@@ -1,6 +1,7 @@
 import logging
 import os
 from logging.handlers import SocketHandler
+from typing import Optional
 
 import numpy as np
 import torch
@@ -45,7 +46,7 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
-logger: logging.Logger = None
+logger: Optional[logging.Logger] = None
 
 
 def init_logger(name=__name__,

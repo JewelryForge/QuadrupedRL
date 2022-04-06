@@ -57,10 +57,10 @@ if __name__ == '__main__':
     import os
 
     sys.path.append('D:/Workspaces/teacher-student')
-    from matplotlib import pyplot as plt
+    import matplotlib.pyplot as plt
     import wandb
     from burl.sim.tg import vertical_tg
-    from burl.utils import get_timestamp
+    from burl.exp import get_timestamp
 
     hidden_dims = eval(sys.argv[1])
     closed_tg = vertical_tg(h=0.12)

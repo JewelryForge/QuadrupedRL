@@ -1,10 +1,10 @@
 import time
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 
 def plot_trajectory(axis_range=(-0.3, 0.3, -0.4, -0.1)):
+    import matplotlib.pyplot as plt
     plt.ion()
     fig, ax = plt.subplots(2, 2)
     axes = [*ax[0], *ax[1]]

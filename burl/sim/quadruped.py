@@ -677,7 +677,7 @@ class A1(Quadruped):
     def analyticalInverseKinematics(self, leg: int, pos: ARRAY_LIKE, frame=Quadruped.BASE_FRAME):
         """
         Calculate analytical inverse kinematics of certain leg, unconsidered about joint angle limits.
-        Currently only positions beneath the robot are supported.
+        Currently, only positions beneath the robot are supported.
         """
         # if isinstance(leg, str):
         #     leg = self.LEG_NAMES.index(leg)
@@ -687,7 +687,7 @@ class A1(Quadruped):
 
         def _ik_hip_frame(_pos):
             while True:
-                dx, dy, dz = _pos  # dz must lower than shoulder length
+                dx, dy, dz = _pos  # dz must lower than shoulder-length
                 l_stretch = math.sqrt((_pos ** 2).sum() - l_shoulder ** 2)
                 a_hip_bias = math.atan2(dy, dz)
                 try:
