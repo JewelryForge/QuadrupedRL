@@ -108,12 +108,14 @@ class OnPolicyRunner(object):
         log_info(f"Learning Time: {locs['learning_time']:.3f}")
 
         fps = int(g_cfg.storage_len * self.env.num_envs / (locs['collection_time'] + locs['learning_time']))
+        num_frames = it * g_cfg.num_envs * g_cfg.storage_len
         logs = {'Loss/value_function': locs['mean_value_loss'],
                 'Loss/surrogate': locs['mean_surrogate_loss'],
                 'Loss/learning_rate': self.alg.learning_rate,
                 'Perform/total_fps': fps,
                 'Perform/collection time': locs['collection_time'],
-                'Perform/learning_time': locs['learning_time']}
+                'Perform/learning_time': locs['learning_time'],
+                'Perform/num_frames': num_frames}
         logs.update(self.get_policy_info())
         logs.update({f'Reward/{k}': v for k, v in locs['accountant'].report().items()})
         logs.update({f'Task/{k}': v.numpy().mean() for k, v in locs['task_infos'].items()})
@@ -125,7 +127,7 @@ class OnPolicyRunner(object):
                          'Train/mean_episode_length': eps_len_mean}),
             log_info(f"{'Mean Reward:'} {reward_mean:.3f}")
             log_info(f"{'Mean EpsLen:'} {eps_len_mean:.1f}")
-        log_info(f"Total Frames: {it * g_cfg.num_envs * g_cfg.storage_len}")
+        log_info(f"Total Frames: {num_frames}")
 
         wandb.log(logs, step=it)
 

@@ -109,7 +109,7 @@ def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log/te
 
 find_csc = make_part(find_log_remote, host='csc')
 find_huzhou = make_part(find_log_remote, host='huzhou')
-
+find_wuzhen = make_part(find_log_remote, host='wuzhen')
 
 def parse_args(args: list[str] = None):
     """

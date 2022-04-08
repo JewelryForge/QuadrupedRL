@@ -2,7 +2,7 @@ import sys
 from os.path import dirname, abspath
 
 sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
-from burl.exp import find_log, find_csc
+from burl.exp import find_log, find_csc, find_wuzhen
 from burl.utils import g_cfg, set_logger_level, init_logger
 from burl.rl.runner import TeacherPlayer, JoystickTeacherPlayer as JoystickPlayer
 
@@ -17,9 +17,9 @@ if __name__ == '__main__':
     # g_cfg.latency_range = (0.02, 0.03)
     init_logger()
     set_logger_level('debug')
-    remote = False
+    remote = True
     if remote:
-        model_path = find_csc(run_name='', time_=None, epoch=None)
+        model_path = find_wuzhen(run_name='2.8.1.1p64r2', time_=None, epoch=None)
         # model_path = find_huzhou(run_name='2.8.0.21m2', time_=None, epoch=None)
     else:
         model_path = find_log(run_name='2.8.0.25', time_=None, epoch=None)

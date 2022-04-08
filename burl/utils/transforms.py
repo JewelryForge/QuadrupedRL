@@ -124,7 +124,7 @@ class Odometry(object):
 
 class Quaternion(NDArrayBased):
     """
-    q = [x y z w] = w + xi +yj + zk
+    q = [x y z w] = w + xi + yj + zk
     """
     THRESHOLD = 1e-5
 
