@@ -13,7 +13,7 @@ from burl.alg.dagger import SlidingWindow
 from burl.alg.ppo import PPO
 from burl.alg.student import Student
 from burl.rl.task import get_task, CentralizedTask
-from burl.sim.env import FixedTgEnv, robot_auto_maker
+from burl.sim.env import FixedTgEnv, AlienGo
 from burl.sim.motor import ActuatorNetManager
 from burl.sim.parallel import EnvContainerMp2, EnvContainer, SingleEnvContainer
 from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ExtendedObservation, ProprioInfo
@@ -162,7 +162,7 @@ class PolicyTrainer(OnPolicyRunner):
             self.acnet_manager = ActuatorNetManager(g_cfg.actuator_net)
         else:
             self.acnet_manager = g_cfg.actuator_net
-        make_robot = robot_auto_maker(actuator_net=self.acnet_manager)
+        make_robot = AlienGo.auto_maker(actuator_net=self.acnet_manager)
         super().__init__(
             make_env=make_part(FixedTgEnv, make_robot=make_robot,
                                make_task=self.task_prototype.spawner(get_task(task_type))),
@@ -190,7 +190,7 @@ class PolicyTrainer(OnPolicyRunner):
 class TeacherPlayer(object):
     def __init__(self, model_path, task_type='basic'):
         task_proto = CentralizedTask()
-        make_robot = robot_auto_maker(actuator_net=g_cfg.actuator_net)
+        make_robot = AlienGo.auto_maker(actuator_net=g_cfg.actuator_net)
         make_env = make_part(FixedTgEnv, make_robot, task_proto.spawner(get_task(task_type)), 'noisy_extended')
         self.env = SingleEnvContainer(make_env)
         self.policy = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
@@ -223,7 +223,7 @@ class TeacherPlayer(object):
 class StudentPlayer(object):
     def __init__(self, model_path, task_type='basic'):
         task_proto = CentralizedTask()
-        make_robot = robot_auto_maker(actuator_net=g_cfg.actuator_net)
+        make_robot = AlienGo.auto_maker(actuator_net=g_cfg.actuator_net)
         make_env = make_part(FixedTgEnv, make_robot, task_proto.spawner(get_task(task_type)),
                              obs_types=('noisy_proprio_info', 'noisy_realworld'))
         self.env = SingleEnvContainer(make_env)

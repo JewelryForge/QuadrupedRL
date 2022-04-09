@@ -58,6 +58,20 @@ class Quadruped(object):
     SHOULDER_FRAME = 2
     INIT_FRAME = 3
 
+    @classmethod
+    def auto_maker(cls, latency=None, random_dynamics=None, motor_latencies=None, actuator_net=None):
+        from burl.utils import g_cfg
+        if latency is None:
+            latency = g_cfg.latency_range
+        if random_dynamics is None:
+            random_dynamics = g_cfg.random_dynamics
+        if motor_latencies is None:
+            motor_latencies = g_cfg.motor_latencies
+        if actuator_net is None:
+            actuator_net = g_cfg.actuator_net
+        return make_part(cls, latency=latency, random_dynamics=random_dynamics,
+                         motor_latencies=motor_latencies, actuator_net=actuator_net)
+
     def __init__(self, execution_frequency=500,
                  latency: Union[float, tuple[float, float]] = 0.,
                  motor_latencies=(0., 0.),
@@ -812,7 +826,7 @@ if __name__ == '__main__':
     pyb.setTimeStep(2e-3)
     pyb.setAdditionalSearchPath(pybullet_data.getDataPath())
     terrain = Plain()
-    _robot = AlienGo()
+    _robot = AlienGo.auto_maker()()
     terrain.spawn(pyb)
     _robot.spawn(on_rack=False)
     # robot.analyseJointInfos()
@@ -822,6 +836,7 @@ if __name__ == '__main__':
         pyb.stepSimulation()
         _robot.updateObservation()
         _, _, view_mat, proj_mat, *_ = pyb.getDebugVisualizerCamera()
-        _, _, rgba, *_ = pyb.getCameraImage(*(1024, 768), view_mat, proj_mat)
+        _, _, rgba, *_ = pyb.getCameraImage(*(1024, 768), view_mat, proj_mat,
+                                            renderer=pyb.ER_BULLET_HARDWARE_OPENGL)
         # time.sleep(1. / 500)
         tq = _robot.applyCommand(_robot.STANCE_POSTURE)

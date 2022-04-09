@@ -14,24 +14,7 @@ from burl.sim.tg import TgStateMachine, vertical_tg
 from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
 from burl.utils.transforms import Rpy, Rotation, Quaternion
 
-__all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv', 'robot_auto_maker']
-
-
-def robot_auto_maker(robot_class: Type[Quadruped] = AlienGo,
-                     latency=None,
-                     random_dynamics=None,
-                     motor_latencies=None,
-                     actuator_net=None):
-    if not latency:
-        latency = g_cfg.latency_range
-    if not random_dynamics:
-        random_dynamics = g_cfg.random_dynamics
-    if not motor_latencies:
-        motor_latencies = g_cfg.motor_latencies
-    if not actuator_net:
-        actuator_net = g_cfg.actuator_net
-    return make_part(robot_class, latency=latency, random_dynamics=random_dynamics,
-                     motor_latencies=motor_latencies, actuator_net=actuator_net)
+__all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv']
 
 
 class QuadrupedEnv(object):
@@ -55,12 +38,12 @@ class QuadrupedEnv(object):
         self._rendering, self._gui = g_cfg.rendering, g_cfg.gui
         if True:
             if self._rendering:
-                self._env = BulletClient(pyb.GUI, options=f'--width=1024 --height=768 --mp4fps={g_cfg.fps}')
+                self._pyb = BulletClient(pyb.GUI, options=f'--width=1024 --height=768 --mp4fps={g_cfg.fps}')
             else:
-                self._env = BulletClient(pyb.DIRECT)
+                self._pyb = BulletClient(pyb.DIRECT)
         else:
-            self._env = pyb  # for pylint
-        self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
+            self._pyb = pyb  # for pylint
+        self._pyb.setAdditionalSearchPath(pybullet_data.getDataPath())
         self.setObservationTypes(obs_types)
         # self._loadEgl()
         if self._rendering:
@@ -71,7 +54,7 @@ class QuadrupedEnv(object):
         self._robot: Quadruped = make_robot(execution_frequency=self.exec_freq)
         self._task = make_task(env=self)
         self._terrain = self._task.make_terrain(g_cfg.trn_type)
-        self._robot.spawn(self._env, g_cfg.on_rack)
+        self._robot.spawn(self._pyb, g_cfg.on_rack)
         self.moveRobotOnTerrain()
 
         self._setPhysicsParameters()
@@ -104,7 +87,7 @@ class QuadrupedEnv(object):
 
     sim_time = property(lambda self: self._sim_step_counter / g_cfg.sim_frequency)
     sim_step = property(lambda self: self._sim_step_counter)
-    client = property(lambda self: self._env)
+    client = property(lambda self: self._pyb)
     robot = property(lambda self: self._robot)
     terrain = property(lambda self: self._terrain)
     task = property(lambda self: self._task)
@@ -125,9 +108,9 @@ class QuadrupedEnv(object):
         init_height = self._est_height + self._robot.INIT_HEIGHT
         orn = Quaternion.from_rotation(self.getLocalTerrainRotation()).inverse()
         while True:
-            self._env.resetBasePositionAndOrientation(self._robot.id, (0., 0., init_height), orn)
-            self._env.performCollisionDetection()
-            if not self._env.getContactPoints(self._robot.id, self._terrain.id):
+            self._pyb.resetBasePositionAndOrientation(self._robot.id, (0., 0., init_height), orn)
+            self._pyb.performCollisionDetection()
+            if not self._pyb.getContactPoints(self._robot.id, self._terrain.id):
                 break
             init_height += 0.01
 
@@ -143,8 +126,8 @@ class QuadrupedEnv(object):
         return False
 
         # if not self._sim_step_counter:
-        #     self._env.performCollisionDetection()
-        # for contact_point in self._env.getContactPoints(self._robot.id, self._terrain.id):
+        #     self._pyb.performCollisionDetection()
+        # for contact_point in self._pyb.getContactPoints(self._robot.id, self._terrain.id):
         #     if contact_point[8] < -0.01:
         #         return True
         # return False
@@ -153,43 +136,43 @@ class QuadrupedEnv(object):
         pass
         # for _ in range(300):
         #     self._robot.applyTorques((0.,) * 12)
-        #     self._env.stepSimulation()
+        #     self._pyb.stepSimulation()
 
     def _loadEgl(self):
         import pkgutil
         if egl := pkgutil.get_loader('eglRenderer'):
             log_info(f'LoadPlugin: {egl.get_filename()}_eglRendererPlugin')
-            self._env.loadPlugin(egl.get_filename(), '_eglRendererPlugin')
+            self._pyb.loadPlugin(egl.get_filename(), '_eglRendererPlugin')
         else:
-            self._env.loadPlugin("eglRendererPlugin")
+            self._pyb.loadPlugin("eglRendererPlugin")
 
     def _prepareRendering(self):
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_TINY_RENDERER, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_SHADOWS, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RGB_BUFFER_PREVIEW, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_DEPTH_BUFFER_PREVIEW, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_TINY_RENDERER, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_SHADOWS, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_RGB_BUFFER_PREVIEW, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_DEPTH_BUFFER_PREVIEW, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
 
     def _initRendering(self):
-        self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
+        self._dbg_reset = self._pyb.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
 
     def _updateRendering(self):
         if not self._init_rendering:
             self._initRendering()
-        if (current := self._env.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
+        if (current := self._pyb.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
             self._reset_counter = current
             self.reset()
-        self._env.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
 
     def _setPhysicsParameters(self):
-        # self._env.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
-        self._env.setTimeStep(1 / self.sim_freq)
-        self._env.setGravity(0, 0, -9.8)
+        # self._pyb.setPhysicsEngineParameter(numSolverIterations=self._num_bullet_solver_iterations)
+        self._pyb.setTimeStep(1 / self.sim_freq)
+        self._pyb.setGravity(0, 0, -9.8)
 
     def setDisturbance(self, force=(0.,) * 3, torque=(0.,) * 3):
         self._external_force = np.asarray(force)
@@ -295,7 +278,7 @@ class QuadrupedEnv(object):
                     torques = self._robot.applyCommand(action)
 
             self._applyDisturbanceOnRobot()
-            self._env.stepSimulation()
+            self._pyb.stepSimulation()
             self._sim_step_counter += 1
             if update_execution:
                 self.updateObservation()
@@ -324,9 +307,9 @@ class QuadrupedEnv(object):
 
     def _applyDisturbanceOnRobot(self):
         self._applied_link_id = 0
-        self._env.applyExternalForce(objectUniqueId=self._robot.id, linkIndex=self._applied_link_id,
+        self._pyb.applyExternalForce(objectUniqueId=self._robot.id, linkIndex=self._applied_link_id,
                                      forceObj=self._external_force, posObj=(0.0, 0.0, 0.0), flags=pyb.LINK_FRAME)
-        self._env.applyExternalTorque(objectUniqueId=self._robot.id, linkIndex=self._applied_link_id,
+        self._pyb.applyExternalTorque(objectUniqueId=self._robot.id, linkIndex=self._applied_link_id,
                                       torqueObj=self._external_torque, flags=pyb.LINK_FRAME)
 
     def reset(self):
@@ -345,9 +328,9 @@ class QuadrupedEnv(object):
     # def reload(self):
     #     self._task.reset()
     #     self._resetStates()
-    #     self._env.resetSimulation()
+    #     self._pyb.resetSimulation()
     #     self._setPhysicsParameters()
-    #     self._terrain.spawn(self._env)
+    #     self._terrain.spawn(self._pyb)
     #     self._robot.reset(reload=True)
     #     self.moveRobotOnTerrain()
     #     self._prepareSimulation()
@@ -355,7 +338,7 @@ class QuadrupedEnv(object):
     #     return self.makeObservation()
 
     def close(self):
-        self._env.disconnect()
+        self._pyb.disconnect()
 
     def getActionMutation(self):
         if len(self._action_history) < 3:
@@ -536,7 +519,7 @@ class FixedTgEnv(IkEnv):
         for _ in range(100):
             self._robot.updateMinimalObservation()
             self._robot.applyCommand(self._robot.STANCE_POSTURE)
-            self._env.stepSimulation()
+            self._pyb.stepSimulation()
 
 
 if __name__ == '__main__':
@@ -556,7 +539,7 @@ if __name__ == '__main__':
     np.set_printoptions(precision=3, linewidth=1000)
     tg = True
     if tg:
-        env = FixedTgEnv(robot_auto_maker())
+        env = FixedTgEnv(AlienGo.auto_maker())
         env.initObservation()
         for i in range(1, 10000):
             *_, reset, _ = env.step(Action())

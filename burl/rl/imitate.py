@@ -12,7 +12,7 @@ from burl.alg.dagger import Dagger
 from burl.alg.student import Student
 from burl.rl.runner import Accountant
 from burl.rl.task import get_task, CentralizedTask
-from burl.sim.env import FixedTgEnv, robot_auto_maker
+from burl.sim.env import FixedTgEnv, AlienGo
 from burl.sim.motor import ActuatorNetManager
 from burl.sim.parallel import EnvContainerMp2, EnvContainer
 from burl.sim.state import ExteroObservation, RealWorldObservation, Action, ProprioInfo
@@ -173,7 +173,7 @@ class ImitationRunner(object):
             self.acnet_manager = ActuatorNetManager(g_cfg.actuator_net)
         else:
             self.acnet_manager = g_cfg.actuator_net
-        make_robot = robot_auto_maker(actuator_net=self.acnet_manager)
+        make_robot = AlienGo.auto_maker(actuator_net=self.acnet_manager)
 
         self.obj = ImitationLearning(
             g_cfg.num_envs,
