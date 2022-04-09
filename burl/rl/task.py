@@ -46,21 +46,21 @@ class BasicTask(RewardRegistry):
 
     def make_terrain(self, terrain_type: str) -> Terrain:
         if terrain_type == 'plain':
-            terrain_inst = Plain()
+            terrain_obj = Plain()
         elif terrain_type == 'hills':
-            terrain_inst = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
+            terrain_obj = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
         elif terrain_type == 'slope':
-            terrain_inst = Slope.make(20, 0.05, 0.17, 2.0)
+            terrain_obj = Slope.make(20, 0.05, 0.17, 2.0)
         elif terrain_type == 'steps':
-            terrain_inst = Steps.make(20, 0.05, 1.0, 0.4)
+            terrain_obj = Steps.make(20, 0.05, 1.0, 0.4)
         elif terrain_type == 'stairs':
-            terrain_inst = Stairs.make(20, 0.05, 0.15, 0.3)
+            terrain_obj = Stairs.make(20, 0.05, 0.15, 0.3)
         elif terrain_type == 'curriculum':
             return self.plugin_utils['generate_terrain'](self.env.client)
         else:
             raise RuntimeError(f'Unknown terrain type {terrain_type}')
-        terrain_inst.spawn(self._env.client)
-        return terrain_inst
+        terrain_obj.spawn(self._env.client)
+        return terrain_obj
 
     def load_plugin(self, plugin: Plugin):
         self.plugins.append(plugin)

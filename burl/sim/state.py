@@ -27,8 +27,8 @@ class ObservationBase(object):
         if not self._init:
             self._init = True
             self._wb_init()
-            inst = self.__class__()
-            if not inst.to_array().shape == self.biases.shape == self.weights.shape:
+            obj = self.__class__()
+            if not obj.to_array().shape == self.biases.shape == self.weights.shape:
                 raise RuntimeError(f'{self.__class__.__name__} Shape Check Failed')
 
     @classmethod

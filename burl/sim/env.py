@@ -52,12 +52,18 @@ class QuadrupedEnv(object):
     def __init__(self, make_robot: Callable[..., Quadruped],
                  make_task: Callable[..., BasicTask] = BasicTask,
                  obs_types: Union[tuple[str, ...], str] = ()):
-        self._gui = g_cfg.rendering
-        self._env = BulletClient(pyb.GUI if self._gui else pyb.DIRECT) if True else pyb  # for pylint
+        self._rendering, self._gui = g_cfg.rendering, g_cfg.gui
+        if True:
+            if self._rendering:
+                self._env = BulletClient(pyb.GUI, options=f'--width=1024 --height=768 --mp4fps={g_cfg.fps}')
+            else:
+                self._env = BulletClient(pyb.DIRECT)
+        else:
+            self._env = pyb  # for pylint
         self._env.setAdditionalSearchPath(pybullet_data.getDataPath())
         self.setObservationTypes(obs_types)
         # self._loadEgl()
-        if self._gui:
+        if self._rendering:
             self._prepareRendering()
             self._init_rendering = False
         self._resetStates()
@@ -166,16 +172,15 @@ class QuadrupedEnv(object):
         self._env.configureDebugVisualizer(pyb.COV_ENABLE_DEPTH_BUFFER_PREVIEW, False)
         self._env.configureDebugVisualizer(pyb.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, False)
 
+    def _initRendering(self):
+        self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
+        self._reset_counter = 0
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
+        self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
+
     def _updateRendering(self):
         if not self._init_rendering:
-            self._dbg_reset = self._env.addUserDebugParameter('reset', 1, 0, 0)
-            self._reset_counter = 0
-
-            self._env.resetDebugVisualizerCamera(
-                1.5, 0., 0., (0., 0., self._robot.STANCE_HEIGHT + self.getTerrainHeight(0., 0.)))
-            self._env.configureDebugVisualizer(pyb.COV_ENABLE_GUI, True)
-            self._env.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
-            self._init_rendering = True
+            self._initRendering()
         if (current := self._env.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
             self._reset_counter = current
             self.reset()
@@ -282,7 +287,7 @@ class QuadrupedEnv(object):
         for i in range(self._num_action_repeats):
             update_execution = self._sim_step_counter % self._num_execution_repeats == 0
             if update_execution:
-                if g_cfg.use_action_interpolation:
+                if g_cfg.use_action_interp:
                     weight = (i + 1) / self._num_action_repeats
                     current_action = action * weight + prev_action * (1 - weight)
                     torques = self._robot.applyCommand(current_action)
@@ -298,7 +303,7 @@ class QuadrupedEnv(object):
                 for n, r in self._task.reward_details.items():
                     reward_details[n] = reward_details.get(n, 0) + r
             self._task.on_sim_step()
-        if self._gui:
+        if self._rendering:
             self._updateRendering()
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats

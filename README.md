@@ -11,7 +11,8 @@ This is an environment for learning quadrupedal locomotion depending on [bullet 
 - Imitation Learning from privileged teacher to proprioceptive student
 
 <div align=center>
-<img src="resources/record.gif" alt="record" style="zoom:150%;" />
+<img src="resources/lin.gif" alt="linear" style=" zoom:100%;" />
+<img src="resources/rot.gif" alt="rotate" style=" zoom:100%;" />
 </div>
 
 Requirements: `python>=3.9`, `pybullet>=3.2`, `torch>=1.10`, `numpy`, `scipy`, `wandb`

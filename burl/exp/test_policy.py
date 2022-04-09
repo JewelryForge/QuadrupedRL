@@ -27,4 +27,4 @@ if __name__ == '__main__':
         player = JoystickPlayer(model_path)
     else:
         player = TeacherPlayer(model_path, 'randCmd')
-    player.play(True)
+    player.play(allow_reset=True)

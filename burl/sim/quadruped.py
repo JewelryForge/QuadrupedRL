@@ -814,12 +814,14 @@ if __name__ == '__main__':
     terrain = Plain()
     _robot = AlienGo()
     terrain.spawn(pyb)
-    _robot.spawn(on_rack=True)
+    _robot.spawn(on_rack=False)
     # robot.analyseJointInfos()
     pyb.setGravity(0, 0, -9.8)
 
     for _ in range(100000):
         pyb.stepSimulation()
         _robot.updateObservation()
+        _, _, view_mat, proj_mat, *_ = pyb.getDebugVisualizerCamera()
+        _, _, rgba, *_ = pyb.getCameraImage(*(1024, 768), view_mat, proj_mat)
         # time.sleep(1. / 500)
         tq = _robot.applyCommand(_robot.STANCE_POSTURE)

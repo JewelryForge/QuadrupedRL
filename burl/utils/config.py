@@ -39,12 +39,13 @@ class SimParam(PhysicsParam):
     sim_frequency: int = 500
     execution_frequency: int = 500
     max_sim_iterations: int = 10000
-    use_action_interpolation: bool = True
+    use_action_interp: bool = True
 
 
 @dataclass
 class RenderParam(object):
     rendering: bool = False
+    gui: bool = False
     sleeping_enabled: bool = False
     time_ratio: float = 1.
     moving_camera: bool = True
@@ -140,6 +141,10 @@ class TaskParam(Options, SimParam, RenderParam, TrainParam, ImitationParam,
     @property
     def dev(self):
         return self.device
+
+    @property
+    def fps(self):
+        return self.sim_frequency if self.single_step_rendering else self.action_frequency
 
     def test_profile(self):
         self.test_mode = True

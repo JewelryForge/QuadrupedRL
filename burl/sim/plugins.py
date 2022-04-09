@@ -1,4 +1,5 @@
 import math
+import os.path
 import time
 from itertools import chain
 from typing import Union
@@ -6,9 +7,11 @@ from typing import Union
 import numpy as np
 import pybullet as pyb
 
-from burl.utils import UdpPublisher, Angle, unit, vec_cross, sign
+from burl.utils import UdpPublisher, Angle, unit, vec_cross, sign, log_info
 
 __all__ = ['Plugin', 'StatisticsCollector', 'InfoRenderer', 'VideoRecorder']
+
+from burl.utils.transforms import Rpy
 
 
 class Plugin(object):
@@ -154,18 +157,26 @@ class InfoRenderer(Plugin):
             env.client.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
 
     def on_init(self, task, robot, env):
-        client = env.client
+        sim_env = env.client
         if self.extra_vis:
-            self._contact_visual_shape = client.createVisualShape(
+            self._contact_visual_shape = sim_env.createVisualShape(
                 shapeType=pyb.GEOM_BOX, halfExtents=(0.03, 0.03, 0.03), rgbaColor=(0.8, 0., 0., 0.6))
-            self._terrain_visual_shape = client.createVisualShape(
+            self._terrain_visual_shape = sim_env.createVisualShape(
                 shapeType=pyb.GEOM_SPHERE, radius=0.01, rgbaColor=(0., 0.8, 0., 0.6))
-            self._terrain_indicators = [client.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
+            self._terrain_indicators = [sim_env.createMultiBody(baseVisualShapeIndex=self._terrain_visual_shape)
                                         for _ in range(36)]
         if self.moving_camera and not self.driving_mode:
-            client.resetDebugVisualizerCamera(
+            sim_env.resetDebugVisualizerCamera(
                 1.5, 0., 0., (0., 0., robot.STANCE_HEIGHT + env.getTerrainHeight(0., 0.)))
 
+        if self.driving_mode:
+            (x, y, _), orn = pyb.getBasePositionAndOrientation(robot.id)
+            z = robot.STANCE_HEIGHT + env.getTerrainHeight(x, y)
+            yaw = (Rpy.from_quaternion(orn).y - math.pi / 2) / math.pi * 180
+            sim_env.resetDebugVisualizerCamera(1.5, yaw, -30., (x, y, z))
+        elif self.moving_camera:
+            sim_env.resetDebugVisualizerCamera(
+                1.5, 0., 0., (0., 0., robot.STANCE_HEIGHT + env.getTerrainHeight(0., 0.)))
         self._last_frame_time = time.time()
 
     def on_reset(self, task, robot, env):
@@ -173,7 +184,7 @@ class InfoRenderer(Plugin):
             self._robot_yaw_filter.clear()
 
     def update_rendering(self, task, robot, env):
-        client: pyb = env.client
+        sim_env = env.client
         time_spent = time.time() - self._last_frame_time
         freq = env.sim_freq if self.single else env.action_freq
         if self.sleeping:
@@ -185,12 +196,12 @@ class InfoRenderer(Plugin):
         time_ratio = 1 / freq / time_spent
         if self.show_time_ratio:
             if self._last_time_ratio != time_ratio:
-                _time_ratio_indicator = client.addUserDebugText(
+                _time_ratio_indicator = sim_env.addUserDebugText(
                     f'{time_ratio: .2f}', textPosition=(0., 0., 0.), textColorRGB=(1., 1., 1.),
                     textSize=1, lifeTime=0, parentObjectUniqueId=robot.id,
                     replaceItemUniqueId=self._time_ratio_indicator)
                 if self._time_ratio_indicator != -1 and _time_ratio_indicator != self._time_ratio_indicator:
-                    client.removeUserDebugItem(self._time_ratio_indicator)
+                    sim_env.removeUserDebugItem(self._time_ratio_indicator)
                 self._time_ratio_indicator = _time_ratio_indicator
                 self._last_time_ratio = time_ratio
 
@@ -203,35 +214,35 @@ class InfoRenderer(Plugin):
                     self._robot_yaw_filter = self._robot_yaw_filter[-10:]
                 # To avoid carsick :)
                 mean = Angle.mean(self._robot_yaw_filter[-10:]) / math.pi * 180
-                client.resetDebugVisualizerCamera(1.5, mean, -20., (x, y, z))
+                sim_env.resetDebugVisualizerCamera(1.5, mean, -30., (x, y, z))
             else:
-                yaw, pitch, dist = client.getDebugVisualizerCamera()[8:11]
-                client.resetDebugVisualizerCamera(dist, yaw, pitch, (x, y, z))
+                yaw, pitch, dist = sim_env.getDebugVisualizerCamera()[8:11]
+                sim_env.resetDebugVisualizerCamera(dist, yaw, pitch, (x, y, z))
 
         if self.extra_vis:
             for obj in self._contact_obj_ids:
-                client.removeBody(obj)
+                sim_env.removeBody(obj)
             self._contact_obj_ids.clear()
-            for cp in client.getContactPoints(bodyA=robot.id):
+            for cp in sim_env.getContactPoints(bodyA=robot.id):
                 pos, normal, normal_force = cp[5], cp[7], cp[9]
                 if normal_force > 0.1:
-                    obj = client.createMultiBody(baseVisualShapeIndex=self._contact_visual_shape,
-                                                 basePosition=pos)
+                    obj = sim_env.createMultiBody(baseVisualShapeIndex=self._contact_visual_shape,
+                                                  basePosition=pos)
                     self._contact_obj_ids.append(obj)
             positions = chain(*[env.getAbundantTerrainInfo(x, y, robot.rpy.y)
                                 for x, y in robot.getFootXYsInWorldFrame()])
             for idc, pos in zip(self._terrain_indicators, positions):
-                client.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
+                sim_env.resetBasePositionAndOrientation(idc, posObj=pos, ornObj=(0, 0, 0, 1))
         if self.show_indicators:
             external_force, external_torque = env.getDisturbance()
             if self._external_force_buffer is not external_force:
-                _force_indicator = client.addUserDebugLine(
+                _force_indicator = sim_env.addUserDebugLine(
                     lineFromXYZ=(0., 0., 0.), lineToXYZ=external_force / 50, lineColorRGB=(1., 0., 0.),
                     lineWidth=3, lifeTime=1,
                     parentObjectUniqueId=robot.id,
                     replaceItemUniqueId=self._force_indicator)
                 if self._force_indicator != -1 and _force_indicator != self._force_indicator:
-                    client.removeUserDebugItem(self._force_indicator)
+                    sim_env.removeUserDebugItem(self._force_indicator)
                 self._force_indicator = _force_indicator
                 self._external_force_buffer = external_force
 
@@ -246,7 +257,7 @@ class InfoRenderer(Plugin):
                 self._tip_phase += math.pi / 36
                 tip_end = (self._tip_axis_x * math.cos(self._tip_phase) +
                            self._tip_axis_y * math.sin(self._tip_phase)) * magnitude / 20
-                _torque_indicator = client.addUserDebugLine(
+                _torque_indicator = sim_env.addUserDebugLine(
                     lineFromXYZ=self._tip_last_end, lineToXYZ=tip_end, lineColorRGB=(0., 0., 1.),
                     lineWidth=5, lifeTime=0.1,
                     parentObjectUniqueId=robot.id,
@@ -267,7 +278,7 @@ class InfoRenderer(Plugin):
                             phase += math.pi / 12 if i == 5 else -math.pi / 6
                             inc = -(axis_x * math.cos(phase) + axis_y * math.sin(phase)) / 15
                         end = last_end + inc
-                        _cmd_indicator = client.addUserDebugLine(
+                        _cmd_indicator = sim_env.addUserDebugLine(
                             lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
                             lineWidth=5, lifeTime=1, parentObjectUniqueId=robot.id,
                             replaceItemUniqueId=cmd_idc)
@@ -289,7 +300,7 @@ class InfoRenderer(Plugin):
                                 _phase = phase + (-math.pi / 2 - math.pi / 4) * sign(cmd[2])
                             length = radius * math.sin(abs(phase_inc) / 2) * 3
                             end = last_end + np.array((math.cos(_phase), math.sin(_phase), 0.)) * length
-                        _cmd_indicator = client.addUserDebugLine(
+                        _cmd_indicator = sim_env.addUserDebugLine(
                             lineFromXYZ=last_end, lineToXYZ=end, lineColorRGB=(1., 1., 0.),
                             lineWidth=5, lifeTime=1, parentObjectUniqueId=robot.id,
                             replaceItemUniqueId=cmd_idc)
@@ -299,16 +310,30 @@ class InfoRenderer(Plugin):
 
 
 class CameraImageRecorder(Plugin):
-    def __init__(self, fps, size=(1024, 768), dst='record.avi', single_step_rendering=False):
+    def __init__(self, fps, size=(1024, 768), dst='', single_step_rendering=False):
         try:
             import cv2
             self.size = size
             self.enabled = True
             self.single = single_step_rendering
+            if not dst:
+                from burl.exp import g_log_dir, get_timestamp
+                dst = os.path.join(g_log_dir, f'record-{get_timestamp()}.avi')
             self.writer = cv2.VideoWriter(dst, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps, size)
         except ModuleNotFoundError:
             self.enabled = False
             print('`opencv-python` is required for recording')
+
+    @classmethod
+    def is_available(cls):
+        try:
+            import cv2
+            return True
+        except ModuleNotFoundError:
+            return False
+
+    def on_init(self, task, robot, env):
+        env.client.configureDebugVisualizer(pyb.COV_ENABLE_RGB_BUFFER_PREVIEW, True)
 
     def on_step(self, task, robot, env):
         if self.enabled and not self.single:
@@ -324,24 +349,25 @@ class CameraImageRecorder(Plugin):
 
     def write_camera_image(self, sim_env):
         _, _, view_mat, proj_mat, *_ = sim_env.getDebugVisualizerCamera()
-        _, _, rgba, *_ = sim_env.getCameraImage(*self.size, view_mat, proj_mat)
+        _, _, rgba, *_ = sim_env.getCameraImage(*self.size, view_mat, proj_mat,
+                                                renderer=pyb.ER_BULLET_HARDWARE_OPENGL)
         bgr = rgba[..., 2::-1]
         self.writer.write(bgr)
 
 
 class VideoRecorder(Plugin):
-    def __init__(self, dst='record.mp4'):
-        self.dst, self.enabled = dst, True
+    def __init__(self, dst=''):
+        if not dst:
+            from burl.exp import g_log_dir, get_timestamp
+            dst = os.path.join(g_log_dir, f'record-{get_timestamp()}.mp4')
+        self.dst = dst
         self.log_id = -1
 
     def on_init(self, task, robot, env):
-        print('start recording')
+        log_info('start recording')
         self.log_id = env.client.startStateLogging(pyb.STATE_LOGGING_VIDEO_MP4, self.dst)
 
-    # def on_step(self, task, robot, env):
-    #     env.client.getCameraImage(600, 400)
-
     def on_reset(self, task, robot, env):
-        if self.enabled:
+        if self.log_id != -1:
             env.client.stopStateLogging(self.log_id)
-            self.enabled = False
+            self.log_id = -1

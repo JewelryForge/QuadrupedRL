@@ -7,11 +7,11 @@ import burl
 from burl.utils import make_part, g_cfg, log_warn
 
 __all__ = ['get_timestamp', 'str2time', 'find_log', 'find_log_remote', 'find_csc', 'find_huzhou',
-           'parse_args', 'update_cfg_from_args', 'log_dir', 'teacher_log_dir', 'student_log_dir']
+           'parse_args', 'update_cfg_from_args', 'g_log_dir', 'teacher_log_dir', 'student_log_dir']
 
-log_dir = os.path.join(os.path.dirname(burl.pkg_path), 'log')
-teacher_log_dir = os.path.join(log_dir, 'teacher')
-student_log_dir = os.path.join(log_dir, 'student')
+g_log_dir = os.path.join(os.path.dirname(burl.pkg_path), 'log')
+teacher_log_dir = os.path.join(g_log_dir, 'teacher')
+student_log_dir = os.path.join(g_log_dir, 'student')
 
 
 def get_timestamp(timestamp: Union[int, float] = None) -> str:
@@ -98,7 +98,7 @@ def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log/te
     models = os.popen(cmd).read().split('\n')
     model_name = _get_model_of_specific_epoch(models, fmt, epoch)
     remote_log = os.path.join(log_dir, folder, model_name)
-    local_log_dir = os.path.join('log', 'remote-' + folder)
+    local_log_dir = os.path.join(teacher_log_dir, 'remote-' + folder)
     if not os.path.exists(os.path.join(local_log_dir, model_name)):
         os.makedirs(local_log_dir, exist_ok=True)
         print(f'downloading model file')
