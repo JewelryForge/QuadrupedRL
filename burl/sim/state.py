@@ -150,18 +150,15 @@ class ProprioInfo(ProprioObservation):
         ))
 
 
-class RealWorldObservation(ProprioObservation):
+class RealWorldObservation(ProprioInfo):
     dim = 60 + 73
     _init = False
 
     def __init__(self):
         super().__init__()
         self.joint_prev_pos_err = zero12
-        self.ftg_phases = zero8
-        self.ftg_frequencies = zero4
         self.joint_pos_err_his = zero24
         self.joint_vel_his = zero24
-        self.joint_pos_target = zero12
         self.joint_prev_pos_target = zero12
         self.base_frequency = (0.,)
 
@@ -170,35 +167,26 @@ class RealWorldObservation(ProprioObservation):
         if cls._init:
             return
         cls._init = True
-        ProprioObservation._wb_init()
+        ProprioInfo._wb_init()
         joint_prev_pos_err_bias, joint_prev_pos_err_weight = zero12, (6.5, 4.5, 3.5) * 4
-        ftg_phases_bias, ftg_phases_weight = zero8, (1.,) * 8
-        ftg_frequencies_bias, ftg_frequencies_weight = (get_base_frequency(),) * 4, (100.,) * 4
         joint_pos_err_his_bias, joint_pos_err_his_weight = zero24, (5.,) * 24
         joint_vel_his_bias, joint_vel_his_weight = zero24, (0.5, 0.4, 0.3) * 8
-        joint_pos_target_bias, joint_pos_target_weight = get_robot_type().STANCE_POSTURE, (2.,) * 12
         joint_prev_pos_target_bias, joint_prev_pos_target_weight = get_robot_type().STANCE_POSTURE, (2.,) * 12
         base_frequency_bias, base_frequency_weight = (get_base_frequency(),), (1.,)
         cls.biases = np.concatenate((
-            ProprioObservation.biases,
+            ProprioInfo.biases,
             joint_prev_pos_err_bias,
-            ftg_phases_bias,
-            ftg_frequencies_bias,
             joint_pos_err_his_bias,
             joint_vel_his_bias,
-            joint_pos_target_bias,
             joint_prev_pos_target_bias,
             base_frequency_bias,
         ))
 
         cls.weights = np.concatenate((
-            ProprioObservation.weights,
+            ProprioInfo.weights,
             joint_prev_pos_err_weight,
-            ftg_phases_weight,
-            ftg_frequencies_weight,
             joint_pos_err_his_weight,
             joint_vel_his_weight,
-            joint_pos_target_weight,
             joint_prev_pos_target_weight,
             base_frequency_weight,
         ))
@@ -207,11 +195,8 @@ class RealWorldObservation(ProprioObservation):
         return np.concatenate((
             super().to_array(),
             self.joint_prev_pos_err,
-            self.ftg_phases,
-            self.ftg_frequencies,
             self.joint_pos_err_his,
             self.joint_vel_his,
-            self.joint_pos_target,
             self.joint_prev_pos_target,
             self.base_frequency
         ))
@@ -389,4 +374,5 @@ class ObservationRaw(object):
 
 
 if __name__ == '__main__':
-    print(ProprioObservation().__dict__)
+    print(RealWorldObservation().weights)
+    print(RealWorldObservation().biases)

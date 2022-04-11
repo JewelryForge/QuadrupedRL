@@ -38,6 +38,8 @@ class Add(nn.Module):
 
 
 class TCNEncoder(nn.Module):
+    input_dim = (60, 100)
+
     def __init__(self):
         super().__init__()
         self.conv1 = CausalConv(60, 38, 5, stride=1, padding=4, dilation=1)
@@ -63,6 +65,8 @@ class TCNEncoder(nn.Module):
 
 
 class TCNEncoderNoPadding(nn.Module):
+    input_dim = (60, 123)
+
     def __init__(self):
         super().__init__()
         self.conv1 = CausalConv(60, 38, 5, stride=1, padding=0, dilation=1)

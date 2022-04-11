@@ -21,13 +21,13 @@ def main():
         g_cfg.use_wandb = False
         g_cfg.sleeping_enabled = False
         g_cfg.lr_scheduler = 'fixed'
-        g_cfg.model_path = 'log/22-03-26_19-00-16#2.8.0.21m3@26nbq4bb/model_5000.pt'
+        g_cfg.model_path = find_log()
     log_warn(f'Training on {g_cfg.device}')
 
     if not os.path.exists(g_cfg.model_path):
         if g_cfg.model_path.startswith('find'):
-            args = [_arg for arg in g_cfg.model_path.removeprefix('find(').removesuffix(')').split(',')
-                    if (_arg := arg.strip())]
+            args = [arg_s for arg in g_cfg.model_path.removeprefix('find(').removesuffix(')').split(',')
+                    if (arg_s := arg.strip())]
             arg_len = len(args)
             if arg_len == 0:
                 g_cfg.model_path = find_log()

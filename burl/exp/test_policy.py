@@ -19,10 +19,10 @@ if __name__ == '__main__':
     set_logger_level('debug')
     remote = True
     if remote:
-        model_path = find_wuzhen(run_name='2.8.1.1p64r2', time_=None, epoch=None)
+        model_path = find_wuzhen(run_name='2.8.1.3c', time_=None, epoch=None)
         # model_path = find_huzhou(run_name='2.8.0.21m2', time_=None, epoch=None)
     else:
-        model_path = find_log(run_name='2.8.0.25', time_=None, epoch=None)
+        model_path = find_log(run_name='2.8.1.3c', time_=None, epoch=None)
     if JoystickPlayer.is_available():
         player = JoystickPlayer(model_path)
     else:

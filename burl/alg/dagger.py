@@ -52,7 +52,7 @@ class SlidingWindow(object):
     def add_transition(self, proprio_obs: torch.Tensor):
         if self.num_transitions >= self.max_len:
             self.num_transitions = self.history_len - 1
-            self.obs_buffer[:self.num_transitions] = self.obs_buffer[-self.num_transitions:]
+            self.obs_buffer[..., :self.num_transitions] = self.obs_buffer[..., -self.num_transitions:]
         self.obs_buffer[..., self.num_transitions] = proprio_obs.detach()
         self.num_transitions += 1
 

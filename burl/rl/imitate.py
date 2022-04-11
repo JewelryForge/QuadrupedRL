@@ -88,7 +88,7 @@ class ImitationLearning(object):
                     self.optim.zero_grad()
                     s_encoded, s_action = self.student.get_encoded(p_obs, r_obs)
                     encoded_loss = self.criterion(s_encoded, t_encoded)
-                    action_loss = self.criterion(s_action, t_action)
+                    action_loss = self.criterion(s_action, t_action) * 10
                     loss = encoded_loss + action_loss
                     train_losses += (loss.item(), encoded_loss.item(), action_loss.item())
                     num_losses += 1
@@ -105,7 +105,7 @@ class ImitationLearning(object):
                 for p_obs, r_obs, t_encoded, t_action in tqdm(val_loader):
                     s_encoded, s_action = self.student.get_encoded(p_obs, r_obs)
                     encoded_loss = self.criterion(s_encoded, t_encoded)
-                    action_loss = self.criterion(s_action, t_action)
+                    action_loss = self.criterion(s_action, t_action) * 10
                     loss = encoded_loss + action_loss
                     val_losses += (loss.item(), encoded_loss.item(), action_loss.item())
                     num_losses += 1

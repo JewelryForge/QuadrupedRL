@@ -1,4 +1,5 @@
 import copy
+import os.path
 
 import torch
 from torch import nn
@@ -10,6 +11,8 @@ from burl.alg.tcn import TCNEncoder, TCNEncoderNoPadding
 class Student(nn.Module):
     def __init__(self, teacher: Actor, encoder_type=TCNEncoderNoPadding):
         super().__init__()
+        self.real_world_obs_dim = teacher.real_world_obs_dim
+        self.encoder_input_dim = encoder_type.input_dim
         self.locomotion_layers = copy.deepcopy(teacher.locomotion_layers).requires_grad_(False)
         self.action_layers = copy.deepcopy(teacher.action_layers).requires_grad_(False)
         self.history_encoder = encoder_type()
@@ -27,3 +30,14 @@ class Student(nn.Module):
 
     def get_policy(self):
         return lambda *x: self(*x).tanh()
+
+    def save_deployable_model(self, path=''):
+        device = next(self.parameters()).device
+        realworld_example = torch.rand(1, self.real_world_obs_dim, device=device)
+        proprio_history_example = torch.rand(1, *self.encoder_input_dim, device=device)
+        traced_script_module = torch.jit.trace(self, (proprio_history_example, realworld_example))
+        print(traced_script_module)
+        if not path:
+            from burl.exp import student_log_dir
+            path = os.path.join(student_log_dir, 'script_model.pt')
+        torch.jit.save(traced_script_module, path)

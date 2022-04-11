@@ -2,7 +2,7 @@ import math
 import os.path
 import random
 from collections import deque
-from typing import Optional as Opt, Union
+from typing import Optional as Opt, Union, Callable
 
 import numpy as np
 import pybullet as pyb
@@ -69,8 +69,9 @@ class Quadruped(object):
             motor_latencies = g_cfg.motor_latencies
         if actuator_net is None:
             actuator_net = g_cfg.actuator_net
-        return make_part(cls, latency=latency, random_dynamics=random_dynamics,
-                         motor_latencies=motor_latencies, actuator_net=actuator_net)
+        maker: Callable[..., cls] = make_part(cls, latency=latency, random_dynamics=random_dynamics,
+                                              motor_latencies=motor_latencies, actuator_net=actuator_net)
+        return maker
 
     def __init__(self, execution_frequency=500,
                  latency: Union[float, tuple[float, float]] = 0.,

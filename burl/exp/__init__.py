@@ -23,7 +23,7 @@ def str2time(time_str: str):
     try:
         if '#' in time_str:
             time_str, *_ = time_str.split('#')
-        return datetime.strptime(time_str, '%y-%m-%d_%H-%M-%S')
+        return datetime.strptime(time_str.removeprefix('remote-'), '%y-%m-%d_%H-%M-%S')
     except ValueError:
         return datetime(1900, 1, 1)
 
@@ -110,6 +110,7 @@ def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log/te
 find_csc = make_part(find_log_remote, host='csc')
 find_huzhou = make_part(find_log_remote, host='huzhou')
 find_wuzhen = make_part(find_log_remote, host='wuzhen')
+
 
 def parse_args(args: list[str] = None):
     """

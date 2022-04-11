@@ -172,8 +172,8 @@ class JointMotionPenalty(Reward):
         self.acc_reshape = np.vectorize(quadratic_linear_reshape(acc_upper))
 
     def __call__(self, cmd, env, robot):
-        return 1 - (self.vel_reshape(robot.getJointVelocities()).sum() +
-                    self.acc_reshape(robot.getJointAccelerations()).sum()) / 12
+        pen = self.vel_reshape(robot.getJointVelocities()) + self.acc_reshape(robot.getJointAccelerations())
+        return 1 - pen.sum() / 12
 
 
 class TorqueGradientPenalty(Reward):
