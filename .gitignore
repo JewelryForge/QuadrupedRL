@@ -1,4 +1,5 @@
 .idea
+.vscode
 __pycache__
 log
 log_imt
@@ -7,3 +8,4 @@ wandb
 tg_net
 ident
 cmake-build-debug
+build

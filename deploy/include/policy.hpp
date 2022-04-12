@@ -51,7 +51,12 @@ class Policy {
  public:
   explicit Policy(const std::string &model_path, const torch::DeviceType &device_type)
       : device_(device_type), module_(torch::jit::load(model_path, device_)),
-        history_(ProprioInfo::dim, 2000, 123, device_type) {}
+        history_(ProprioInfo::dim, 2000, 123, device_type) {
+    for (int i = 0; i < 10; ++i) {
+      module_.forward({torch::rand({1, 60, 123}).to(device_),
+                       torch::rand({1, RealWorldObservation::dim}).to(device_)}).toTensor();
+    }
+  }
 
   Policy(Policy &) = delete;
   Policy(const Policy &) = delete;

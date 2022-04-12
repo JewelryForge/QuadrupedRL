@@ -188,10 +188,11 @@ class PolicyTrainer(OnPolicyRunner):
 
 
 class TeacherPlayer(object):
-    def __init__(self, model_path, task_type='basic'):
+    def __init__(self, model_path, task_type='basic', seed=None):
         task_proto = CentralizedTask()
         make_robot = AlienGo.auto_maker(actuator_net=g_cfg.actuator_net)
-        make_env = make_part(FixedTgEnv, make_robot, task_proto.spawner(get_task(task_type)), 'noisy_extended')
+        make_env = make_part(FixedTgEnv, make_robot, task_proto.spawner(get_task(task_type), seed=seed),
+                             'noisy_extended')
         self.env = SingleEnvContainer(make_env)
         self.policy = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                             g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims).to(g_cfg.dev)

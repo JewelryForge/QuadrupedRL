@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "tg.hpp"
+#include "io.hpp"
 #include "math_utils.hpp"
 #include "state.hpp"
 #include "policy.hpp"
@@ -45,15 +46,21 @@ class ThreadSafe {
   T item_{};
 };
 
+
+constexpr float ALIENGO_STANCE_HEIGHT = 0.4;
+constexpr std::array<float, 12> ALIENGO_STANCE_POSTURE_ARRAY{0., 0.6435, -1.287, 0., 0.6435, -1.287,
+                                                             0., 0.6435, -1.287, 0., 0.6435, -1.287};
+constexpr std::array<float, 12> ALIENGO_STANCE_FOOT_POSITIONS_ARRAY
+    {0., 0., -ALIENGO_STANCE_HEIGHT, 0., 0., -ALIENGO_STANCE_HEIGHT,
+     0., 0., -ALIENGO_STANCE_HEIGHT, 0., 0., -ALIENGO_STANCE_HEIGHT};
+constexpr std::array<float, 3> ALIENGO_LINK_LENGTHS_ARRAY{0.083, 0.25, 0.25};
+
 class UnitreeUDPWrapper {
  public:
   explicit UnitreeUDPWrapper(int inner_freq = 500, int outer_freq = 50)
       : num_inner_loops_(inner_freq / outer_freq), inner_freq_(inner_freq), outer_freq_(outer_freq),
         udp_pub_(UNITREE_LEGGED_SDK::LOWLEVEL),
         safe_(UNITREE_LEGGED_SDK::LeggedType::Aliengo) {
-    udp_pub_.udpState.RecvCount = 0;
-    udp_pub_.udpState.SendCount = 0;
-
     udp_pub_.InitCmdData(low_cmd_msg_);
     low_cmd_msg_.levelFlag = UNITREE_LEGGED_SDK::LOWLEVEL;
     clearCommandMsg();
@@ -61,12 +68,16 @@ class UnitreeUDPWrapper {
     udp_pub_.Send();
   }
 
-  virtual void startThreads() {
-    loop_control_thread_ = std::thread(([this] { controlLoop(); }));
+  ~UnitreeUDPWrapper() {
+    status_ = false;
+    loop_control_thread_.join();
   }
 
-  void standup() {
-    //TODO: interpolate
+  void startControlThread() {
+    if (not loop_control_thread_.joinable()) {
+      status_ = true;
+      loop_control_thread_ = std::thread(([this] { controlLoop(); }));
+    }
   }
 
   void emergentStop() {
@@ -77,44 +88,57 @@ class UnitreeUDPWrapper {
   }
 
   void controlLoop() {
-    while (status_) {
-      cout << "controlLoop" << endl;
+    auto period = chrono::duration<double>(1. / inner_freq_);
+    while (true) {
+//      cout << "controlLoop" << endl;
       auto start = chrono::system_clock::now();
+      if (not status_) break;
       controlLoopEvent();
       auto end = chrono::system_clock::now();
-      auto sleep_time = chrono::microseconds(1000000 / inner_freq_) - (start - end);
+      auto sleep_time = period - (end - start);
       std::this_thread::sleep_for(sleep_time);
+//      cout << chrono::duration_cast<chrono::microseconds>(sleep_time).count() << endl;
     }
   }
 
   void controlLoopEvent() {
     udp_pub_.Recv();
+    low_state_mutex_.lock();
     udp_pub_.GetRecv(low_state_msg_);
 
-    mu::Vec12 step_action{step_action_.getValue()};
-    if (inner_loop_cnt_ == num_inner_loops_) {
-      proc_action_ = step_action;
+    if (active_) {
+      if (inner_loop_cnt_ == num_inner_loops_) {
+        proc_action_ = step_action_;
+      } else {
+         auto error = step_action_ - proc_action_;
+         proc_action_ += error / (num_inner_loops_ - inner_loop_cnt_);
+         ++inner_loop_cnt_;
+      }
+      for (int i = 0; i < 12; ++i) {
+        low_cmd_msg_.motorCmd[i].Kp = 150;
+        low_cmd_msg_.motorCmd[i].Kd = 4;
+        low_cmd_msg_.motorCmd[i].dq = 0;
+        low_cmd_msg_.motorCmd[i].q = proc_action_[i];
+      }
     } else {
-      auto error = step_action - proc_action_;
-      proc_action_ += error / (num_inner_loops_ - inner_loop_cnt_);
-      ++inner_loop_cnt_;
+      clearCommandMsg();
+      for (int i = 0; i < 12; ++i) {
+        proc_action_[i] = low_state_msg_.motorState[i].q;
+      }
     }
-
-    for (int i = 0; i < 12; ++i) {
-      auto &cmd = low_cmd_msg_.motorCmd[i];
-      cmd.Kp = 150;
-      cmd.Kd = 4;
-      cmd.q = proc_action_[i];
-    }
-    safe_.PowerProtect(low_cmd_msg_, low_state_msg_, 5);
+    safe_.PositionLimit(low_cmd_msg_);
+    safe_.PowerProtect(low_cmd_msg_, low_state_msg_, 2);
     udp_pub_.SetSend(low_cmd_msg_);
     udp_pub_.Send();
+    low_state_mutex_.unlock();
   }
 
   void applyCommand(const mu::Vec12 &cmd) {
-    step_action_.setValue(cmd);
+    low_state_mutex_.lock();
+    step_action_ = cmd;
     low_cmd_history_.push_back(cmd);
     inner_loop_cnt_ = 0;
+    low_state_mutex_.unlock();
   }
 
  protected:
@@ -139,34 +163,66 @@ class UnitreeUDPWrapper {
   UNITREE_LEGGED_SDK::Safety safe_;
   UNITREE_LEGGED_SDK::UDP udp_pub_;
   UNITREE_LEGGED_SDK::LowCmd low_cmd_msg_{};
+  std::mutex low_state_mutex_;
   UNITREE_LEGGED_SDK::LowState low_state_msg_{};
 
   mu::Vec12 proc_action_{};
-  ThreadSafe<mu::Vec12> step_action_{};
-  std::atomic<bool> status_{true};
+  mu::Vec12 step_action_{};
+  std::atomic<bool> status_{false}, active_{false};
   int inner_loop_cnt_ = 0;
+
   StaticQueue<mu::Vec12, 10> low_cmd_history_;
 };
 
 class AlienGo : public UnitreeUDPWrapper {
  public:
   explicit AlienGo(const std::string &model_path, int inner_freq = 500, int outer_freq = 50)
-      : UnitreeUDPWrapper(inner_freq, outer_freq),
+      : STANCE_POSTURE{ALIENGO_STANCE_POSTURE_ARRAY.data()},
+        STANCE_FOOT_POSITIONS{ALIENGO_STANCE_FOOT_POSITIONS_ARRAY.data()},
+        LINK_LENGTHS{ALIENGO_LINK_LENGTHS_ARRAY.data()},
+        UnitreeUDPWrapper(inner_freq, outer_freq),
         policy_(model_path, torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
-        tg_(VerticalTG(0.12), 2.0, {0, -mu::PI, -mu::PI, 0}) {
+        tg_(std::make_shared<VerticalTG>(0.12), 2.0, {0, -mu::PI, -mu::PI, 0}) {
     applyCommand(STANCE_POSTURE);
   }
 
-  const float STANCE_HEIGHT = 0.4;
-  const mu::Vec12 STANCE_POSTURE{0., 0.6435, -1.287, 0., 0.6435, -1.287,
-                                 0., 0.6435, -1.287, 0., 0.6435, -1.287};
-  const mu::Vec12 STANCE_FOOT_POSITIONS{0., 0., -STANCE_HEIGHT, 0., 0., -STANCE_HEIGHT,
-                                        0., 0., -STANCE_HEIGHT, 0., 0., -STANCE_HEIGHT};
-  const mu::Vec3 LINK_LENGTHS{0.083, 0.25, 0.25};
+  ~AlienGo() {
+    status_ = false;
+    action_thread_.join();
+  }
 
-  void startThreads() override {
-    reinterpret_cast<UnitreeUDPWrapper *>(this)->startThreads();
+  void startPolicyThread() {
     action_thread_ = std::thread([this]() { actionLoop(); });
+  }
+
+  void standup() {
+    active_ = false;
+    startControlThread();
+    while (true) {
+      low_state_mutex_.lock();
+      auto is_empty = low_state_msg_.tick == 0;
+      low_state_mutex_.unlock();
+      if (not is_empty) break;
+      std::cout << "NOT CONNECTED" << std::endl;
+      std::this_thread::sleep_for(chrono::milliseconds(500));
+    }
+    low_state_mutex_.lock();
+    mu::Vec12 init_cfg;
+    for (int i = 0; i < 12; ++i) {
+      init_cfg[i] = low_state_msg_.motorState[i].q;
+    }
+    low_state_mutex_.unlock();
+    int num_steps = 2 * outer_freq_;
+    active_ = true;
+    auto period = chrono::duration<double>(1. / outer_freq_);
+    for (int i = 1; i <= num_steps; ++i) {
+      auto start = chrono::system_clock::now();
+      applyCommand(float(num_steps - i) / num_steps * init_cfg
+                       + float(i) / num_steps * STANCE_POSTURE);
+      auto end = chrono::system_clock::now();
+      auto sleep_time = period - (end - start);
+      std::this_thread::sleep_for(sleep_time);
+    }
   }
 
   void setCommand(const mu::Vec3 &base_linear_cmd) {
@@ -174,12 +230,14 @@ class AlienGo : public UnitreeUDPWrapper {
   }
 
   void actionLoop() {
-    while (status_) {
-      cout << "actionLoop" << endl;
+    auto period = chrono::duration<double>(1. / outer_freq_);
+    while (true) {
+//      cout << "actionLoop" << endl;
       auto start = chrono::system_clock::now();
+      if (not status_) break;
       actionLoopEvent();
       auto end = chrono::system_clock::now();
-      auto sleep_time = chrono::microseconds(1000000 / inner_freq_) - (start - end);
+      auto sleep_time = period - (end - start);
       std::this_thread::sleep_for(sleep_time);
     }
   }
@@ -191,14 +249,17 @@ class AlienGo : public UnitreeUDPWrapper {
     tg_.update(1. / outer_freq_);
     mu::Vec12 priori, joint_cmd;
     tg_.getPrioriTrajectory(priori);
-    inverseKinematicsPatch(Eigen::Map<mu::Vec12>(action.data_ptr<float>()) + priori, joint_cmd);
-    step_action_.setValue(joint_cmd);
+    inverseKinematicsPatch(/*Eigen::Map<mu::Vec12>(action.data_ptr<float>()) +*/ priori, joint_cmd);
+//    print(priori);
+    applyCommand(joint_cmd);
+//    applyCommand(STANCE_POSTURE);
   }
 
   std::shared_ptr<ProprioInfo> collectProprioInfo() {
     auto obs = std::make_shared<ProprioInfo>();
     obs_history_.push_back(obs);
     obs->command = base_lin_cmd_.getValue();
+    low_state_mutex_.lock();
     getGravityVector(low_state_msg_.imu.quaternion, obs->gravity_vector);
     getLinearVelocity(obs->base_linear);
     copy<3>(low_state_msg_.imu.gyroscope, obs->base_angular);
@@ -206,6 +267,7 @@ class AlienGo : public UnitreeUDPWrapper {
       obs->joint_pos[i] = low_state_msg_.motorState[i].q;
       obs->joint_vel[i] = low_state_msg_.motorState[i].dq;
     }
+    low_state_mutex_.unlock();
     obs->joint_pos_target = low_cmd_history_.back();
     obs->ftg_frequencies = tg_.freq;
     tg_.getSoftPhases(obs->ftg_phases);
@@ -281,6 +343,10 @@ class AlienGo : public UnitreeUDPWrapper {
     }
   }
  private:
+  mu::Vec12 STANCE_POSTURE;//{ALIENGO_STANCE_POSTURE_ARRAY.data()};
+  mu::Vec12 STANCE_FOOT_POSITIONS;//{ALIENGO_STANCE_FOOT_POSITIONS_ARRAY.data()};
+  mu::Vec3 LINK_LENGTHS;//{ALIENGO_LINK_LENGTHS_ARRAY.data()};
+
   std::thread action_thread_;
 
   ThreadSafe<mu::fVec<3>> base_lin_cmd_{};

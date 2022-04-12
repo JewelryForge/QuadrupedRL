@@ -164,9 +164,12 @@ class QuadrupedEnv(object):
     def _updateRendering(self):
         if not self._init_rendering:
             self._initRendering()
-        if (current := self._pyb.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
-            self._reset_counter = current
-            self.reset()
+        try:
+            if (current := self._pyb.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
+                self._reset_counter = current
+                self.reset()
+        except pyb.error:
+            pass
         self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_SINGLE_STEP_RENDERING, True)
 
     def _setPhysicsParameters(self):

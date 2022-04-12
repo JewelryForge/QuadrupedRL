@@ -5,6 +5,7 @@
 #include <vector>
 #include <array>
 #include "math_utils.hpp"
+#include "io.hpp"
 
 class TG {
  public:
@@ -37,9 +38,9 @@ class VerticalTG : public TG {
 
 class TgStateMachine {
  public:
-  TgStateMachine(const TG &tg, float base_freq, mu::Vec4 init_phases,
+  TgStateMachine(std::shared_ptr<TG> tg, float base_freq, mu::Vec4 init_phases,
                  float lower_freq = 0.5, float upper_freq = 3.0)
-      : tg_(tg), base_freq_(base_freq), phases_(std::move(init_phases)),
+      : tg_(std::move(tg)), base_freq_(base_freq), phases_(std::move(init_phases)),
         lower_freq(lower_freq), upper_freq(upper_freq) {
     freq_.fill(base_freq);
   };
@@ -62,8 +63,8 @@ class TgStateMachine {
     return update(time_step);
   };
 
-  void getPrioriTrajectory(mu::Vec12 &out) {
-    tg_.getPriori(phases, out);
+  void getPrioriTrajectory(mu::Vec12 &out) const {
+    tg_->getPriori(phases, out);
   }
 
   void getSoftPhases(mu::Vec8 &out) {
@@ -72,7 +73,7 @@ class TgStateMachine {
   }
 
  private:
-  const TG &tg_;
+  std::shared_ptr<TG> tg_;
   float base_freq_;
   mu::fVec<4> freq_{}, phases_{};
 };

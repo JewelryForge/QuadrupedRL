@@ -6,7 +6,7 @@ from typing import Union
 import burl
 from burl.utils import make_part, g_cfg, log_warn
 
-__all__ = ['get_timestamp', 'str2time', 'find_log', 'find_log_remote', 'find_csc', 'find_huzhou',
+__all__ = ['get_timestamp', 'str2time', 'find_log', 'find_log_remote', 'find_csc', 'find_huzhou', 'find_wuzhen',
            'parse_args', 'update_cfg_from_args', 'g_log_dir', 'teacher_log_dir', 'student_log_dir']
 
 g_log_dir = os.path.join(os.path.dirname(burl.pkg_path), 'log')
