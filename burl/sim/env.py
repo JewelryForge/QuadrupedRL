@@ -443,6 +443,7 @@ class FixedTgEnv(IkEnv):
         super().__init__(make_robot, make_task, obs_types, ik_type, horizontal_frame)
         self._stm = TgStateMachine(1 / self.action_freq,
                                    self.tg_types[self._robot.__class__.__name__])
+        self._action: Opt[np.ndarray] = None
 
     def makeProprioInfo(self, obs=None, noisy=False):
         if obs is None:
@@ -494,6 +495,7 @@ class FixedTgEnv(IkEnv):
     def step(self, action: Union[Action, np.ndarray]):
         if not isinstance(action, Action):
             action = Action.from_array(action)
+        self._action = action.foot_pos_residuals
         self._stm.update((0.,) * 4)
         # self._stm.update(action.leg_frequencies)
         priori = self._stm.get_priori_trajectory().reshape(4, 3)

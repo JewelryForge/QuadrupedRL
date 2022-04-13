@@ -34,10 +34,10 @@ def ewma(data, alpha):
 
 plt.plot(np.arange(len(p16)) * 16 * 128, ewma(p16, 0.95))
 plt.plot(np.arange(len(p32)) * 32 * 128, ewma(p32, 0.95))
-plt.plot(np.arange(len(p32_1)) * 32 * 128, ewma(p32_1, 0.95))
+# plt.plot(np.arange(len(p32_1)) * 32 * 128, ewma(p32_1, 0.95))
 plt.plot(np.arange(len(p64)) * 64 * 128, ewma(p64, 0.95))
-plt.plot(np.arange(len(p64_1)) * 64 * 128, ewma(p64_1, 0.95))
+# plt.plot(np.arange(len(p64_1)) * 64 * 128, ewma(p64_1, 0.95))
 plt.xlabel('num_frames')
 plt.ylabel('reward')
-plt.legend(['p16', 'p32', 'p32_1', 'p64', 'p64_1'])
+plt.legend(['p16', 'p32', 'p64'])
 plt.show()

@@ -230,15 +230,19 @@ class StudentPlayer(object):
         self.env = SingleEnvContainer(make_env)
         teacher = Actor(ExteroObservation.dim, RealWorldObservation.dim, Action.dim,
                         g_cfg.extero_layer_dims, g_cfg.proprio_layer_dims, g_cfg.action_layer_dims)
-        self.policy = Student(teacher).to(g_cfg.dev)
         model_info = torch.load(model_path)
         log_info(f'Loading model {model_path}')
+
+        self.policy = Student(teacher).to(g_cfg.dev)
         self.policy.load_state_dict(model_info['student_state_dict'])
+
         # self.policy.save_deployable_model()
+        # self.policy = torch.jit.load("/home/jewel/Workspaces/teacher-student/log/student/script_model.pt")
         self.history = SlidingWindow(ProprioInfo.dim, 2000, g_cfg.history_len, 'cuda')
 
     def play(self, allow_reset=True):
         policy = self.policy.get_policy()
+        # policy = lambda *x: self.policy(*x).tanh()
         with torch.inference_mode():
             proprio_info, realworld_obs = to_dev(*self.env.init_observations())
 

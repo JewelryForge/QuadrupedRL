@@ -8,7 +8,7 @@ namespace mu {
 using std::size_t;
 
 template<size_t N>
-using fVec = Eigen::Array<float, 1, N>;
+using fVec = Eigen::Array<float, N, 1>;
 template<size_t N>
 using fArr = std::array<float, N>;
 

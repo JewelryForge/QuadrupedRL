@@ -127,7 +127,6 @@ const mu::fVec<ProprioObservation::dim>
 template<typename T, std::size_t N>
 class StaticQueue {
  public:
-  static constexpr std::size_t S = N + 1;
   StaticQueue() = default;
   struct QueueOverflow : public std::exception {
     const char *what() const noexcept override { return "deque overflow error"; }
@@ -148,47 +147,44 @@ class StaticQueue {
 
   T &back() {
     assert_not_empty();
-    return data_[back_ - 1];
+    return data_[(front_ + size_ - 1) % N];
   }
   const T &back() const {
     assert_not_empty();
-    return data_[back_ - 1];
+    return data_[(front_ + size_ - 1) % N];
   }
 
   void push_back(const T &item) noexcept {
-    if (is_full()) front_ = (front_ + 1) % S;
-    data_[back_] = item;
-    back_ = (back_ + 1) % S;
+    if (is_full()) front_ = (front_ + 1) % N;
+    else ++size_;
+    data_[(front_ + size_ - 1) % N] = item;
   }
   T &make_back() noexcept {
-    if (is_full()) front_ = (front_ + 1) % S;
-    auto &ref = data_[back_];
-    back_ = (back_ + 1) % S;
+    if (is_full()) front_ = (front_ + 1) % N;
+    else ++size_;
+    auto &ref = data_[(front_ + size_ - 1) % N];
     return ref;
   }
 
-  void clear() noexcept { front_ = back_ = 0; }
-  inline std::size_t size() const noexcept { return (back_ + S - front_) % S; }
-  inline bool is_empty() const noexcept { return front_ == back_; }
-  inline bool is_full() const noexcept { return (back_ + 1) % S == front_; }
+  void clear() noexcept { front_ = size_ = 0; }
+  inline std::size_t size() const noexcept { return size_; }
+  inline bool is_empty() const noexcept { return size_ == 0; }
+  inline bool is_full() const noexcept { return size_ == N; }
 
   const T &get_padded(int idx) const noexcept {
-    std::size_t size_ = size();
     if (idx < 0) idx = int(size_) + idx;
     if (idx < 0) return front();
     else if (idx >= size_) return back();
-    else return data_[(front_ + idx) % S];
+    else return data_[(front_ + idx) % N];
   }
 
   const T &get(int idx, const T &default_value) const noexcept {
-    std::size_t size_ = size();
     if (idx < 0) idx = int(size_) + idx;
     if (idx < 0 or idx >= size_) return default_value;
-    return data_[(front_ + idx) % S];
+    return data_[(front_ + idx) % N];
   }
 
   T &operator[](int idx) {
-    std::size_t size_ = size();
     if (idx < 0) idx = int(size_) + idx;
     if (idx < 0 or idx >= size_) throw QueueOverflow();
     return data_[(front_ + idx) % N];
@@ -198,8 +194,8 @@ class StaticQueue {
     if (is_empty()) throw EmptyQueue();
   }
 
-  std::array<T, N + 1> data_;
-  std::size_t front_ = 0, back_ = 0;
+  std::array<T, N> data_;
+  std::size_t front_ = 0, size_ = 0;
 };
 
 #endif //QUADRUPED_DEPLOY_INCLUDE_STATE_HPP_

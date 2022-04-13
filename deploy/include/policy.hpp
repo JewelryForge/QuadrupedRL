@@ -52,6 +52,8 @@ class Policy {
   explicit Policy(const std::string &model_path, const torch::DeviceType &device_type)
       : device_(device_type), module_(torch::jit::load(model_path, device_)),
         history_(ProprioInfo::dim, 2000, 123, device_type) {
+    biases = biases.to(device_);
+    weights = weights.to(device_);
     for (int i = 0; i < 10; ++i) {
       module_.forward({torch::rand({1, 60, 123}).to(device_),
                        torch::rand({1, RealWorldObservation::dim}).to(device_)}).toTensor();
@@ -61,16 +63,16 @@ class Policy {
   Policy(Policy &) = delete;
   Policy(const Policy &) = delete;
 
-  const torch::Tensor biases = torch::zeros(12);
-  const torch::Tensor weights = torch::from_blob(new float[12]{0.25, 0.25, 0.15, 0.25, 0.25, 0.15,
-                                                               0.25, 0.25, 0.15, 0.25, 0.25, 0.15}, 12);
+  torch::Tensor biases = torch::zeros(12);
+  torch::Tensor weights = torch::from_blob(new float[12]{0.25, 0.25, 0.15, 0.25, 0.25, 0.15,
+                                                         0.25, 0.25, 0.15, 0.25, 0.25, 0.15}, 12);
 
   torch::Tensor get_action(const ProprioInfo &proprio_info, const RealWorldObservation &real_world_obs) {
     history_.add_transition(torch::from_blob(proprio_info.standard()->data(), ProprioInfo::dim));
     auto real_world_obs_tensor = torch::from_blob(real_world_obs.standard()->data(), {1, RealWorldObservation::dim});
     auto action = module_.forward({history_.get_window(), real_world_obs_tensor.to(device_)}).toTensor();
-    action = (action.tanh().to(torch::kCPU) - biases) * weights;
-    return action;
+    action = (action.tanh() - biases) * weights;
+    return action.to(torch::kCPU);
   }
  private:
   torch::Device device_;

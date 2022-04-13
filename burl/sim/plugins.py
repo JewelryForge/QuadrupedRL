@@ -82,6 +82,7 @@ class StatisticsCollector(Plugin):
         #     print(clearances, wrap(FootClearanceReward))
         if self._publish:
             data = {
+                'obs': env.makeNoisyProprioInfo().standard().tolist(),
                 'joint_states': {
                     'joint_pos': (rob.getJointPositions() - rob.STANCE_POSTURE).tolist(),
                     'commands': rob.getLastCommand().tolist(),

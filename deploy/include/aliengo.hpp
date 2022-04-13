@@ -18,34 +18,10 @@
 #include "torch/script.h"
 #include "unitree_legged_sdk/unitree_legged_sdk.h"
 
-template<typename T>
-class ThreadSafe {
- public:
-  ThreadSafe() = default;
-  explicit ThreadSafe(const T &item) : item_(item) {}
-  void copyTo(T &out) {
-    lock_.lock();
-    out = item_;
-    lock_.unlock();
-  }
-
-  T getValue() {
-    T value;
-    copyTo(value);
-    return value;
-  }
-
-  void setValue(const T &value) {
-    lock_.lock();
-    item_ = value;
-    lock_.unlock();
-  }
-
- private:
-  std::mutex lock_;
-  T item_{};
-};
-
+#include <ros/ros.h>
+#include <nav_msgs/Odometry.h>
+#include "alienGo_deploy/FloatArray.h"
+#include "alienGo_deploy/MultiFloatArray.h"
 
 constexpr float ALIENGO_STANCE_HEIGHT = 0.4;
 constexpr std::array<float, 12> ALIENGO_STANCE_POSTURE_ARRAY{0., 0.6435, -1.287, 0., 0.6435, -1.287,
@@ -110,9 +86,9 @@ class UnitreeUDPWrapper {
       if (inner_loop_cnt_ == num_inner_loops_) {
         proc_action_ = step_action_;
       } else {
-         auto error = step_action_ - proc_action_;
-         proc_action_ += error / (num_inner_loops_ - inner_loop_cnt_);
-         ++inner_loop_cnt_;
+        auto error = step_action_ - proc_action_;
+        proc_action_ += error / (num_inner_loops_ - inner_loop_cnt_);
+        ++inner_loop_cnt_;
       }
       for (int i = 0; i < 12; ++i) {
         low_cmd_msg_.motorCmd[i].Kp = 150;
@@ -127,8 +103,9 @@ class UnitreeUDPWrapper {
       }
     }
     safe_.PositionLimit(low_cmd_msg_);
-    safe_.PowerProtect(low_cmd_msg_, low_state_msg_, 2);
+    safe_.PowerProtect(low_cmd_msg_, low_state_msg_, 7);
     udp_pub_.SetSend(low_cmd_msg_);
+//    udp_pub_.udpState.SendCount++;
     udp_pub_.Send();
     low_state_mutex_.unlock();
   }
@@ -183,6 +160,8 @@ class AlienGo : public UnitreeUDPWrapper {
         UnitreeUDPWrapper(inner_freq, outer_freq),
         policy_(model_path, torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
         tg_(std::make_shared<VerticalTG>(0.12), 2.0, {0, -mu::PI, -mu::PI, 0}) {
+    vel_sub_ = nh_.subscribe<nav_msgs::Odometry>("/camera/odom/sample", 5, &AlienGo::velocityUpdate, this);
+    data_tester_ = nh_.advertise<alienGo_deploy::MultiFloatArray>("/test_data", 1);
     applyCommand(STANCE_POSTURE);
   }
 
@@ -198,6 +177,7 @@ class AlienGo : public UnitreeUDPWrapper {
   void standup() {
     active_ = false;
     startControlThread();
+    std::this_thread::sleep_for(chrono::milliseconds(100));
     while (true) {
       low_state_mutex_.lock();
       auto is_empty = low_state_msg_.tick == 0;
@@ -226,7 +206,9 @@ class AlienGo : public UnitreeUDPWrapper {
   }
 
   void setCommand(const mu::Vec3 &base_linear_cmd) {
-    base_lin_cmd_.setValue(base_linear_cmd);
+    high_state_mutex_.lock();
+    base_lin_cmd_ = base_linear_cmd;
+    high_state_mutex_.unlock();
   }
 
   void actionLoop() {
@@ -249,26 +231,66 @@ class AlienGo : public UnitreeUDPWrapper {
     tg_.update(1. / outer_freq_);
     mu::Vec12 priori, joint_cmd;
     tg_.getPrioriTrajectory(priori);
-    inverseKinematicsPatch(/*Eigen::Map<mu::Vec12>(action.data_ptr<float>()) +*/ priori, joint_cmd);
+    mu::Vec12 action_array = Eigen::Map<mu::Vec12>(action.data_ptr<float>());
+    inverseKinematicsPatch(action_array + priori, joint_cmd);
 //    print(priori);
     applyCommand(joint_cmd);
 //    applyCommand(STANCE_POSTURE);
+
+    alienGo_deploy::MultiFloatArray multi_array;
+    alienGo_deploy::FloatArray array;
+    for (int i = 0; i < 12; ++i) {
+      array.data.push_back(joint_cmd[i]);
+    }
+    multi_array.data.push_back(array);
+    array.data.clear();
+
+    array.data.assign(proprio_info->joint_pos.begin(), proprio_info->joint_pos.end());
+    multi_array.data.push_back(array);
+    array.data.clear();
+
+    for (int i = 0; i < 12; ++i) {
+      array.data.push_back(action_array[i]);
+    }
+    multi_array.data.push_back(array);
+    array.data.clear();
+    auto proprio_obs_standard = *proprio_info->standard();
+    for (int i = 0; i < 60; ++i) {
+      array.data.push_back(proprio_obs_standard[i]);
+    }
+    multi_array.data.push_back(array);
+    array.data.clear();
+
+    data_tester_.publish(multi_array);
   }
 
   std::shared_ptr<ProprioInfo> collectProprioInfo() {
     auto obs = std::make_shared<ProprioInfo>();
     obs_history_.push_back(obs);
-    obs->command = base_lin_cmd_.getValue();
+
+    Eigen::Matrix3f w_R_b;
+    const auto &orn = low_state_msg_.imu.quaternion;
+    float w = orn[0], x = orn[1], y = orn[2], z = orn[3];
+    float xx = x * x, xy = x * y, xz = x * z, xw = x * w;
+    float yy = y * y, yz = y * z, yw = y * w, zz = z * z, zw = z * w;
+    w_R_b << 1 - 2 * yy - 2 * zz, 2 * xy - 2 * zw, 2 * xz + 2 * yw,
+        2 * xy + 2 * zw, 1 - 2 * xx - 2 * zz, 2 * yz - 2 * xw,
+        2 * xz - 2 * yw, 2 * yz + 2 * xw, 1 - 2 * xx - 2 * yy;
+    high_state_mutex_.lock();
+    obs->command = base_lin_cmd_;
+    high_state_mutex_.unlock();
     low_state_mutex_.lock();
     getGravityVector(low_state_msg_.imu.quaternion, obs->gravity_vector);
-    getLinearVelocity(obs->base_linear);
+    getLinearVelocity(obs->base_linear, w_R_b);
     copy<3>(low_state_msg_.imu.gyroscope, obs->base_angular);
+//    obs->base_angular = (/* w_R_b.transpose() * */ obs->base_angular.matrix()).array();
+
     for (int i = 0; i < 12; ++i) {
       obs->joint_pos[i] = low_state_msg_.motorState[i].q;
       obs->joint_vel[i] = low_state_msg_.motorState[i].dq;
     }
-    low_state_mutex_.unlock();
     obs->joint_pos_target = low_cmd_history_.back();
+    low_state_mutex_.unlock();
     obs->ftg_frequencies = tg_.freq;
     tg_.getSoftPhases(obs->ftg_phases);
     return obs;
@@ -279,9 +301,9 @@ class AlienGo : public UnitreeUDPWrapper {
     std::shared_ptr<RealWorldObservation> obs(new RealWorldObservation);
     auto proprio_obs = obs_history_[-1];
     reinterpret_cast<ProprioInfo &>(*obs) = *proprio_obs;
-    const auto &last_joint_cmd = low_cmd_history_.get(-1, STANCE_POSTURE);
-    const auto &last_joint_pos = proprio_obs->joint_pos;
-    obs->joint_prev_pos_err = last_joint_cmd - last_joint_pos;
+    low_state_mutex_.lock();
+    obs->joint_prev_pos_err = proc_action_ - proprio_obs->joint_pos;
+    low_state_mutex_.unlock();
     int p0_01 = -int(0.01 * outer_freq_), p0_02 = -int(0.02 * outer_freq_);
     const auto &obs_p0_01 = obs_history_.get_padded(p0_01), &obs_p0_02 = obs_history_.get_padded(p0_02);
     obs->joint_pos_err_his.segment<12>(0) = obs_p0_01->joint_pos_target - obs_p0_01->joint_pos;
@@ -293,9 +315,30 @@ class AlienGo : public UnitreeUDPWrapper {
     return obs;
   }
 
-  void getLinearVelocity(mu::Vec3 &out) {
-    // get linear velocity from realsense
-    // Add acceleration integral
+  void getLinearVelocity(mu::Vec3 &out, const Eigen::Matrix3f &w_R_b) {
+    // w for world, b for base and c for camera
+    // w_V_b = w_V_c + w_Ω_c x w_R_c · c_Q_b
+    // w_R_c = w_R_b · b_R_c
+    ros::spinOnce();
+    const Eigen::Vector3f b_R_c_c_Q_b(-0.332, 0, 0);
+    const Eigen::Vector3f w_R_c_c_Q_b = w_R_b * b_R_c_c_Q_b;
+    float Wx = cam_ang_vel_.x(), Wy = cam_ang_vel_.y(), Wz = cam_ang_vel_.z();
+    Eigen::Matrix3f w_S_c;
+    w_S_c << 0, -Wz, Wy,
+        Wz, 0, -Wx,
+        -Wy, Wx, 0;
+    out = cam_lin_vel_ + (w_S_c * w_R_c_c_Q_b).array();
+//    print(out.transpose());
+  }
+
+  void velocityUpdate(const nav_msgs::Odometry::ConstPtr &odom) {
+//    print("velocityUpdate");
+    cam_lin_vel_ = {float(odom->twist.twist.linear.x),
+                    float(odom->twist.twist.linear.y),
+                    float(odom->twist.twist.linear.z)};
+    cam_ang_vel_ = {float(odom->twist.twist.angular.x),
+                    float(odom->twist.twist.angular.y),
+                    float(odom->twist.twist.angular.z)};
   }
 
   template<typename ARRAY>
@@ -347,9 +390,14 @@ class AlienGo : public UnitreeUDPWrapper {
   mu::Vec12 STANCE_FOOT_POSITIONS;//{ALIENGO_STANCE_FOOT_POSITIONS_ARRAY.data()};
   mu::Vec3 LINK_LENGTHS;//{ALIENGO_LINK_LENGTHS_ARRAY.data()};
 
+  ros::NodeHandle nh_;
+  mu::Vec3 cam_lin_vel_ = mu::Vec3::Zero(), cam_ang_vel_ = mu::Vec3::Zero();
+  ros::Subscriber vel_sub_;
+  ros::Publisher data_tester_;
   std::thread action_thread_;
 
-  ThreadSafe<mu::fVec<3>> base_lin_cmd_{};
+  mu::Vec3 base_lin_cmd_ = mu::Vec3::Zero();
+  std::mutex high_state_mutex_;
   TgStateMachine tg_;
   StaticQueue<std::shared_ptr<ProprioInfo>, 100> obs_history_;
   Policy policy_;
