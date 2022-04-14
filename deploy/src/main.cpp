@@ -12,5 +12,6 @@ int main(int argc, char *argv[]) {
   AlienGo robot(model_path);
   robot.standup();
   robot.startPolicyThread();
-  while (ros::ok());
+  ros::spin();
+//  while (ros::ok());
 }

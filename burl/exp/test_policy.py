@@ -17,12 +17,12 @@ if __name__ == '__main__':
     # g_cfg.latency_range = (0.02, 0.03)
     init_logger()
     set_logger_level('debug')
-    remote = True
+    remote = False
     if remote:
-        model_path = find_wuzhen(run_name='2.8.1.3c2', time_=None, epoch=None)
+        model_path = find_wuzhen(run_name='', run_id='2vl49o7c', time_=None, epoch=None)
         # model_path = find_huzhou(run_name='2.8.0.21m2', time_=None, epoch=None)
     else:
-        model_path = find_log(run_name='2.8.1.3c', time_=None, epoch=None)
+        model_path = find_log(run_name='', run_id='2vl49o7c', time_=None, epoch=None)
     if JoystickPlayer.is_available():
         player = JoystickPlayer(model_path)
     else:
