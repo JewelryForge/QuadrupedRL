@@ -1,6 +1,6 @@
 import math
 from collections import deque
-from typing import Any, Callable, Optional as Opt, Type, Union
+from typing import Any, Callable, Optional as Opt, Union
 
 import numpy as np
 import pybullet as pyb
@@ -158,12 +158,13 @@ class QuadrupedEnv(object):
     def _initRendering(self):
         self._dbg_reset = self._pyb.addUserDebugParameter('reset', 1, 0, 0)
         self._reset_counter = 0
-        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_GUI, False)
+        self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_GUI, True)
         self._pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, True)
 
     def _updateRendering(self):
         if not self._init_rendering:
             self._initRendering()
+            self._init_rendering = True
         try:
             if (current := self._pyb.readUserDebugParameter(self._dbg_reset)) != self._reset_counter:
                 self._reset_counter = current
@@ -343,11 +344,11 @@ class QuadrupedEnv(object):
     def close(self):
         self._pyb.disconnect()
 
-    def getActionMutation(self):
+    def getActionViolence(self) -> np.ndarray:
         if len(self._action_history) < 3:
-            return 0.0
+            return np.zeros(12)
         actions = [self._action_history[-i - 1] for i in range(3)]
-        return np.linalg.norm(actions[0] - 2 * actions[1] + actions[2]) * self.action_freq ** 2
+        return (actions[0] - 2 * actions[1] + actions[2]) * self.action_freq ** 2
 
     def getAbundantTerrainInfo(self, x, y, yaw) -> list[tuple[float, float, float]]:
         interval = 0.1

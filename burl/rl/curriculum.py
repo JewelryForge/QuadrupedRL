@@ -78,18 +78,23 @@ class TerrainCurriculum(GameInspiredCurriculum):
         Otherwise, update its height field.
         """
         size, resolution = 30, 0.1
-        mini_rfn = random.uniform(0, 0.02)
+        mini_rfn = 0.02
         if not self.terrain:
             from burl.sim.terrain import Hills
+            # Must initialize terrain with max roughness,
+            # otherwise may cause the robot to get stuck in the terrain.
+            # See https://github.com/bulletphysics/bullet3/issues/4236
             roughness = self.difficulty_degree * self.max_roughness
-            self.terrain = Hills.make(size, resolution, (roughness, 20), (mini_rfn, 1))
+            hills_heightfield = Hills.make_heightfield(size, resolution, (roughness, 20), (mini_rfn, 1))
+            hills_heightfield.data *= 1.05
+            self.terrain = Hills(hills_heightfield)
             self.terrain.spawn(sim_env)
         else:
             if self.difficulty:
                 roughness = self.max_roughness * (random.random() if self.difficulty == self.max_difficulty
                                                   else self.difficulty_degree)
-                self.terrain.replace_heightfield(
-                    sim_env, self.terrain.make_heightfield(size, resolution, (roughness, 20), (mini_rfn, 1)))
+                self.terrain.replace_heightfield(sim_env, self.terrain.make_heightfield(
+                    size, resolution, (roughness, 20), (random.uniform(0, mini_rfn), 1)))
         return self.terrain
 
     def on_sim_step(self, task, robot, env):

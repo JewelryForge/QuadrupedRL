@@ -166,6 +166,14 @@ class BodyHeightReward(Reward):
         return 1.
 
 
+class ActionSmoothnessReward(Reward):
+    def __init__(self, upper=400):
+        self.reshape = np.vectorize(quadratic_linear_reshape(upper))
+
+    def __call__(self, cmd, env, robot):
+        return 1 - self.reshape(env.getActionViolence()).sum() / 12
+
+
 class JointMotionPenalty(Reward):
     def __init__(self, vel_upper=6, acc_upper=500):
         self.vel_reshape = np.vectorize(quadratic_linear_reshape(vel_upper))

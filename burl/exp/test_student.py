@@ -18,12 +18,13 @@ if __name__ == '__main__':
     init_logger()
     set_logger_level('debug')
     remote = False
+    joystick_control = True
     if remote:
         model_path = find_csc(run_name='', time_=None, epoch=None)
         # model_path = find_huzhou(run_name='2.8.0.21m2', time_=None, epoch=None)
     else:
         model_path = find_log(run_name='0.6', time_=None, epoch=None, log_dir=log_dir)
-    if JoystickPlayer.is_available():
+    if joystick_control and JoystickPlayer.is_available():
         player = JoystickPlayer(model_path)
     else:
         player = StudentPlayer(model_path, 'randCmd')

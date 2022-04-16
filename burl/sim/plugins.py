@@ -80,31 +80,36 @@ class StatisticsCollector(Plugin):
         #     print(strides, wrap(SmallStridePenalty))
         # if any(clearances := rob.getFootClearances()):
         #     print(clearances, wrap(FootClearanceReward))
-        if self._publish:
-            data = {
-                'obs': env.makeNoisyProprioInfo().standard().tolist(),
-                'joint_states': {
-                    'joint_pos': (rob.getJointPositions() - rob.STANCE_POSTURE).tolist(),
-                    'commands': rob.getLastCommand().tolist(),
-                    'joint_vel': rob.getJointVelocities().tolist(),
-                    'joint_acc': rob.getJointAccelerations().tolist(),
-                    # 'kp_part': tuple(rob._motor._kp_part),
-                    # 'kd_part': tuple(rob._motor._kd_part),
-                    'torque': rob.getLastAppliedTorques().tolist(),
-                    'contact': rob.getContactStates().tolist()
-                },
-                'body_height': env.getTerrainBasedHeightOfRobot(),
-                'cot': rob.getCostOfTransport(),
-                'twist': {
-                    'linear': rob.getBaseLinearVelocityInBaseFrame().tolist(),
-                    'angular': rob.getBaseAngularVelocityInBaseFrame().tolist(),
-                },
-                'torque_pen': wrap(TorquePenalty)
-            }
-            self._udp_pub.send(data)
+
+    def publish(self, task, rob, env):
+        data = {
+            'obs': env.makeNoisyProprioInfo().standard().tolist(),
+            'joint_states': {
+                # 'joint_pos': (rob.getJointPositions() - rob.STANCE_POSTURE).tolist(),
+                'joint_pos': rob.getJointPositions().tolist(),
+                'violence': env.getActionViolence().tolist(),
+                'commands': rob.getLastCommand().tolist(),
+                'joint_vel': rob.getJointVelocities().tolist(),
+                'joint_acc': rob.getJointAccelerations().tolist(),
+                # 'kp_part': tuple(rob._motor._kp_part),
+                # 'kd_part': tuple(rob._motor._kd_part),
+                'torque': rob.getLastAppliedTorques().tolist(),
+                'contact': rob.getContactStates().tolist()
+            },
+            'body_height': env.getTerrainBasedHeightOfRobot(),
+            'cot': rob.getCostOfTransport(),
+            'twist': {
+                'linear': rob.getBaseLinearVelocityInBaseFrame().tolist(),
+                'angular': rob.getBaseAngularVelocityInBaseFrame().tolist(),
+            },
+            # 'torque_pen': wrap(TorquePenalty)
+        }
+        self._udp_pub.send(data)
 
     def on_step(self, task, robot, env):
         self._step_counter += 1
+        if self._publish:
+            self.publish(task, robot, env)
 
     def on_reset(self, task, robot, env):
         print('episode len:', self._step_counter)

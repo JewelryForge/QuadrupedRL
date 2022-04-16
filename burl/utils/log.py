@@ -55,8 +55,8 @@ def init_logger(name=__name__,
                 date_fmt='%b%d %H:%M:%S',
                 log_dir=None,
                 client_ip='127.0.0.1'):
-    np.set_printoptions(3, linewidth=1000, suppress=True)
-    torch.set_printoptions(linewidth=1000, profile='short')
+    np.set_printoptions(3, linewidth=10000, suppress=True)
+    torch.set_printoptions(linewidth=10000, profile='short')
     global logger
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
