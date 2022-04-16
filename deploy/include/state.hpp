@@ -5,13 +5,13 @@
 
 struct ProprioObservation {
   static constexpr uint dim = 36;
-  using array_type = mu::fVec<dim>;
-  mu::Vec3 command;
-  mu::Vec3 gravity_vector;
-  mu::Vec3 base_linear;
-  mu::Vec3 base_angular;
-  mu::Vec12 joint_pos;
-  mu::Vec12 joint_vel;
+  using array_type = fArray<dim>;
+  Array3 command;
+  Array3 gravity_vector;
+  Array3 base_linear;
+  Array3 base_angular;
+  Array12 joint_pos;
+  Array12 joint_vel;
 
   std::shared_ptr<array_type> standard() const {
     auto array = std::make_shared<array_type>();
@@ -26,16 +26,16 @@ struct ProprioObservation {
     return array;
   }
 
-  static const mu::fVec<dim> weights, biases;
+  static const fArray<dim> weights, biases;
 };
 
 struct ProprioInfo : public ProprioObservation {
   static constexpr uint dim = 60;
-  using array_type = mu::fVec<dim>;
-  mu::Vec12 joint_pos_target;
-  mu::Vec8 ftg_phases;
-  mu::Vec4 ftg_frequencies;
-  static const mu::fVec<dim> weights, biases;
+  using array_type = fArray<dim>;
+  Array12 joint_pos_target;
+  Array8 ftg_phases;
+  Array4 ftg_frequencies;
+  static const fArray<dim> weights, biases;
 
   std::shared_ptr<array_type> standard() const {
     auto array = std::make_shared<array_type>();
@@ -56,13 +56,13 @@ struct ProprioInfo : public ProprioObservation {
 
 struct RealWorldObservation : public ProprioInfo {
   static constexpr uint dim = 60 + 73;
-  using array_type = mu::fVec<dim>;
-  mu::Vec12 joint_prev_pos_err;
-  mu::Vec24 joint_pos_err_his;
-  mu::Vec24 joint_vel_his;
-  mu::Vec12 joint_prev_pos_target;
-  mu::fVec<1> base_frequency;
-  static const mu::fVec<dim> weights, biases;
+  using array_type = fArray<dim>;
+  Array12 joint_prev_pos_err;
+  Array24 joint_pos_err_his;
+  Array24 joint_vel_his;
+  Array12 joint_prev_pos_target;
+  fArray<1> base_frequency;
+  static const fArray<dim> weights, biases;
 
   std::shared_ptr<array_type> standard() const {
     auto array = std::make_shared<array_type>();
@@ -86,42 +86,44 @@ struct RealWorldObservation : public ProprioInfo {
   }
 };
 
-const mu::fVec<RealWorldObservation::dim> RealWorldObservation::weights = {
-    {1., 1., 1., 5., 5., 20.,
-     2., 2., 2., 2., 2., 2.,
-     2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2.,
-     0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3,
-     2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2.,
-     1., 1., 1., 1., 1., 1., 1., 1., 100., 100., 100., 100.,
-     6.5, 4.5, 3.5, 6.5, 4.5, 3.5, 6.5, 4.5, 3.5, 6.5, 4.5, 3.5,
-     5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,
-     5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,
-     0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3,
-     0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3,
-     2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2.,
-     1.
-    }};
-const mu::fVec<RealWorldObservation::dim> RealWorldObservation::biases = {
-    {0., 0., 0., 0., 0., 0.99,
-     0., 0., 0., 0., 0., 0.,
-     0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287,
-     0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-     0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287,
-     0., 0., 0., 0., 0., 0., 0., 0., 2., 2., 2., 2.,
-     0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-     0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-     0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-     0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-     0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-     0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287,
-     2.
-    }};
+const fArray<RealWorldObservation::dim> RealWorldObservation::weights {
+    std::array<float, RealWorldObservation::dim>{
+        1., 1., 1., 5., 5., 20.,
+        2., 2., 2., 2., 2., 2.,
+        2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2.,
+        0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3,
+        2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2.,
+        1., 1., 1., 1., 1., 1., 1., 1., 100., 100., 100., 100.,
+        6.5, 4.5, 3.5, 6.5, 4.5, 3.5, 6.5, 4.5, 3.5, 6.5, 4.5, 3.5,
+        5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,
+        5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,
+        0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3,
+        0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3, 0.5, 0.4, 0.3,
+        2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2., 2.,
+        1.
+    }.data()};
+const fArray<RealWorldObservation::dim> RealWorldObservation::biases {
+    std::array<float, RealWorldObservation::dim>{
+        0., 0., 0., 0., 0., 0.99,
+        0., 0., 0., 0., 0., 0.,
+        0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287,
+        0., 0., 0., 0., 0., 0., 0., 0., 2., 2., 2., 2.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287, 0., 0.6435, -1.287,
+        2.
+    }.data()};
 
-const mu::fVec<ProprioInfo::dim> ProprioInfo::weights = RealWorldObservation::weights.segment<ProprioInfo::dim>(0);
-const mu::fVec<ProprioInfo::dim> ProprioInfo::biases = RealWorldObservation::biases.segment<ProprioInfo::dim>(0);
-const mu::fVec<ProprioObservation::dim>
+const fArray<ProprioInfo::dim> ProprioInfo::weights = RealWorldObservation::weights.segment<ProprioInfo::dim>(0);
+const fArray<ProprioInfo::dim> ProprioInfo::biases = RealWorldObservation::biases.segment<ProprioInfo::dim>(0);
+const fArray<ProprioObservation::dim>
     ProprioObservation::weights = ProprioInfo::weights.segment<ProprioObservation::dim>(0);
-const mu::fVec<ProprioObservation::dim>
+const fArray<ProprioObservation::dim>
     ProprioObservation::biases = ProprioInfo::biases.segment<ProprioObservation::dim>(0);
 
 template<typename T, std::size_t N>

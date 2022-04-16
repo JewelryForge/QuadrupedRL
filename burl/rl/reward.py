@@ -99,7 +99,7 @@ class LinearVelocityReward(Reward):
 
 
 class YawRateReward(Reward):
-    def __init__(self, upper_pos=0.6, upper_neg=0.45):
+    def __init__(self, upper_pos=1.0, upper_neg=0.45):
         self.reshape_pos = tanh_reshape(-upper_pos, upper_pos)
         self.reshape_neg = quadratic_linear_reshape(upper_neg)
         # self.reshape_neg = tanh2_reshape(0.0, 0.6)

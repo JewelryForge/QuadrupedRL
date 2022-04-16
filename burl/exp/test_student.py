@@ -7,12 +7,12 @@ from burl.utils import g_cfg, set_logger_level, init_logger
 from burl.rl.runner import StudentPlayer, JoystickStudentPlayer as JoystickPlayer
 
 if __name__ == '__main__':
-    g_cfg.trn_type = 'curriculum'
+    g_cfg.trn_type = 'plain'
     g_cfg.test_profile()
     g_cfg.driving_mode = True
     # g_cfg.slow_down_rendering()
     g_cfg.history_len = 123
-    g_cfg.add_disturbance = True
+    g_cfg.add_disturbance = False
     g_cfg.random_dynamics = True
     g_cfg.actuator_net = 'history'
     init_logger()

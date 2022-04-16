@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(alienGo_deploy)
 
-set(LIBTORCH_PATH /home/jewel/libraries/libtorch)
-set(PKG_PATH /home/jewel/Workspaces/teacher-student/deploy)
+set(LIBTORCH_PATH $ENV{HOME}/libraries/libtorch)
+set(PKG_PATH $ENV{HOME}/Workspaces/teacher-student/deploy)
 
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${LIBTORCH_PATH}/share/cmake)
 set(CMAKE_CXX_STANDARD 14)

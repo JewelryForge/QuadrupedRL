@@ -98,7 +98,7 @@ class RuntimeParam(object):
     log_dir: str = ''
     run_name: str = ''
     use_mp: bool = True
-    rewards_weights: tuple[tuple[str, float], ...] = (('LinearVelocityReward', 0.1),
+    rewards_weights: tuple[tuple[str, float], ...] = (('LinearVelocityReward', 0.08),
                                                       ('YawRateReward', 0.06),
                                                       ('OrthogonalLinearPenalty', 0.04),
                                                       ('VerticalLinearPenalty', 0.04),
