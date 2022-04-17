@@ -87,22 +87,32 @@ def set_logger_level(log_level: str):
 
 
 def log_debug(*args, **kwargs):
+    if logger is None:
+        init_logger(log_level=logging.DEBUG)
     return logger.debug(*args, **kwargs)
 
 
 def log_info(*args, **kwargs):
+    if logger is None:
+        init_logger(log_level=logging.DEBUG)
     return logger.info(*args, **kwargs)
 
 
 def log_warn(*args, **kwargs):
+    if logger is None:
+        init_logger(log_level=logging.DEBUG)
     return logger.warning(*args, **kwargs)
 
 
 def log_error(*args, **kwargs):
+    if logger is None:
+        init_logger(log_level=logging.DEBUG)
     return logger.error(*args, **kwargs)
 
 
 def log_critical(*args, **kwargs):
+    if logger is None:
+        init_logger(log_level=logging.DEBUG)
     return logger.critical(*args, **kwargs)
 
 

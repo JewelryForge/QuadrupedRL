@@ -522,7 +522,7 @@ class Quadruped(object):
         return self._observation.contact_states[(self._foot_ids,)]
 
     def getPrevFootContactStates(self):
-        return self.getObservationHistoryFromIndex(-2).contact_states[(self._foot_ids,)]
+        return self.getObservationHistory(idx=-2, noisy=False).contact_states[(self._foot_ids,)]
 
     def getFootContactForces(self):
         return self._observation.foot_states.forces.reshape(-1)
@@ -592,45 +592,39 @@ class Quadruped(object):
     def getLastCommand(self):
         return self._command_history[-1]
 
-    def getCmdHistoryFromIndex(self, idx):
-        len_requirement = -idx if idx < 0 else idx + 1
-        if len(self._command_history) < len_requirement:
-            return np.array(self.STANCE_POSTURE)
+    def getCmdHistory(self, *, idx=None, moment=None):
+        if idx is not None:
+            len_requirement = -idx if idx < 0 else idx + 1
+            if len(self._command_history) < len_requirement:
+                return np.array(self.STANCE_POSTURE)
+        else:
+            idx = self._getIndexFromMoment(moment)
         return self._command_history[idx]
 
-    def getObservationHistoryFromIndex(self, idx, noisy=False) -> ObservationRaw:
+    def getObservationHistory(self, *, idx=None, moment=None, noisy=False) -> ObservationRaw:
+        if idx is None:
+            assert moment is not None, '`idx` and `moment can not both be zero'
+            idx = self._getIndexFromMoment(moment)
         len_requirement = -idx if idx < 0 else idx + 1
         idx = 0 if len(self._observation_history) < len_requirement else idx
         history = self._observation_noisy_history[idx] if noisy else self._observation_history[idx]
         return history
 
-    def getJointPosHistoryFromIndex(self, idx, noisy=False):
-        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.position[(self._motor_ids,)]
+    def getJointPosHistory(self, *, idx=None, moment=None, noisy=False):
+        obs_history = self.getObservationHistory(idx=idx, moment=moment, noisy=noisy)
+        return obs_history.joint_states.position[(self._motor_ids,)]
 
-    def getJointPosErrHistoryFromIndex(self, idx, noisy=False):
-        return self.getCmdHistoryFromIndex(idx) - self.getJointPosHistoryFromIndex(idx, noisy)
+    def getJointPosErrorHistory(self, *, idx=None, moment=None, noisy=False):
+        return (self.getCmdHistory(idx=idx, moment=moment) -
+                self.getJointPosHistory(idx=idx, moment=moment, noisy=noisy))
 
-    def getJointVelHistoryFromIndex(self, idx, noisy=False):
-        return self.getObservationHistoryFromIndex(idx, noisy).joint_states.velocity[(self._motor_ids,)]
+    def getJointVelHistory(self, *, idx=None, moment=None, noisy=False):
+        obs_history = self.getObservationHistory(idx=idx, moment=moment, noisy=noisy)
+        return obs_history.joint_states.velocity[(self._motor_ids,)]
 
-    def _getIndexFromMoment(self, moment):
+    def _getIndexFromMoment(self, moment: float):
         assert moment < 0
         return -1 - int(-moment * self._frequency)
-
-    def getCmdHistoryFromMoment(self, moment):
-        return self.getCmdHistoryFromIndex(self._getIndexFromMoment(moment))
-
-    def getObservationHistoryFromMoment(self, moment, noisy=False) -> ObservationRaw:
-        return self.getObservationHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
-
-    def getJointPosHistoryFromMoment(self, moment, noisy=False):
-        return self.getJointPosHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
-
-    def getJointPosErrHistoryFromMoment(self, moment, noisy=False):
-        return self.getJointPosErrHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
-
-    def getJointVelHistoryFromMoment(self, moment, noisy=False):
-        return self.getJointVelHistoryFromIndex(self._getIndexFromMoment(moment), noisy)
 
     def analyseJointInfos(self):
         print(f"{'id':>2}  {'name':^14} {'type':>4}  {'q u':^5}  {'damp'}  {'fric'}  {'range':^13} "
@@ -782,7 +776,7 @@ class A1(Quadruped):
         return self._observation.contact_states[((3, 6, 9, 12),)]
 
     def getPrevFootContactStates(self):
-        return self.getObservationHistoryFromIndex(-2).contact_states[((3, 6, 9, 12),)]
+        return self.getObservationHistory(idx=-2, noisy=False).contact_states[((3, 6, 9, 12),)]
 
 
 class AlienGo(A1):
@@ -826,18 +820,17 @@ if __name__ == '__main__':
     pyb.connect(pyb.GUI)
     pyb.setTimeStep(2e-3)
     pyb.setAdditionalSearchPath(pybullet_data.getDataPath())
-    terrain = Plain()
-    _robot = AlienGo.auto_maker()()
-    terrain.spawn(pyb)
-    _robot.spawn(on_rack=False)
+    Plain().spawn(pyb)
+    rob = AlienGo.auto_maker()()
+    rob.spawn(on_rack=False)
     # robot.analyseJointInfos()
     pyb.setGravity(0, 0, -9.8)
 
     for _ in range(100000):
         pyb.stepSimulation()
-        _robot.updateObservation()
+        rob.updateObservation()
         _, _, view_mat, proj_mat, *_ = pyb.getDebugVisualizerCamera()
         _, _, rgba, *_ = pyb.getCameraImage(*(1024, 768), view_mat, proj_mat,
                                             renderer=pyb.ER_BULLET_HARDWARE_OPENGL)
         # time.sleep(1. / 500)
-        tq = _robot.applyCommand(_robot.STANCE_POSTURE)
+        tq = rob.applyCommand(rob.STANCE_POSTURE)

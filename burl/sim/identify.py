@@ -164,7 +164,7 @@ if __name__ == '__main__':
     import wandb
 
     sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
-    from burl.utils import get_timestamp, log_info, init_logger
+    from burl.utils import log_info, init_logger
 
     np.set_printoptions(3, linewidth=10000, suppress=True)
     use_history_info = True

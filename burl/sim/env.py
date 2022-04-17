@@ -460,13 +460,13 @@ class FixedTgEnv(IkEnv):
             obs = RealWorldObservation()
         obs = self._setObsBaseAttr(obs, 'noisy_proprio' if noisy else 'proprio')
         r = self._robot
-        obs.joint_prev_pos_err = r.getJointPosErrHistoryFromIndex(-1, noisy)
+        obs.joint_prev_pos_err = r.getJointPosErrorHistory(idx=-1, noisy=noisy)
         obs.ftg_frequencies = self._stm.frequency
         obs.ftg_phases = np.concatenate((np.sin(self._stm.phases), np.cos(self._stm.phases)))
-        obs.joint_pos_err_his = np.concatenate((r.getJointPosErrHistoryFromMoment(-0.01, noisy),
-                                                r.getJointPosErrHistoryFromMoment(-0.02, noisy)))
-        obs.joint_vel_his = np.concatenate((r.getJointVelHistoryFromMoment(-0.01, noisy),
-                                            r.getJointVelHistoryFromMoment(-0.02, noisy)))
+        obs.joint_pos_err_his = np.concatenate((r.getJointPosErrorHistory(moment=-0.01, noisy=noisy),
+                                                r.getJointPosErrorHistory(moment=-0.02, noisy=noisy)))
+        obs.joint_vel_his = np.concatenate((r.getJointVelHistory(moment=-0.01, noisy=noisy),
+                                            r.getJointVelHistory(moment=-0.02, noisy=noisy)))
         if not self._action_history:
             obs.joint_pos_target = obs.joint_prev_pos_target = r.STANCE_POSTURE
         else:
@@ -529,8 +529,6 @@ class FixedTgEnv(IkEnv):
 
 
 if __name__ == '__main__':
-    from burl.utils import init_logger, set_logger_level
-
     g_cfg.on_rack = False
     g_cfg.trn_type = 'plain'
     g_cfg.add_disturbance = False
@@ -540,9 +538,6 @@ if __name__ == '__main__':
     g_cfg.test_profile()
     # g_cfg.slow_down_rendering()
     # g_cfg.motor_latencies = (2e-3, 0.)
-    init_logger()
-    set_logger_level('DEBUG')
-    np.set_printoptions(precision=3, linewidth=1000)
     tg = True
     if tg:
         env = FixedTgEnv(AlienGo.auto_maker())
