@@ -2,8 +2,3 @@
 	path = resources/motor_data
 	url = https://github.com/JewelryForge/motor_data.git
 	branch = main
-
-[submodule "deploy/thirdparty/unitree_legged_sdk"]
-	path = deploy/thirdparty/unitree_legged_sdk
-	url = https://github.com/unitreerobotics/unitree_legged_sdk.git
-	branch = v3.3.2

@@ -2,10 +2,7 @@
 .vscode
 __pycache__
 log
-log_imt
 wandb
 *.pyc
-tg_net
-ident
 cmake-build-debug
 build
