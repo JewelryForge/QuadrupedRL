@@ -266,47 +266,49 @@ class StudentPlayer(object):
         pass
 
 
-def JoystickPlayer(base_player, gamepad_type='PS4'):
-    class _JoystickPlayer(base_player):
-        def __init__(self, model_path, task_type='basic'):
-            super().__init__(model_path, task_type)
-            from thirdparty.gamepad import gamepad, controllers
-            if not gamepad.available():
-                log_warn('Please connect your gamepad...')
-                while not gamepad.available():
-                    time.sleep(1.0)
-            try:
-                self.gamepad: gamepad.Gamepad = getattr(controllers, gamepad_type)()
-            except AttributeError:
-                raise RuntimeError(f'`{gamepad_type}` is not supported,'
-                                   f'all {controllers.all_controllers}')
-            self.gamepad.startBackgroundUpdates()
-            log_info('Gamepad connected')
+class JoystickPlayerBase(object):
+    def __init__(self, model_path, gamepad_type='PS4', task_type='basic'):
+        super().__init__(model_path, task_type)
+        from thirdparty.gamepad import gamepad, controllers
+        if not gamepad.available():
+            log_warn('Please connect your gamepad...')
+            while not gamepad.available():
+                time.sleep(1.0)
+        try:
+            self.gamepad: gamepad.Gamepad = getattr(controllers, gamepad_type)()
+            self.gamepad_type = gamepad_type
+        except AttributeError:
+            raise RuntimeError(f'`{gamepad_type}` is not supported,'
+                               f'all {controllers.all_controllers}')
+        self.gamepad.startBackgroundUpdates()
+        log_info('Gamepad connected')
 
-        @staticmethod
-        def is_available():
-            from thirdparty.gamepad import gamepad
-            return gamepad.available()
+    @staticmethod
+    def is_available():
+        from thirdparty.gamepad import gamepad
+        return gamepad.available()
 
-        def loop_callback(self):
-            if self.gamepad.isConnected():
-                x_speed = -self.gamepad.axis('LEFT-Y')
-                y_speed = -self.gamepad.axis('LEFT-X')
-                steering = -self.gamepad.axis('RIGHT-X')
-                steering = 1. if steering > 0.2 else -1. if steering < -0.2 else 0.
-                speed_norm = math.hypot(x_speed, y_speed)
-                if speed_norm:
-                    self.env.unwrapped.task.cmd = (x_speed / speed_norm, y_speed / speed_norm, steering)
-                else:
-                    self.env.unwrapped.task.cmd = (0., 0., steering)
+    def loop_callback(self):
+        if self.gamepad.isConnected():
+            x_speed = -self.gamepad.axis('LAS -Y')
+            y_speed = -self.gamepad.axis('LAS -X')
+            steering = -self.gamepad.axis('RAS -X')
+            steering = 1. if steering > 0.2 else -1. if steering < -0.2 else 0.
+            speed_norm = math.hypot(x_speed, y_speed)
+            if speed_norm:
+                self.env.unwrapped.task.cmd = (x_speed / speed_norm, y_speed / speed_norm, steering)
             else:
-                sys.exit(1)
+                self.env.unwrapped.task.cmd = (0., 0., steering)
+        else:
+            sys.exit(1)
 
-        def __del__(self):
-            self.gamepad.disconnect()
-
-    return _JoystickPlayer
+    def __del__(self):
+        self.gamepad.disconnect()
 
 
-JoystickTeacherPlayer = JoystickPlayer(TeacherPlayer)
-JoystickStudentPlayer = JoystickPlayer(StudentPlayer)
+class JoystickTeacherPlayer(JoystickPlayerBase, TeacherPlayer):
+    pass
+
+
+class JoystickStudentPlayer(JoystickPlayerBase, StudentPlayer):
+    pass

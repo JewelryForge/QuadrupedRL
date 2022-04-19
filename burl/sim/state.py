@@ -13,7 +13,7 @@ class ArrayAttr(object):
         super().__setattr__(key, np.asarray(value, dtype=float))
 
 
-zero3, zero4, zero8 = (0.,) * 3, (0.,) * 4, (0.,) * 8
+zero2, zero3, zero4, zero8 = (0.,) * 2, (0.,) * 3, (0.,) * 4, (0.,) * 8
 zero12, zero24, zero36 = (0.,) * 12, (0.,) * 24, (0.,) * 36
 
 
@@ -60,8 +60,8 @@ class ProprioObservation(ObservationBase):
 
     def __init__(self):
         super().__init__()
-        self.command = zero3
-        self.gravity_vector = zero3
+        self.command = zero4
+        self.roll_pitch = zero2
         self.base_linear = zero3
         self.base_angular = zero3
         self.joint_pos = zero12
@@ -73,15 +73,15 @@ class ProprioObservation(ObservationBase):
             return
         cls._init = True
         ObservationBase._wb_init()
-        command_bias, command_weight = zero3, (1.,) * 3
-        gravity_vector_bias, gravity_vector_weight = (0., 0., .99), (5., 5., 20.)
+        command_bias, command_weight = zero4, (1.,) * 4
+        roll_pitch_bias, roll_pitch_weight = (0., 0.), (2., 2.)
         base_linear_bias, base_linear_weight = zero3, (2.,) * 3
         base_angular_bias, base_angular_weight = zero3, (2.,) * 3
         joint_pos_bias, joint_pos_weight = get_robot_type().STANCE_POSTURE, (2.,) * 12
         joint_vel_bias, joint_vel_weight = zero12, (0.5, 0.4, 0.3) * 4
         cls.biases = np.concatenate((
             command_bias,
-            gravity_vector_bias,
+            roll_pitch_bias,
             base_linear_bias,
             base_angular_bias,
             joint_pos_bias,
@@ -90,7 +90,7 @@ class ProprioObservation(ObservationBase):
 
         cls.weights = np.concatenate((
             command_weight,
-            gravity_vector_weight,
+            roll_pitch_weight,
             base_linear_weight,
             base_angular_weight,
             joint_pos_weight,
@@ -100,7 +100,7 @@ class ProprioObservation(ObservationBase):
     def to_array(self):
         return np.concatenate((
             self.command,
-            self.gravity_vector,
+            self.roll_pitch,
             self.base_linear,
             self.base_angular,
             self.joint_pos,

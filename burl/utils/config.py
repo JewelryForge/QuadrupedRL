@@ -98,22 +98,22 @@ class RuntimeParam(object):
     log_dir: str = ''
     run_name: str = ''
     use_mp: bool = True
-    rewards_weights: tuple[tuple[str, float], ...] = (('LinearVelocityReward', 0.08),
+    rewards_weights: tuple[tuple[str, float], ...] = (('UnifiedLinearReward', 0.1),
                                                       ('YawRateReward', 0.06),
-                                                      ('OrthogonalLinearPenalty', 0.04),
                                                       ('VerticalLinearPenalty', 0.04),
                                                       ('RollPitchRatePenalty', 0.04),
                                                       ('BodyPosturePenalty', 0.04),
                                                       ('FootSlipPenalty', 0.04),
                                                       ('BodyCollisionPenalty', 0.04),
-                                                      ('TorquePenalty', 0.02),
-                                                      ('JointMotionPenalty', 0.02),
-                                                      ('JointConstraintPenalty', 0.04),
+                                                      ('TorquePenalty', 0.01),
+                                                      ('JointMotionPenalty', 0.01),
+                                                      ('ActionSmoothnessReward', 0.01),
+                                                      ('ClearanceOverTerrainReward', 0.02),
+
                                                       ('AliveReward', 0.0),
-                                                      # ('TrivialStridePenalty', 0.06),
-                                                      # ('TorqueGradientPenalty', 0.04),
+                                                      ('LinearVelocityReward', 0.0),
+                                                      ('OrthogonalLinearPenalty', 0.0),
                                                       ('CostOfTransportReward', 0.),
-                                                      ('ClearanceOverTerrainReward', 0.01),
                                                       ('BodyHeightReward', 0.),
                                                       ('HipAnglePenalty', 0.),)
 

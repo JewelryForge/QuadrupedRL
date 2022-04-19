@@ -41,6 +41,12 @@ class BasicTask(RewardRegistry):
     def cmd(self, cmd):
         self._cmd = np.asarray(cmd)
 
+    def getCommandObservation(self):
+        if (self._cmd[:2] == 0.).all():
+            return np.concatenate(((0.,), self._cmd))
+        else:
+            return np.concatenate(((1.,), self._cmd))
+
     env = property(lambda self: self._env)
     robot = property(lambda self: self._robot)
 
@@ -129,7 +135,7 @@ class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
         self.stop_prob = 0.2
-        self.interval_range = (1000, 2500)
+        self.interval_range = (500, 5000)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = -1
         super().__init__(env)

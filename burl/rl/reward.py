@@ -3,11 +3,6 @@ from abc import ABC
 
 import numpy as np
 
-__all__ = ['LinearVelocityReward', 'OrthogonalLinearPenalty', 'YawRateReward', 'RollPitchRatePenalty',
-           'VerticalLinearPenalty', 'BodyPosturePenalty', 'TorquePenalty',
-           'FootSlipPenalty', 'ClearanceOverTerrainReward', 'CostOfTransportReward', 'TrivialStridePenalty',
-           'AliveReward', 'RewardRegistry', 'JointMotionPenalty']
-
 ATANH0_95 = math.atanh(0.95)
 ATANH0_9 = math.atanh(0.9)
 
@@ -96,6 +91,24 @@ class LinearVelocityReward(Reward):
     @staticmethod
     def reshape(scale, value):
         return math.tanh(value * ATANH0_9 / scale)
+
+
+class UnifiedLinearReward(LinearVelocityReward):
+    def __init__(self, forward=0.8, lateral=0.4, ortho_upper=0.3, ortho_weight=0.5):
+        super().__init__(forward, lateral)
+        self.ortho_reshape = tanh2_reshape(0, ortho_upper)
+        self.ortho_weight = ortho_weight
+
+    def __call__(self, cmd, env, robot):
+        lin_vel = robot.getBaseLinearVelocityInBaseFrame()[:2]
+        proj_vel = np.dot(cmd[:2], lin_vel)
+        ortho_vel = math.hypot(*(lin_vel - cmd[:2] * proj_vel))
+        # print(proj_vel, ortho_vel)
+        ortho_pen = 1 - self.ortho_reshape(ortho_vel)
+        if (cmd[:2] == 0.).all():
+            return (1. + self.ortho_weight) * ortho_pen
+        proj_rew = self.reshape(self.get_desired_velocity(cmd), proj_vel)
+        return proj_rew + self.ortho_weight * ortho_pen
 
 
 class YawRateReward(Reward):

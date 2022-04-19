@@ -211,8 +211,8 @@ class QuadrupedEnv(object):
         if obs is None:
             obs = ProprioObservation()
         r = self._robot
-        obs.command = self._task.cmd
-        obs.gravity_vector = r.getGravityVector(noisy)
+        obs.command = self._task.getCommandObservation()
+        obs.roll_pitch = r.getBaseRpy(noisy)[:2]
         obs.base_linear = r.getBaseLinearVelocityInBaseFrame(noisy)
         obs.base_angular = r.getBaseAngularVelocityInBaseFrame(noisy)
         obs.joint_pos = r.getJointPositions(noisy)
