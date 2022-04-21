@@ -34,6 +34,9 @@ class Terrain(object):
     def get_peak(self, x_range: tuple[float, float], y_range: tuple[float, float]):
         raise NotImplementedError
 
+    def out_of_range(self, x, y):
+        return False
+
 
 class Plain(Terrain):
     def spawn(self, sim_env):
@@ -156,6 +159,9 @@ class HeightFieldTerrain(Terrain):
             return np.array((0., 0., 1.))
         normal = unit(vec_cross(v1 - v2, v1 - v3))
         return normal if normal[2] > 0 else -normal
+
+    def out_of_range(self, x, y):
+        return abs(x - self.offset[0]) > self.x_size / 2 - 1 or abs(y - self.offset[1]) > self.y_size / 2 - 1
 
 
 class Steps(HeightFieldTerrain):

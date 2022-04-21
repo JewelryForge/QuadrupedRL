@@ -373,7 +373,8 @@ class Quadruped(object):
         # if not other_vectors:
         #     return transform @ vector
         # return [transform @ vec for vec in (vector, *other_vectors)]
-        _, ref_inv = pyb.invertTransform(TP_ZERO3, reference)
+        x, y, z, w = reference
+        ref_inv = (-x, -y, -z, w)
         if not other_vectors:
             return pyb.multiplyTransforms(TP_ZERO3, ref_inv, vector, TP_Q0)[0]
         return [pyb.multiplyTransforms(TP_ZERO3, ref_inv, vec, TP_Q0)[0] for vec in (vector, *other_vectors)]

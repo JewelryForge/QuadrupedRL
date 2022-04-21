@@ -1,8 +1,5 @@
-import math
 import random
 from typing import Type
-
-import numpy as np
 
 from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
@@ -96,6 +93,14 @@ class BasicTask(RewardRegistry):
         for plg in self.plugins:
             plg.on_reset(self, self._robot, self._env)
 
+    def is_regularly_finished(self):
+        if self._env.sim_step >= g_cfg.max_sim_iterations:
+            return True
+        x, y, _ = self._env.robot.getBasePosition()
+        if self._env.terrain.out_of_range(x, y):
+            return True
+        return False
+
     def is_failed(self):
         r, _, _ = self._robot.rpy
         safety_h = self._env.getTerrainBasedHeightOfRobot()
@@ -135,6 +140,7 @@ class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
         self.stop_prob = 0.2
+        self.forward_prob = 0.2
         self.interval_range = (500, 5000)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = -1
@@ -165,10 +171,13 @@ class RandomCmdTask(RandomLinearCmdTask):
 
     def random_cmd(self):
         angular_cmd = random.choice((-1., 0, 0, 1.))
-        if random.random() < self.stop_prob:
+        if (rand := random.random()) < self.stop_prob:
             return np.array((0., 0., angular_cmd))
-        yaw = random.uniform(0, math.tau)
-        return np.array((math.cos(yaw), math.sin(yaw), angular_cmd))
+        elif rand < self.stop_prob + self.forward_prob:
+            return np.array((1., 0., 0.))
+        else:
+            yaw = random.uniform(0, math.tau)
+            return np.array((math.cos(yaw), math.sin(yaw), angular_cmd))
         # return np.array((math.cos(yaw), math.sin(yaw), clip(random.gauss(0, 0.5), -1, 1)))
 
 

@@ -94,7 +94,7 @@ class LinearVelocityReward(Reward):
 
 
 class UnifiedLinearReward(LinearVelocityReward):
-    def __init__(self, forward=0.8, lateral=0.4, ortho_upper=0.3, ortho_weight=0.5):
+    def __init__(self, forward=1.0, lateral=0.75, ortho_upper=0.3, ortho_weight=0.5):
         super().__init__(forward, lateral)
         self.ortho_reshape = tanh2_reshape(0, ortho_upper)
         self.ortho_weight = ortho_weight
@@ -224,10 +224,10 @@ class HipAnglePenalty(Reward):
 
 
 class JointConstraintPenalty(Reward):
-    def __init__(self, constraints=(0.2, 0.4, 0.4), upper=0.2):
-        self.hip_reshape = np.vectorize(soft_constrain(constraints[0], upper))
-        self.thigh_reshape = np.vectorize(soft_constrain(constraints[1], upper))
-        self.shank_reshape = np.vectorize(soft_constrain(constraints[2], upper))
+    def __init__(self, constraints=(0., 0., 0.), upper=(0.4, 0.6, 0.6)):
+        self.hip_reshape = np.vectorize(soft_constrain(constraints[0], upper[0]))
+        self.thigh_reshape = np.vectorize(soft_constrain(constraints[1], upper[1]))
+        self.shank_reshape = np.vectorize(soft_constrain(constraints[2], upper[2]))
 
     def __call__(self, cmd, env, robot):
         joint_angles = robot.getJointPositions() - robot.STANCE_POSTURE

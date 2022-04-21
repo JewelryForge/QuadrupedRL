@@ -84,8 +84,8 @@ class StatisticsCollector(Plugin):
     def publish(self, task, rob, env):
         data = {
             'obs': env.makeNoisyProprioInfo().standard().tolist(),
+            'action': env._action.tolist(),
             'joint_states': {
-                # 'joint_pos': (rob.getJointPositions() - rob.STANCE_POSTURE).tolist(),
                 'joint_pos': rob.getJointPositions().tolist(),
                 'violence': env.getActionViolence().tolist(),
                 'commands': rob.getLastCommand().tolist(),

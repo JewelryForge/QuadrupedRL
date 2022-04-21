@@ -290,7 +290,7 @@ class Action(ArrayAttr):
         self.foot_pos_residuals = zero12
 
     biases = np.zeros(12)
-    weights = np.array((0.25, 0.25, 0.15) * 4)
+    weights = np.array((0.2, 0.2, 0.1) * 4)
 
     @classmethod
     def from_array(cls, arr: np.ndarray):

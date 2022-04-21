@@ -67,7 +67,7 @@ class PPOParam(object):
     gamma: float = 0.99
     lambda_gae: float = 0.95
     value_loss_coeff: float = 1.0
-    entropy_coeff: float = 3e-3
+    entropy_coeff: float = 5e-3
     learning_rate: float = 1e-4
     max_grad_norm: float = 1.0
 
@@ -98,15 +98,16 @@ class RuntimeParam(object):
     log_dir: str = ''
     run_name: str = ''
     use_mp: bool = True
-    rewards_weights: tuple[tuple[str, float], ...] = (('UnifiedLinearReward', 0.1),
-                                                      ('YawRateReward', 0.06),
+    rewards_weights: tuple[tuple[str, float], ...] = (('UnifiedLinearReward', 0.15),
+                                                      ('YawRateReward', 0.08),
                                                       ('VerticalLinearPenalty', 0.04),
                                                       ('RollPitchRatePenalty', 0.04),
                                                       ('BodyPosturePenalty', 0.04),
                                                       ('FootSlipPenalty', 0.04),
                                                       ('BodyCollisionPenalty', 0.04),
-                                                      ('TorquePenalty', 0.01),
-                                                      ('JointMotionPenalty', 0.01),
+                                                      ('JointConstraintPenalty', 0.04),
+                                                      ('TorquePenalty', 0.02),
+                                                      ('JointMotionPenalty', 0.02),
                                                       ('ActionSmoothnessReward', 0.01),
                                                       ('ClearanceOverTerrainReward', 0.02),
 

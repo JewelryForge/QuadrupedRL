@@ -295,10 +295,10 @@ class QuadrupedEnv(object):
         for n in reward_details:
             reward_details[n] /= self._num_action_repeats
         self._is_failed = self._task.is_failed()
-        time_out = not self._is_failed and self._sim_step_counter >= g_cfg.max_sim_iterations
+        is_regularly_finished = not self._is_failed and self._task.is_regularly_finished()
         mean_reward = np.mean(rewards).item()
         self._episode_reward += mean_reward
-        info = {'time_out': time_out,
+        info = {'time_out': is_regularly_finished,
                 'reward_details': reward_details,
                 'episode_reward': self._episode_reward}
         if task_info := self._task.on_step():
@@ -306,7 +306,7 @@ class QuadrupedEnv(object):
         # log_debug(f'Step time: {time.time() - start}')
         return (self.makeObservation(),
                 mean_reward,
-                self._is_failed or time_out,
+                self._is_failed or is_regularly_finished,
                 info)
 
     def _applyDisturbanceOnRobot(self):
@@ -530,7 +530,7 @@ class FixedTgEnv(IkEnv):
 
 if __name__ == '__main__':
     g_cfg.on_rack = False
-    g_cfg.trn_type = 'plain'
+    g_cfg.trn_type = 'steps'
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'

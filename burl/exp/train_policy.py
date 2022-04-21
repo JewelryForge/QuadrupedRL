@@ -22,7 +22,7 @@ def main():
         g_cfg.sleeping_enabled = False
         g_cfg.lr_scheduler = 'fixed'
     log_warn(f'Training on {g_cfg.device}')
-    wandb.init(project='teacher-student', name=g_cfg.run_name, save_code=True,
+    wandb.init(project='policy-fine-tune', name=g_cfg.run_name, save_code=True,
                mode=None if g_cfg.use_wandb else 'disabled')
     if not g_cfg.log_dir:
         if g_cfg.use_wandb:
