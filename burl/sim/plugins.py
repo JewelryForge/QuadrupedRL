@@ -97,7 +97,7 @@ class StatisticsCollector(Plugin):
                 'contact': rob.getContactStates().tolist()
             },
             'body_height': env.getTerrainBasedHeightOfRobot(),
-            'cot': rob.getCostOfTransport(),
+            # 'cot': rob.getCostOfTransport(),
             'twist': {
                 'linear': rob.getBaseLinearVelocityInBaseFrame().tolist(),
                 'angular': rob.getBaseAngularVelocityInBaseFrame().tolist(),
@@ -113,7 +113,7 @@ class StatisticsCollector(Plugin):
 
     def on_reset(self, task, robot, env):
         print('episode len:', self._step_counter)
-        print('cot', robot.getCostOfTransport())
+        # print('cot', robot.getCostOfTransport())
         print('mse torque', np.sqrt(self._torque_sum / self._sim_step_counter))
         print('abs torque', self._torque_abs_sum / self._sim_step_counter)
         print('torque pen', self._torque_pen_sum / self._sim_step_counter)

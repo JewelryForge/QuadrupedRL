@@ -110,13 +110,8 @@ class RuntimeParam(object):
                                                       ('JointMotionPenalty', 0.02),
                                                       ('ActionSmoothnessReward', 0.01),
                                                       ('ClearanceOverTerrainReward', 0.02),
-
-                                                      ('AliveReward', 0.0),
-                                                      ('LinearVelocityReward', 0.0),
-                                                      ('OrthogonalLinearPenalty', 0.0),
-                                                      ('CostOfTransportReward', 0.),
-                                                      ('BodyHeightReward', 0.),
-                                                      ('HipAnglePenalty', 0.),)
+                                                      # ('AliveReward', 0.0),
+                                                      ('BodyHeightReward', 0.))
 
 
 @dataclass

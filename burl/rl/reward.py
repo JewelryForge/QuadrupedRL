@@ -286,13 +286,13 @@ class TorquePenalty(Reward):
         return 1 - sum(self.reshape(robot.getLastAppliedTorques() ** 2))
 
 
-class CostOfTransportReward(Reward):
-    def __init__(self, lower=0.0, upper=2.0):
-        self.reshape = tanh_reshape(lower, upper)
-
-    def __call__(self, cmd, env, robot):
-        cot = robot.getCostOfTransport()
-        return -self.reshape(cot)
+# class CostOfTransportReward(Reward):
+#     def __init__(self, lower=0.0, upper=2.0):
+#         self.reshape = tanh_reshape(lower, upper)
+#
+#     def __call__(self, cmd, env, robot):
+#         cot = robot.getCostOfTransport()
+#         return -self.reshape(cot)
 
 
 # class ImitationReward(Reward):

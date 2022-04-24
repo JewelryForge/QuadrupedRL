@@ -113,7 +113,7 @@ class Quadruped(object):
         self._observation_noisy_buffer: deque[ObservationRaw] = deque(maxlen=20)
         self._command_history: deque[np.ndarray] = deque(maxlen=100)
         self._torque_history: deque[np.ndarray] = deque(maxlen=100)
-        self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
+        # self._cot_buffer: deque[float] = deque(maxlen=int(2 * self._frequency))
         # self._cot_buffer: deque[float] = deque()
 
     def spawn(self, sim_env=pyb, on_rack=False, position=(0., 0., 0.), orientation=(0., 0., 0., 1.)):
@@ -331,7 +331,7 @@ class Quadruped(object):
         self._observation_noisy_buffer.clear()
         self._command_history.clear()
         self._torque_history.clear()
-        self._cot_buffer.clear()
+        # self._cot_buffer.clear()
         self._motor.reset()
 
     def numericalInverseKinematics(self, leg: int, pos: ARRAY_LIKE, frame=BASE_FRAME):
@@ -408,11 +408,11 @@ class Quadruped(object):
     def _updateLocomotionInfos(self):
         """Record locomotion related states including clearances, slips and strides in every simulation step"""
         joint_vel = self.getJointVelocities()
-        if self._torque is not None:
-            mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
-            work = sum(filter(lambda x: x > 0, self._torque * joint_vel))
-            self._sum_work += work
-            self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
+        # if self._torque is not None:
+        #     mgv = self._mass * 9.8 * math.hypot(*self._base_twist.linear)
+        #     work = sum(filter(lambda x: x > 0, self._torque * joint_vel))
+        #     self._sum_work += work
+        #     self._cot_buffer.append(0.0 if mgv == 0.0 else work / mgv)
         rolling_vel = joint_vel[((1, 4, 7, 10),)] + joint_vel[((2, 5, 8, 11),)]
         for i, contact in enumerate(self.getFootContactStates()):
             foot_pos_world = self.getFootPositionInWorldFrame(i)
@@ -565,7 +565,8 @@ class Quadruped(object):
         return self._foot_clearances
 
     def getCostOfTransport(self):
-        return np.mean(self._cot_buffer).item() if self._cot_buffer else 0
+        raise NotImplementedError
+        # return np.mean(self._cot_buffer).item() if self._cot_buffer else 0
 
     def getJointStates(self) -> JointStates:
         return self._observation.joint_states

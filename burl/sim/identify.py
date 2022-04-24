@@ -99,13 +99,13 @@ class RobotDatasetWithHistory(Dataset):
             self.error = self.data['angle_error'].astype(np.float32)
             self.velocity = self.data['motor_velocity'].astype(np.float32)
             self.torque = self.data['motor_torque'].astype(np.float32)
-        self.X = np.stack((self.error[10:, ].flatten(),
-                           self.error[5:-5, ].flatten(),
-                           self.error[:-10, ].flatten(),
-                           self.velocity[10:, ].flatten(),
-                           self.velocity[5:-5, ].flatten(),
-                           self.velocity[:-10, ].flatten(),), axis=1)
-        self.Y = np.expand_dims(self.torque[10:, ].flatten(), axis=1)
+        self.X = np.stack((self.error[10:-1, ].flatten(),
+                           self.error[5:-6, ].flatten(),
+                           self.error[:-11, ].flatten(),
+                           self.velocity[10:-1, ].flatten(),
+                           self.velocity[5:-6, ].flatten(),
+                           self.velocity[:-11, ].flatten()), axis=1)
+        self.Y = np.expand_dims(self.torque[11:, ].flatten(), axis=1)
         self.size = len(self.error)
 
     def __len__(self):
