@@ -181,6 +181,13 @@ class RandomCmdTask(RandomLinearCmdTask):
         # return np.array((math.cos(yaw), math.sin(yaw), clip(random.gauss(0, 0.5), -1, 1)))
 
 
+class RandomVelocityTask(RandomCmdTask):
+    def random_cmd(self):
+        cmd = super().random_cmd()
+        cmd[:2] *= random.uniform(0., 1.)
+        return cmd
+
+
 class CentralizedTask(object):
     """A wrapper of Task class for centralized curricula"""
 
@@ -226,6 +233,8 @@ def get_task(task_type: str):
         return RandomLinearCmdTask
     elif task_type == 'randCmd':
         return RandomCmdTask
+    elif task_type == 'randVel':
+        return RandomVelocityTask
     # elif task_type == 'randLR':
     #     return RandomLeftRightTask
     else:

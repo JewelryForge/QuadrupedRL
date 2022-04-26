@@ -116,31 +116,31 @@ class UnifiedLinearReward(LinearVelocityReward):
         return (1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen
 
 
-# class UnifiedLinearReward(Reward):
-#     def __init__(self, max_vel=(1.0, 0.75), reward_range=(0.2, 0.2), ortho_weight=0.33):
-#         self.forward, self.lateral = max_vel
-#         self.proj_reshape = exp_m2_reshape(reward_range[0])
-#         self.ortho_reshape = exp_m2_reshape(reward_range[1])
-#         self.ortho_weight = ortho_weight
-#
-#     def __call__(self, cmd, env, robot):
-#         lin_cmd = cmd[:2]
-#         if speed := norm(lin_cmd):
-#             lin_cmd /= speed
-#
-#         lin_vel = robot.getBaseLinearVelocityInBaseFrame()[:2]
-#         proj_vel = np.dot(lin_cmd, lin_vel)
-#         ortho_vel = norm(lin_vel - lin_cmd * proj_vel)
-#         # print(proj_vel, ortho_vel)
-#
-#         ortho_pen = 1 - self.ortho_reshape(ortho_vel)
-#         if speed == 0.:
-#             return ortho_pen
-#         proj_rew = self.proj_reshape(proj_vel - self.get_desired_velocity(lin_cmd) * speed)
-#         return (1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen
-#
-#     def get_desired_velocity(self, cmd):
-#         return self.forward * self.lateral / math.hypot(self.lateral * cmd[0], self.forward * cmd[1])
+class UnifiedLinearReward2(Reward):
+    def __init__(self, max_vel=(1.0, 0.75), reward_range=(0.5, 0.2), ortho_weight=0.33):
+        self.forward, self.lateral = max_vel
+        self.proj_reshape = exp_m2_reshape(reward_range[0])
+        self.ortho_reshape = exp_m2_reshape(reward_range[1])
+        self.ortho_weight = ortho_weight
+
+    def __call__(self, cmd, env, robot):
+        lin_cmd = cmd[:2]
+        if speed := norm(lin_cmd):
+            lin_cmd /= speed
+
+        lin_vel = robot.getBaseLinearVelocityInBaseFrame()[:2]
+        proj_vel = np.dot(lin_cmd, lin_vel)
+        ortho_vel = norm(lin_vel - lin_cmd * proj_vel)
+        # print(lin_cmd, proj_vel, ortho_vel)
+
+        ortho_pen = self.ortho_reshape(ortho_vel)
+        if speed == 0.:
+            return ortho_pen
+        proj_rew = self.proj_reshape(proj_vel - self.get_desired_velocity(lin_cmd) * speed)
+        return (1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen
+
+    def get_desired_velocity(self, cmd):
+        return self.forward * self.lateral / math.hypot(self.lateral * cmd[0], self.forward * cmd[1])
 
 
 class YawRateReward(Reward):
