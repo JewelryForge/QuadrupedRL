@@ -40,8 +40,12 @@ class Angle(object):
 ang_norm = Angle.norm
 
 
+def norm(vec):
+    return math.hypot(*vec)
+
+
 def unit(x) -> np.ndarray:
-    return np.asarray(x) / math.hypot(*x)
+    return np.asarray(x) / norm(x)
 
 
 def sign(x: float) -> int:

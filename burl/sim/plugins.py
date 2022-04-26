@@ -7,11 +7,10 @@ from typing import Union
 import numpy as np
 import pybullet as pyb
 
-from burl.utils import UdpPublisher, Angle, unit, vec_cross, sign, log_info
+from burl.utils import UdpPublisher, Angle, unit, vec_cross, sign, log_info, norm
+from burl.utils.transforms import Rpy
 
 __all__ = ['Plugin', 'StatisticsCollector', 'InfoRenderer', 'VideoRecorder']
-
-from burl.utils.transforms import Rpy
 
 
 class Plugin(object):
@@ -253,7 +252,7 @@ class InfoRenderer(Plugin):
                 self._external_force_buffer = external_force
 
             if (external_torque != 0).any():
-                magnitude = math.hypot(*external_torque)
+                magnitude = norm(external_torque)
                 axis_z = external_torque / magnitude
                 assis = np.array((0., 0., 1.) if any(axis_z != (0., 0., 1.)) else (1., 0., 0.))
                 self._tip_axis_x = unit(vec_cross(axis_z, assis))

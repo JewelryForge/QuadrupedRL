@@ -17,7 +17,7 @@ class Options(object):
     task_type: str = 'basic'
     random_dynamics: bool = False
     actuator_net: Union[str, None] = None
-    use_centralized_curriculum: bool = False
+    use_centralized_curriculum: bool = True
     aggressive: bool = False
 
 
@@ -98,7 +98,7 @@ class RuntimeParam(object):
     log_dir: str = ''
     run_name: str = ''
     use_mp: bool = True
-    rewards_weights: tuple[tuple[str, float], ...] = (('UnifiedLinearReward', 0.15),
+    rewards_weights: tuple[tuple[str, float], ...] = (('UnifiedLinearReward', 0.23),
                                                       ('YawRateReward', 0.08),
                                                       ('VerticalLinearPenalty', 0.04),
                                                       ('RollPitchRatePenalty', 0.04),

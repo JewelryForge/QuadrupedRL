@@ -140,7 +140,7 @@ class RandomLinearCmdTask(BasicTask):
     def __init__(self, env, seed=None):
         random.seed(seed)
         self.stop_prob = 0.2
-        self.forward_prob = 0.2
+        self.forward_prob = 0.05
         self.interval_range = (500, 5000)
         self.update_interval = random.uniform(*self.interval_range)
         self.last_update = -1
@@ -174,7 +174,7 @@ class RandomCmdTask(RandomLinearCmdTask):
         if (rand := random.random()) < self.stop_prob:
             return np.array((0., 0., angular_cmd))
         elif rand < self.stop_prob + self.forward_prob:
-            return np.array((1., 0., 0.))
+            return np.array((1., 0., angular_cmd))
         else:
             yaw = random.uniform(0, math.tau)
             return np.array((math.cos(yaw), math.sin(yaw), angular_cmd))
@@ -185,37 +185,38 @@ class CentralizedTask(object):
     """A wrapper of Task class for centralized curricula"""
 
     def __init__(self):
-        self.curriculum_prototypes: list[CURRICULUM_PROTOTYPE] = []
+        self.crm_protos: list[CURRICULUM_PROTOTYPE] = []
         aggressive = g_cfg.test_mode or g_cfg.aggressive
-        buffer_len = g_cfg.num_envs * 2
+        buffer_len = g_cfg.num_envs
         if g_cfg.use_centralized_curriculum:
             from burl.rl.curriculum import CentralizedDisturbanceCurriculum, CentralizedTerrainCurriculum
             if g_cfg.add_disturbance:
-                self.curriculum_prototypes.append(
-                    CentralizedDisturbanceCurriculum(buffer_len=buffer_len, aggressive=aggressive))
+                crm_obj = CentralizedDisturbanceCurriculum(buffer_len=buffer_len, aggressive=aggressive)
+                self.crm_protos.append(crm_obj)
             if g_cfg.trn_type == 'curriculum':
-                self.curriculum_prototypes.append(
-                    CentralizedTerrainCurriculum(buffer_len=buffer_len, aggressive=aggressive))
+                crm_obj = CentralizedTerrainCurriculum(buffer_len=buffer_len, aggressive=aggressive)
+                self.crm_protos.append(crm_obj)
         else:
-            from burl.rl.curriculum import DisturbanceCurriculum, TerrainCurriculum
-            if g_cfg.add_disturbance:
-                self.curriculum_prototypes.append(DisturbanceCurriculum(aggressive))
-            if g_cfg.trn_type == 'curriculum':
-                self.curriculum_prototypes.append(TerrainCurriculum(aggressive))
+            raise NotImplementedError
+            # from burl.rl.curriculum import DisturbanceCurriculum, TerrainCurriculum
+            # if g_cfg.add_disturbance:
+            #     self.crm_protos.append(DisturbanceCurriculum(aggressive))
+            # if g_cfg.trn_type == 'curriculum':
+            #     self.crm_protos.append(TerrainCurriculum(aggressive))
 
     def spawner(self, task_class: Type[BasicTask], args=(), **kwargs):
         return make_part(self.make_distribution, task_class, args=args, **kwargs)
 
     def make_distribution(self, task_class: Type[BasicTask], env, args=(), **kwargs):
         task_inst = task_class(env, *args, **kwargs)
-        for crm in self.curriculum_prototypes:
+        for crm in self.crm_protos:
             task_inst.load_plugin(crm.make_distribution())
         return task_inst
 
     def update_curricula(self):
-        for crm in self.curriculum_prototypes:
+        for crm in self.crm_protos:
             if isinstance(crm, CentralizedCurriculum):
-                crm.check_letter_box()
+                crm.summarize()
 
 
 def get_task(task_type: str):

@@ -89,10 +89,9 @@ class HeightFieldTerrain(Terrain):
             self.terrain_id = sim_env.createMultiBody(0, self.terrain_shape_id)
             sim_env.changeVisualShape(self.terrain_id, -1, rgbaColor=(1, 1, 1, 1))
             sim_env.changeDynamics(self.terrain_id, -1, lateralFriction=1.0)
-            origin_z = (np.max(self.heightfield) + np.min(self.heightfield)) / 2
-            # does not need to move again when its height field is replaced
-            sim_env.resetBasePositionAndOrientation(self.terrain_id, self.offset + (0, 0, origin_z),
-                                                    (0., 0., 0., 1.))
+        origin_z = (np.max(self.heightfield) + np.min(self.heightfield)) / 2
+        sim_env.resetBasePositionAndOrientation(self.terrain_id, self.offset + (0, 0, origin_z),
+                                                (0., 0., 0., 1.))
 
     def replace_heightfield(self, sim_env, height_field: HeightField):
         self.heightfield = height_field.data

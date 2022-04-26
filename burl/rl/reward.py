@@ -3,8 +3,11 @@ from abc import ABC
 
 import numpy as np
 
+from burl.utils import norm
+
 ATANH0_95 = math.atanh(0.95)
 ATANH0_9 = math.atanh(0.9)
+SQRT_LOG10 = math.sqrt(math.log(10))
 
 
 class Reward(ABC):
@@ -46,9 +49,11 @@ def tanh_reverse(lower, upper, value):
     return np.arctanh(value) / w + middle
 
 
-def elu_reshape(coeff):
+def exp_m2_reshape(upper):
+    w = upper / SQRT_LOG10
+
     def _reshape(v):
-        return (v if v >= 0 else math.exp(v) - 1) * coeff
+        return np.exp(-(v / w) ** 2)
 
     return _reshape
 
@@ -94,7 +99,7 @@ class LinearVelocityReward(Reward):
 
 
 class UnifiedLinearReward(LinearVelocityReward):
-    def __init__(self, forward=1.0, lateral=0.75, ortho_upper=0.3, ortho_weight=0.5):
+    def __init__(self, forward=1.0, lateral=0.75, ortho_upper=0.3, ortho_weight=0.33):
         super().__init__(forward, lateral)
         self.ortho_reshape = tanh2_reshape(0, ortho_upper)
         self.ortho_weight = ortho_weight
@@ -106,9 +111,36 @@ class UnifiedLinearReward(LinearVelocityReward):
         # print(proj_vel, ortho_vel)
         ortho_pen = 1 - self.ortho_reshape(ortho_vel)
         if (cmd[:2] == 0.).all():
-            return (1. + self.ortho_weight) * ortho_pen
+            return ortho_pen
         proj_rew = self.reshape(self.get_desired_velocity(cmd), proj_vel)
-        return proj_rew + self.ortho_weight * ortho_pen
+        return (1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen
+
+
+# class UnifiedLinearReward(Reward):
+#     def __init__(self, max_vel=(1.0, 0.75), reward_range=(0.2, 0.2), ortho_weight=0.33):
+#         self.forward, self.lateral = max_vel
+#         self.proj_reshape = exp_m2_reshape(reward_range[0])
+#         self.ortho_reshape = exp_m2_reshape(reward_range[1])
+#         self.ortho_weight = ortho_weight
+#
+#     def __call__(self, cmd, env, robot):
+#         lin_cmd = cmd[:2]
+#         if speed := norm(lin_cmd):
+#             lin_cmd /= speed
+#
+#         lin_vel = robot.getBaseLinearVelocityInBaseFrame()[:2]
+#         proj_vel = np.dot(lin_cmd, lin_vel)
+#         ortho_vel = norm(lin_vel - lin_cmd * proj_vel)
+#         # print(proj_vel, ortho_vel)
+#
+#         ortho_pen = 1 - self.ortho_reshape(ortho_vel)
+#         if speed == 0.:
+#             return ortho_pen
+#         proj_rew = self.proj_reshape(proj_vel - self.get_desired_velocity(lin_cmd) * speed)
+#         return (1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen
+#
+#     def get_desired_velocity(self, cmd):
+#         return self.forward * self.lateral / math.hypot(self.lateral * cmd[0], self.forward * cmd[1])
 
 
 class YawRateReward(Reward):
@@ -145,7 +177,7 @@ class OrthogonalLinearPenalty(Reward):
     def __call__(self, cmd, env, robot):
         linear = robot.getBaseLinearVelocityInBaseFrame()[:2]
         v_o = np.asarray(linear) - np.asarray(cmd[:2]) * np.dot(linear, cmd[:2])
-        return 1 - self.reshape(math.hypot(*v_o))
+        return 1 - self.reshape(norm(v_o))
 
 
 class VerticalLinearPenalty(Reward):
@@ -376,9 +408,10 @@ if __name__ == '__main__':
     # print(tanh_reverse(-0.4, 0.8, 0.9))
     r1 = tanh2_reshape(0.0, 0.6)
     # r1 = lambda x: x / 1
-    r2 = quadratic_linear_reshape(0.45)
-    x = np.linspace(-1, 1, 1000)
-    plt.plot(x, [-r1(x) for x in x])
-    plt.plot(x, [-r2(x) for x in x])
+    r2 = exp_m2_reshape(3)
+    print(r2(3))
+    x = np.linspace(-4, 4, 1000)
+    plt.plot(x, r2(x))
+    # plt.plot(x, [-r2(x) for x in x])
     # plt.plot(x, -np.exp(x) + 1)
     plt.show()

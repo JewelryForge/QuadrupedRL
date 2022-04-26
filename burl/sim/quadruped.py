@@ -11,7 +11,7 @@ import pybullet_data
 import burl
 from burl.sim.motor import PdMotorSim, ActuatorNetManager
 from burl.sim.state import JointStates, Pose, Twist, ContactStates, ObservationRaw, BaseState, FootStates
-from burl.utils import ang_norm, JointInfo, DynamicsInfo, ARRAY_LIKE, make_part
+from burl.utils import ang_norm, JointInfo, DynamicsInfo, ARRAY_LIKE, make_part, norm
 from burl.utils.transforms import Rpy, Rotation, Odometry, get_rpy_rate_from_angular_velocity, Quaternion
 
 __all__ = ['Quadruped', 'A1', 'AlienGo']
@@ -425,7 +425,7 @@ class Quadruped(object):
                         self._foot_clearances[i] = self._max_foot_heights[i] - pos[2]
                     else:
                         # estimated slip distance
-                        self._slips[i] = abs(math.hypot(*(foot_pos_world - pos)[:2]) -
+                        self._slips[i] = abs(norm((foot_pos_world - pos)[:2]) -
                                              self.FOOT_RADIUS * rolling_vel[i] * duration)
                         self._strides[i] = (0., 0.)
                         self._foot_clearances[i] = 0.
