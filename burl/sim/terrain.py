@@ -11,7 +11,7 @@ from scipy.interpolate import interp2d
 
 from burl.utils import unit, vec_cross
 
-__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'Steps', 'Slope', 'Stairs', 'Hills']
+__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'Steps', 'Slopes', 'Stairs', 'Hills']
 
 
 class Terrain(object):
@@ -93,9 +93,12 @@ class HeightFieldTerrain(Terrain):
         sim_env.resetBasePositionAndOrientation(self.terrain_id, self.offset + (0, 0, origin_z),
                                                 (0., 0., 0., 1.))
 
-    def replace_heightfield(self, sim_env, height_field: HeightField):
-        self.heightfield = height_field.data
-        self.spawn(sim_env, replace_id=self.terrain_shape_id)
+    def replace_heightfield(self, sim_env, height_field: HeightField = None, replace_id=None):
+        if height_field is not None:
+            self.heightfield = height_field.data
+        if replace_id is None:
+            replace_id = self.terrain_shape_id
+        self.spawn(sim_env, replace_id=replace_id)
 
     @property
     def shape_id(self):
@@ -174,14 +177,15 @@ class Steps(HeightFieldTerrain):
         data_size = int(size / resolution) + 1
         num_steps = int(data_size / step) + 1
         height_field_data = np.zeros((data_size, data_size))
-        for i in range(num_steps):
-            for j in range(num_steps):
-                x_start, x_stop, y_start, y_stop = i * step, (i + 1) * step, j * step, (j + 1) * step
+        for i in range(num_steps + 1):
+            for j in range(num_steps + 1):
+                x_start, x_stop = int((i - 0.5) * step), int((i + 0.5) * step)
+                y_start, y_stop = int((j - 0.5) * step), int((j + 0.5) * step)
                 height_field_data[y_start:y_stop, x_start:x_stop] = random.uniform(0., max_step_height)
         return HeightField(height_field_data, size, resolution)
 
 
-class Slope(HeightFieldTerrain):
+class Slopes(HeightFieldTerrain):
     @classmethod
     def make(cls, size, resolution, slope, slope_width, axis='x'):
         return cls(cls.make_heightfield(size, resolution, slope, slope_width, axis))
@@ -284,9 +288,8 @@ if __name__ == '__main__':
 
     pyb.connect(pyb.GUI)
     pyb.configureDebugVisualizer(pyb.COV_ENABLE_RENDERING, 0)
-    t = Stairs.make_heightfield(20, 0.05, 0.15, 0.3, '+y')
+    t = Stairs.make(20, 0.05, 0.15, 0.3, '+y')
     # t.data += Hills.make_heightfield(20, 0.05, (0.02, 1)).data
-    t = Stairs(t)
     t.spawn(pyb)
     # robot = AlienGo()
     # robot.spawn()

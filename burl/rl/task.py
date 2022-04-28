@@ -4,8 +4,8 @@ from typing import Type
 from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
 from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer, VideoRecorder
-from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slope, Stairs
-from burl.utils import g_cfg, make_part
+from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slopes, Stairs
+from burl.utils import g_cfg, make_part, log_info
 
 __all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
 
@@ -19,8 +19,8 @@ class BasicTask(RewardRegistry):
 
         self.plugins: list[Plugin] = []
         self.plugin_utils = {}
-        if g_cfg.test_mode:
-            self.load_plugin(StatisticsCollector())
+        # if g_cfg.test_mode:
+        #     self.load_plugin(StatisticsCollector())
         if g_cfg.record:
             self.load_plugin(VideoRecorder())
             g_cfg.show_time_ratio = False
@@ -32,11 +32,11 @@ class BasicTask(RewardRegistry):
 
     @property
     def cmd(self):
-        return self._cmd
+        return self._cmd.copy()
 
     @cmd.setter
     def cmd(self, cmd):
-        self._cmd = np.asarray(cmd)
+        self._cmd = np.array(cmd)
 
     def getCommandObservation(self):
         if (self._cmd[:2] == 0.).all():
@@ -53,7 +53,7 @@ class BasicTask(RewardRegistry):
         elif terrain_type == 'hills':
             terrain_obj = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
         elif terrain_type == 'slope':
-            terrain_obj = Slope.make(20, 0.05, 0.17, 2.0)
+            terrain_obj = Slopes.make(20, 0.05, 0.17, 2.0)
         elif terrain_type == 'steps':
             terrain_obj = Steps.make(20, 0.05, 1.0, 0.4)
         elif terrain_type == 'stairs':
@@ -182,6 +182,13 @@ class RandomCmdTask(RandomLinearCmdTask):
 
 
 class RandomVelocityTask(RandomCmdTask):
+    def __init__(self, env, seed=None):
+        for i, (reward, weight) in enumerate(g_cfg.rewards_weights):
+            if reward == 'UnifiedLinearReward':
+                g_cfg.rewards_weights[i][0] = 'UnifiedLinearReward2'
+                log_info('UnifiedLinearReward is automatically replaced by UnifiedLinearReward2')
+        super().__init__(env, seed)
+
     def random_cmd(self):
         cmd = super().random_cmd()
         cmd[:2] *= random.uniform(0., 1.)
@@ -198,7 +205,7 @@ class CentralizedTask(object):
         if g_cfg.use_centralized_curriculum:
             from burl.rl.curriculum import CentralizedDisturbanceCurriculum, CentralizedTerrainCurriculum
             if g_cfg.add_disturbance:
-                crm_obj = CentralizedDisturbanceCurriculum(buffer_len=buffer_len, aggressive=aggressive)
+                crm_obj = CentralizedDisturbanceCurriculum(buffer_len=buffer_len, aggressive=True)
                 self.crm_protos.append(crm_obj)
             if g_cfg.trn_type == 'curriculum':
                 crm_obj = CentralizedTerrainCurriculum(buffer_len=buffer_len, aggressive=aggressive)

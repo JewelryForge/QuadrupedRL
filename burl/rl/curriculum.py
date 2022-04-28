@@ -303,6 +303,8 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
     def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
         super().__init__(comm, difficulty_getter, max_difficulty)
         self.max_roughness = 0.4
+        self.max_slope = 15 / 180 * math.pi
+        self.max_step_height = 0.2
         self.terrain = None
         self.episode_linear_reward = 0.
         self.episode_sim_count = 0
@@ -312,27 +314,36 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
         If no terrain has been spawned, create and spawn it.
         Otherwise, update its height field.
         """
+        from burl.sim.terrain import Hills, Slopes, Steps
         size, resolution = 30, 0.1
-        if self.difficulty == self.max_difficulty:
-            roughness = self.max_roughness * random.random()
-            # roughness = self.max_roughness * self.difficulty_degree
-        else:
-            roughness = self.max_roughness * self.difficulty_degree
         if not self.terrain:
-            from burl.sim.terrain import Hills
             # Currently, in the master branch of bullet3
             # the robot may get stuck in the terrain.
             # See https://github.com/bulletphysics/bullet3/issues/4236
             # See https://github.com/bulletphysics/bullet3/pull/4253
-            self.terrain = Hills.make(size, resolution, (roughness, 20))
+            self.terrain = Hills.make(size, resolution, (self.max_roughness * self.difficulty_degree, 20))
             self.terrain.spawn(sim_env)
         else:
-            heightfield = self.terrain.make_heightfield(size, resolution, (roughness, 20))
-            self.terrain.replace_heightfield(sim_env, heightfield)
+            terrain_type = random.choice(('hills', 'slopes', 'steps'))
+            # terrain_type = 'hills'
+            difficulty_degree = random.random() if self.difficulty == self.max_difficulty else self.difficulty_degree
+            obj_id, shape_id = self.terrain.id, self.terrain.shape_id
+            if terrain_type == 'hills':
+                roughness = self.max_roughness * difficulty_degree
+                self.terrain = Hills.make(size, resolution, (roughness, 20))
+            elif terrain_type == 'slopes':
+                slope = self.max_slope * difficulty_degree
+                axis = random.choice(('x', 'y'))
+                self.terrain = Slopes.make(size, resolution, slope, 3., axis)
+            elif terrain_type == 'steps':
+                step_height = self.max_step_height * difficulty_degree
+                self.terrain = Steps.make(size, resolution, 1., step_height)
+            self.terrain.terrain_id, self.terrain.terrain_shape_id = obj_id, shape_id
+            self.terrain.replace_heightfield(sim_env)
         return self.terrain
 
     def on_sim_step(self, task, robot, env):
-        self.episode_linear_reward += task.reward_details['UnifiedLinearReward']
+        # self.episode_linear_reward += task.reward_details['UnifiedLinearReward']
         self.episode_sim_count += 1
 
     def is_success(self, task, robot, env) -> bool:
@@ -341,7 +352,7 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
 
     def on_reset(self, task, robot, env):
         super().on_reset(task, robot, env)
-        self.generate_terrain(env.client)
+        env.terrain = self.generate_terrain(env.client)
         self.episode_linear_reward = self.episode_sim_count = 0
 
 

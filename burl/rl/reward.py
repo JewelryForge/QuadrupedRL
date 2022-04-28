@@ -117,7 +117,7 @@ class UnifiedLinearReward(LinearVelocityReward):
 
 
 class UnifiedLinearReward2(Reward):
-    def __init__(self, max_vel=(1.0, 0.75), reward_range=(0.5, 0.2), ortho_weight=0.33):
+    def __init__(self, max_vel=(1.0, 0.75), reward_range=(0.5, 0.3), ortho_weight=0.33):
         self.forward, self.lateral = max_vel
         self.proj_reshape = exp_m2_reshape(reward_range[0])
         self.ortho_reshape = exp_m2_reshape(reward_range[1])
@@ -386,7 +386,7 @@ class RewardRegistry(object):
         self._reward_details.clear()
         weighted_sum = 0.0
         for reward, weight in self._rewards_weights:
-            rew = reward(self._cmd, self._env, self._robot)
+            rew = reward(self._cmd.copy(), self._env, self._robot)
             self._reward_details[reward.__class__.__name__] = rew
             weighted_sum += rew * weight
         return weighted_sum * self._coefficient
@@ -406,12 +406,9 @@ if __name__ == '__main__':
 
     # print(tanh_reverse(0.0, 2.0, -0.7))
     # print(tanh_reverse(-0.4, 0.8, 0.9))
-    r1 = tanh2_reshape(0.0, 0.6)
-    # r1 = lambda x: x / 1
-    r2 = exp_m2_reshape(3)
-    print(r2(3))
-    x = np.linspace(-4, 4, 1000)
-    plt.plot(x, r2(x))
-    # plt.plot(x, [-r2(x) for x in x])
-    # plt.plot(x, -np.exp(x) + 1)
+    r1 = tanh_reshape(-1, 1)
+    r2 = tanh_reshape(-2, 2)
+    x = np.linspace(-3, 3, 1000)
+    plt.plot(x, [r1(x) for x in x])
+    plt.plot(x, 2 * r2(x))
     plt.show()

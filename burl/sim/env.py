@@ -90,6 +90,11 @@ class QuadrupedEnv(object):
     client = property(lambda self: self._pyb)
     robot = property(lambda self: self._robot)
     terrain = property(lambda self: self._terrain)
+
+    @terrain.setter
+    def terrain(self, terrain_obj):
+        self._terrain = terrain_obj
+
     task = property(lambda self: self._task)
     is_failed = property(lambda self: self._is_failed)
     action_freq = property(lambda self: g_cfg.action_frequency)

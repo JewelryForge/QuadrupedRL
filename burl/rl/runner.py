@@ -293,12 +293,7 @@ class JoystickPlayerBase(object):
             x_speed = -self.gamepad.axis('LAS -Y')
             y_speed = -self.gamepad.axis('LAS -X')
             steering = -self.gamepad.axis('RAS -X')
-            steering = 1. if steering > 0.2 else -1. if steering < -0.2 else 0.
-            speed_norm = math.hypot(x_speed, y_speed)
-            if speed_norm:
-                self.env.unwrapped.task.cmd = (x_speed / speed_norm, y_speed / speed_norm, steering)
-            else:
-                self.env.unwrapped.task.cmd = (0., 0., steering)
+            self.env.unwrapped.task.cmd = (x_speed, y_speed, steering)
         else:
             sys.exit(1)
 
