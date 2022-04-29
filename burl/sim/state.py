@@ -203,13 +203,13 @@ class RealWorldObservation(ProprioInfo):
 
 
 class ExteroObservation(ObservationBase):
-    dim = 82
+    dim = 78
     _init = False
 
     def __init__(self):
         super().__init__()
         self.terrain_scan = zero36
-        self.terrain_normal = zero12
+        self.terrain_slopes = zero8
         self.contact_states = zero12
         self.foot_contact_forces = zero12
         self.foot_friction_coeffs = zero4
@@ -221,8 +221,8 @@ class ExteroObservation(ObservationBase):
         if cls._init:
             return
         cls._init = True
-        terrain_scan_bias, terrain_scan_weight = zero36, (10.,) * 36
-        terrain_normal_bias, terrain_normal_weight = (0., 0., 0.98) * 4, (5., 5., 10.) * 4
+        terrain_scan_bias, terrain_scan_weight = zero36, (5.,) * 36
+        terrain_slopes_bias, terrain_slopes_weight = (0.,) * 8, (2.5,) * 8
         contact_states_bias, contact_states_weight = (0.5,) * 12, (2.,) * 12
         foot_contact_forces_bias, foot_contact_forces_weight = (0., 0., 30.) * 4, (0.01, 0.01, 0.02) * 4
         foot_friction_coeffs_bias, foot_friction_coeffs_weight = zero4, (1.,) * 4
@@ -230,7 +230,7 @@ class ExteroObservation(ObservationBase):
         external_torque_bias, external_torque_weight = zero3, (0.4, 0.2, 0.2)
         cls.biases = np.concatenate((
             terrain_scan_bias,
-            terrain_normal_bias,
+            terrain_slopes_bias,
             contact_states_bias,
             foot_contact_forces_bias,
             foot_friction_coeffs_bias,
@@ -240,7 +240,7 @@ class ExteroObservation(ObservationBase):
 
         cls.weights = np.concatenate((
             terrain_scan_weight,
-            terrain_normal_weight,
+            terrain_slopes_weight,
             contact_states_weight,
             foot_contact_forces_weight,
             foot_friction_coeffs_weight,
@@ -251,7 +251,7 @@ class ExteroObservation(ObservationBase):
     def to_array(self):
         return np.concatenate((
             self.terrain_scan,
-            self.terrain_normal,
+            self.terrain_slopes,
             self.contact_states,
             self.foot_contact_forces,
             self.foot_friction_coeffs,

@@ -1,4 +1,4 @@
-# teacher-student
+# Quadruped Locomotion Reinforcement Learning
 
 This is an environment for learning quadrupedal locomotion depending on [bullet physics engine](https://github.com/bulletphysics/bullet3), containing:
 

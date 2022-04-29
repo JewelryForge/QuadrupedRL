@@ -307,7 +307,7 @@ class Quadruped(object):
         self._rpy = Rpy.from_quaternion(orientation)
         self._base_pose = Pose(position, orientation, self._rpy)
         self._base_twist = Twist(*self._env.getBaseVelocity(self._body_id))
-        self._base_twist_Base = Twist(*self._rotateFromWorldToBase(self._base_twist.linear, self._base_twist.angular))
+        self._base_twist_Base = Twist(*self.rotateFromWorldToBase(self._base_twist.linear, self._base_twist.angular))
         self._rpy_rate = get_rpy_rate_from_angular_velocity(self._rpy, self._base_twist.angular)
 
         self._observation = ObservationRaw()
@@ -379,7 +379,7 @@ class Quadruped(object):
             return pyb.multiplyTransforms(TP_ZERO3, ref_inv, vector, TP_Q0)[0]
         return [pyb.multiplyTransforms(TP_ZERO3, ref_inv, vec, TP_Q0)[0] for vec in (vector, *other_vectors)]
 
-    def _rotateFromWorldToBase(self, vector_world, *other_vectors):
+    def rotateFromWorldToBase(self, vector_world, *other_vectors):
         return self._rotateToRefFrame(self._base_pose.orientation, vector_world, *other_vectors)
 
     def _getContactStates(self):
@@ -718,7 +718,7 @@ class A1(Quadruped):
 
         pos = np.asarray(pos)
         if frame == Quadruped.WORLD_FRAME:  # FIXME: COORDINATE TRANSFORMATION SEEMS TO BE WRONG
-            return _ik_hip_frame(self._rotateFromWorldToBase(pos) - self.HIP_OFFSETS[leg])
+            return _ik_hip_frame(self.rotateFromWorldToBase(pos) - self.HIP_OFFSETS[leg])
         if frame == Quadruped.BASE_FRAME:
             return _ik_hip_frame(pos - self.HIP_OFFSETS[leg])
         if frame == Quadruped.HIP_FRAME:

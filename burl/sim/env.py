@@ -11,7 +11,7 @@ from burl.rl.task import BasicTask
 from burl.sim.quadruped import A1, AlienGo, Quadruped
 from burl.sim.state import ProprioObservation, RealWorldObservation, ExtendedObservation, Action, ProprioInfo
 from burl.sim.tg import TgStateMachine, vertical_tg
-from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE
+from burl.utils import make_part, g_cfg, log_info, log_debug, unit, vec_cross, ARRAY_LIKE, norm
 from burl.utils.transforms import Rpy, Rotation, Quaternion
 
 __all__ = ['Quadruped', 'A1', 'AlienGo', 'QuadrupedEnv', 'IkEnv', 'FixedTgEnv']
@@ -364,7 +364,7 @@ class QuadrupedEnv(object):
         return [(xp := x + dx, yp := y + dy, self.getTerrainHeight(xp, yp)) for dx, dy in points]
 
     def getTerrainScan(self, x, y, yaw):
-        return [p[2] for p in self.getAbundantTerrainInfo(x, y, yaw)]
+        return np.array([p[2] for p in self.getAbundantTerrainInfo(x, y, yaw)])
 
     def getTerrainHeight(self, x, y) -> float:
         return self._terrain.get_height(x, y)
@@ -401,6 +401,14 @@ class QuadrupedEnv(object):
 
     def getTerrainNormal(self, x, y) -> np.ndarray:
         return self._terrain.get_normal(x, y)
+
+    def getTerrainSlopeInfo(self, x, y, yaw) -> tuple[float, float]:
+        trn_Z = self._terrain.get_normal(x, y)
+        sy, cy = math.sin(yaw), math.cos(yaw)
+        trn_X = vec_cross((-sy, cy, 0), trn_Z)
+        trn_X /= norm(trn_X)
+        trn_Y = vec_cross(trn_Z, trn_X)
+        return math.asin(trn_X[2]), math.asin(trn_Y[2])
 
 
 class IkEnv(QuadrupedEnv):
@@ -488,9 +496,9 @@ class FixedTgEnv(IkEnv):
             obs = ExtendedObservation()
         obs: ExtendedObservation = self._setObsBaseAttr(obs, 'noisy_realworld' if noisy else 'realworld')
         r = self._robot
-        foot_xy = r.getFootXYsInWorldFrame()
-        obs.terrain_scan = np.concatenate([self.getTerrainScan(x, y, r.rpy.y) for x, y in foot_xy])
-        obs.terrain_normal = np.concatenate([self.getTerrainNormal(x, y) for x, y in foot_xy])
+        foot_pos = r.getFootPositionsInWorldFrame()
+        obs.terrain_scan = np.concatenate([z - self.getTerrainScan(x, y, r.rpy.y) for x, y, z in foot_pos])
+        obs.terrain_slopes = np.concatenate([self.getTerrainSlopeInfo(x, y, r.rpy.y) for x, y, _ in foot_pos])
         obs.contact_states = r.getContactStates()[1:]
         obs.foot_contact_forces = r.getFootContactForces()
         obs.foot_friction_coeffs = r.getFootFriction()
@@ -535,7 +543,7 @@ class FixedTgEnv(IkEnv):
 
 if __name__ == '__main__':
     g_cfg.on_rack = False
-    g_cfg.trn_type = 'steps'
+    g_cfg.trn_type = 'slope'
     g_cfg.add_disturbance = False
     g_cfg.moving_camera = False
     g_cfg.actuator_net = 'history'
@@ -555,8 +563,13 @@ if __name__ == '__main__':
     else:
         env = QuadrupedEnv(AlienGo)
         env.initObservation()
-        for i in range(1000):
+        for i in range(10000):
             env.step(env.robot.STANCE_POSTURE)
+            yaw = env.robot.rpy[2]
+            info = []
+            for x, y in env.robot.getFootXYsInWorldFrame():
+                info.append(env.getTerrainSlopeInfo(x, y, yaw))
+            print(info)
 
         # for i in range(100):
         #     env.step(env.robot.getJointPositions())
