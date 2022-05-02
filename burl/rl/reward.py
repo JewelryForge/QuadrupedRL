@@ -100,7 +100,7 @@ class LinearVelocityReward(Reward):
 
 
 class UnifiedLinearReward(LinearVelocityReward):
-    def __init__(self, forward=1.0, lateral=0.75, ortho_upper=0.3, ortho_weight=0.33):
+    def __init__(self, forward=1.5, lateral=1.2, ortho_upper=0.3, ortho_weight=0.33):
         super().__init__(forward, lateral)
         self.ortho_reshape = tanh2_reshape(0, ortho_upper)
         self.ortho_weight = ortho_weight
@@ -114,7 +114,7 @@ class UnifiedLinearReward(LinearVelocityReward):
         if (cmd[:2] == 0.).all():
             return ortho_pen
         proj_rew = self.reshape(self.get_desired_velocity(cmd), proj_vel)
-        return (1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen
+        return ((1 - self.ortho_weight) * proj_rew + self.ortho_weight * ortho_pen) * 1.5
 
 
 class UnifiedLinearReward2(Reward):

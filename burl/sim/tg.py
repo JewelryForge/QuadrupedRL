@@ -175,16 +175,22 @@ class TgStateMachine(PhaseRoller):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
+    fig, ax = plt.subplots(figsize=(6.4, 2.4))
     tg = vertical_tg()
-    x = np.linspace(-2 * np.pi, 2 * np.pi, 1000)
-    x1 = np.tile(np.linspace(0, 2 * np.pi, 500), 2)
+    x1 = np.linspace(-1, 8, 500)
     y1 = tg(x1)[:, 2]
-    x2 = ang_norm(np.tile(np.linspace(-np.pi, np.pi, 500), 2))
+    x2 = x1 - np.pi
     y2 = tg(x2)[:, 2]
-    plt.plot(x, y1)
-    plt.plot(x, y2)
-    plt.ylim(-0.01, 0.1)
-    plt.xlabel('phase')
-    plt.ylabel('z')
-    plt.legend(['leg 1, 3', 'leg 2, 4'])
-    plt.show()
+
+    ax.plot(x1, y1)
+    ax.plot(x1, y2)
+    ax.set_xticks([0, 2, 4, 6])
+    ax.set_yticks([0., 0.04, 0.08, 0.12])
+    ax.set_ylim(-0.01, 0.15)
+    ax.set_xlabel('$\phi$')
+    ax.set_ylabel('z', rotation=0)
+    ax.xaxis.set_label_coords(.9, -.03)
+    ax.yaxis.set_label_coords(-0.05, 0.95)
+    ax.legend(['leg 1, 3', 'leg 2, 4'])
+    fig.savefig('tg.pdf')
+    fig.show()

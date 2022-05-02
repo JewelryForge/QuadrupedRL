@@ -314,17 +314,18 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
         If no terrain has been spawned, create and spawn it.
         Otherwise, update its height field.
         """
-        from burl.sim.terrain import Hills, Slopes, Steps
+        from burl.sim.terrain import Hills, Slopes, Steps, PlainHF
         size, resolution = 30, 0.1
         if not self.terrain:
             # Currently, in the master branch of bullet3
             # the robot may get stuck in the terrain.
             # See https://github.com/bulletphysics/bullet3/issues/4236
             # See https://github.com/bulletphysics/bullet3/pull/4253
-            self.terrain = Hills.make(size, resolution, (self.max_roughness * self.difficulty_degree, 20))
+            # self.terrain = Hills.make(size, resolution, (self.max_roughness * self.difficulty_degree, 20))
+            self.terrain = PlainHF.make(size, resolution)
             self.terrain.spawn(sim_env)
         else:
-            terrain_type = random.choice(('hills', 'slopes', 'steps'))
+            terrain_type = random.choice(('hills', 'slopes', 'steps', 'plain'))
             # terrain_type = 'hills'
             difficulty_degree = random.random() if self.difficulty == self.max_difficulty else self.difficulty_degree
             obj_id, shape_id = self.terrain.id, self.terrain.shape_id
@@ -338,6 +339,8 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
             elif terrain_type == 'steps':
                 step_height = self.max_step_height * difficulty_degree
                 self.terrain = Steps.make(size, resolution, 1., step_height)
+            elif terrain_type == 'plain':
+                self.terrain = PlainHF.make(size, resolution)
             self.terrain.terrain_id, self.terrain.terrain_shape_id = obj_id, shape_id
             self.terrain.replace_heightfield(sim_env)
         return self.terrain

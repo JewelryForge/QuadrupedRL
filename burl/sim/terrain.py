@@ -11,7 +11,7 @@ from scipy.interpolate import interp2d
 
 from burl.utils import unit, vec_cross
 
-__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'Steps', 'Slopes', 'Stairs', 'Hills']
+__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'PlainHF', 'Steps', 'Slopes', 'Stairs', 'Hills']
 
 
 class Terrain(object):
@@ -164,6 +164,27 @@ class HeightFieldTerrain(Terrain):
 
     def out_of_range(self, x, y):
         return abs(x - self.offset[0]) > self.x_size / 2 - 1 or abs(y - self.offset[1]) > self.y_size / 2 - 1
+
+
+class PlainHF(HeightFieldTerrain):
+    @classmethod
+    def make(cls, size, resolution):
+        return cls(cls.make_heightfield(size, resolution))
+
+    @staticmethod
+    def make_heightfield(size, resolution):
+        data_size = int(size / resolution) + 1
+        height_field_data = np.zeros((data_size, data_size))
+        return HeightField(height_field_data, size, resolution)
+
+    def get_height(self, x, y):
+        return 0.0
+
+    def get_normal(self, x, y):
+        return np.array((0., 0., 1.))
+
+    def get_peak(self, x_range, y_range):
+        return sum(x_range) / 2, sum(y_range) / 2, 0.
 
 
 class Steps(HeightFieldTerrain):
