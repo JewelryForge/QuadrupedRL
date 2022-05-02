@@ -8,6 +8,7 @@ from burl.utils import norm
 ATANH0_95 = math.atanh(0.95)
 ATANH0_9 = math.atanh(0.9)
 SQRT_LOG10 = math.sqrt(math.log(10))
+SQRT_LOG20 = math.sqrt(math.log(20))
 
 
 class Reward(ABC):
@@ -406,9 +407,12 @@ if __name__ == '__main__':
 
     # print(tanh_reverse(0.0, 2.0, -0.7))
     # print(tanh_reverse(-0.4, 0.8, 0.9))
-    r1 = tanh_reshape(-1, 1)
-    r2 = tanh_reshape(-2, 2)
-    x = np.linspace(-3, 3, 1000)
-    plt.plot(x, [r1(x) for x in x])
-    plt.plot(x, 2 * r2(x))
+    r1 = tanh2_reshape(0, 1)
+    r2 = quadratic_linear_reshape(1)
+    r3 = exp_m2_reshape(1)
+    x = np.linspace(-1.5, 1.5, 1000)
+    plt.plot(x, [1 - r1(abs(x)) for x in x])
+    plt.plot(x, [1 - r2(x) for x in x])
+    plt.plot(x, [r3(x) for x in x])
+    plt.legend(['tanh($-x^2$)', 'exp(${-x^2}$)', '$1-x^2$'])
     plt.show()

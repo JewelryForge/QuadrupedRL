@@ -18,10 +18,10 @@ if __name__ == '__main__':
     remote = True
     joystick_control = True
     if remote:
-        model_path = find_wuzhen(run_name='1.3.0NoEnd', run_id='', time_=None, epoch=None)
+        model_path = find_wuzhen(run_name='1.12.0', run_id='', time_=None, epoch=None)
         # model_path = find_huzhou(run_name='2.8.0.21m2', time_=None, epoch=None)
     else:
-        model_path = find_log(run_name='1.2.1', run_id='', time_=None, epoch=None)
+        model_path = find_log(run_name='1.7.0bugfix3', run_id='', time_=None, epoch=None)
     if joystick_control and JoystickPlayer.is_available():
         player = JoystickPlayer(model_path)
     else:

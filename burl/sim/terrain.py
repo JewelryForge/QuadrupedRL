@@ -198,12 +198,15 @@ class Slopes(HeightFieldTerrain):
         slope = math.tan(slope)
         height_field_data = np.zeros((data_size, data_size))
         for i in range(num_steps):
-            x_start, x_stop = i * step, int((i + 0.5) * step)
-            for j in range(x_start, min(x_stop, data_size)):
-                height_field_data[:, j] = (j - x_start) * slope * resolution
-            x_start, x_stop = x_stop, (i + 1) * step
+            x_start, x_stop = i * step, int((i + 0.4) * step)
             for j in range(x_start, min(x_stop, data_size)):
                 height_field_data[:, j] = (x_stop - j) * slope * resolution
+            x_start, x_stop = x_stop, int((i + 0.6) * step)
+            for j in range(x_start, min(x_stop, data_size)):
+                height_field_data[:, j] = 0.
+            x_start, x_stop = x_stop, (i + 1) * step
+            for j in range(x_start, min(x_stop, data_size)):
+                height_field_data[:, j] = (j - x_start) * slope * resolution
         return HeightField(cls.rotate(height_field_data, axis), size, resolution)
 
     @classmethod

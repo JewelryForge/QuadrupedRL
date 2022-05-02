@@ -81,7 +81,7 @@ def find_log(run_name: str = None, run_id: str = None, time_: Union[int, str] = 
     return os.path.join(folder, _get_model_of_specific_epoch(os.listdir(folder), fmt, epoch))
 
 
-def find_log_remote(host: str, port: int = None, log_dir='teacher-student/log/teacher', fmt='model_*.pt',
+def find_log_remote(host: str, port: int = None, log_dir='QuadrupedRL/log/teacher', fmt='model_*.pt',
                     run_name: str = None, run_id: str = None, time_: Union[int, str] = None, epoch: int = None):
     """Find and download model file from remote"""
     ssh = f'ssh -p {port} {host}' if port else f'ssh {host}'

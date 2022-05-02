@@ -19,8 +19,8 @@ class BasicTask(RewardRegistry):
 
         self.plugins: list[Plugin] = []
         self.plugin_utils = {}
-        # if g_cfg.test_mode:
-        #     self.load_plugin(StatisticsCollector())
+        if g_cfg.test_mode:
+            self.load_plugin(StatisticsCollector())
         if g_cfg.record:
             self.load_plugin(VideoRecorder())
             g_cfg.show_time_ratio = False
@@ -183,10 +183,6 @@ class RandomCmdTask(RandomLinearCmdTask):
 
 class RandomVelocityTask(RandomCmdTask):
     def __init__(self, env, seed=None):
-        for i, (reward, weight) in enumerate(g_cfg.rewards_weights):
-            if reward == 'UnifiedLinearReward':
-                g_cfg.rewards_weights[i][0] = 'UnifiedLinearReward2'
-                log_info('UnifiedLinearReward is automatically replaced by UnifiedLinearReward2')
         super().__init__(env, seed)
 
     def random_cmd(self):

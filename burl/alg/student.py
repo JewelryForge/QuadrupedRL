@@ -35,9 +35,9 @@ class Student(nn.Module):
         device = next(self.parameters()).device
         realworld_example = torch.rand(1, self.real_world_obs_dim, device=device)
         proprio_history_example = torch.rand(1, *self.encoder_input_dim, device=device)
-        traced_script_module = torch.jit.trace(self, (proprio_history_example, realworld_example))
-        print(traced_script_module)
+        script_module = torch.jit.trace(self, (proprio_history_example, realworld_example))
+        print(script_module)
         if not path:
             from burl.exp import student_log_dir
             path = os.path.join(student_log_dir, 'script_model.pt')
-        torch.jit.save(traced_script_module, path)
+        torch.jit.save(script_module, path)

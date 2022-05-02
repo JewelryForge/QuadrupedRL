@@ -349,6 +349,12 @@ class QuadrupedEnv(object):
     def close(self):
         self._pyb.disconnect()
 
+    def getActionRate(self) -> np.ndarray:
+        if len(self._action_history) < 2:
+            return np.zeros(12)
+        actions = [self._action_history[-i - 1] for i in range(2)]
+        return (actions[0] - actions[1]) * self.action_freq
+
     def getActionViolence(self) -> np.ndarray:
         if len(self._action_history) < 3:
             return np.zeros(12)

@@ -367,6 +367,9 @@ class Quadruped(object):
     def forwardKinematics(self, leg: int, angles: ARRAY_LIKE) -> Odometry:
         raise NotImplementedError
 
+    def endEffectorPosition(self, leg: int, angles: ARRAY_LIKE) -> np.ndarray:
+        return self.forwardKinematics(leg, angles).translation
+
     @staticmethod
     def _rotateToRefFrame(reference, vector, *other_vectors):
         # transform = Rotation.from_quaternion(reference).T
@@ -693,17 +696,16 @@ class A1(Quadruped):
         # if isinstance(leg, str):
         #     leg = self.LEG_NAMES.index(leg)
         l_shoulder, l_thigh, l_shank = self.LINK_LENGTHS
-        if self.LEG_NAMES[leg].endswith('R'):
+        if self.LEG_NAMES[leg].endswith('L'):
             l_shoulder *= -1
 
         def _ik_hip_frame(_pos):
             while True:
                 dx, dy, dz = _pos  # dz must lower than shoulder-length
-                l_stretch = math.sqrt((_pos ** 2).sum() - l_shoulder ** 2)
-                a_hip_bias = math.atan2(dy, dz)
+                dx2, dy2, dz2 = _pos2 = _pos ** 2
+                l_stretch = math.sqrt(_pos2.sum() - l_shoulder ** 2)
                 try:
-                    _sum = math.asin(l_shoulder / math.hypot(dy, dz))
-                    a_hip = min(ang_norm(_sum - a_hip_bias), ang_norm(np.pi - _sum - a_hip_bias), key=abs)
+                    a_hip = 2 * math.atan((dz + math.sqrt(dy2 + dz2 - l_shoulder ** 2)) / (dy - l_shoulder))
                     a_stretch = -math.asin(dx / l_stretch)
                     a_shank = math.acos((l_shank ** 2 + l_thigh ** 2 - l_stretch ** 2) /
                                         (2 * l_shank * l_thigh)) - math.pi
@@ -724,9 +726,9 @@ class A1(Quadruped):
         if frame == Quadruped.HIP_FRAME:
             return _ik_hip_frame(pos)
         if frame == Quadruped.SHOULDER_FRAME:
-            return _ik_hip_frame(pos + (0, l_shoulder, 0))
+            return _ik_hip_frame(pos + (0, -l_shoulder, 0))
         if frame == Quadruped.INIT_FRAME:
-            return _ik_hip_frame(pos + (0, l_shoulder, 0) + self.STANCE_FOOT_POSITIONS[leg])
+            return _ik_hip_frame(pos + (0, -l_shoulder, 0) + self.STANCE_FOOT_POSITIONS[leg])
         raise RuntimeError(f'Unknown Frame {frame}')
 
     def forwardKinematics(self, leg: int, angles: ARRAY_LIKE) -> Odometry:
@@ -743,19 +745,35 @@ class A1(Quadruped):
         if self.LEG_NAMES[leg].endswith('L'):
             shoulder_length *= -1
         a1, a2, a3 = angles
-        transformation = (Odometry(((0, 0, 1),
-                                    (-1, 0, 0),
-                                    (0, -1, 0)),
-                                   self.HIP_OFFSETS[leg]) @
-                          _mdh_matrix(0, 0, 0, a1) @
-                          _mdh_matrix(0, shoulder_length, 0, np.pi / 2) @
-                          _mdh_matrix(-np.pi / 2, 0, 0, a2) @
-                          _mdh_matrix(0, thigh_length, 0, a3) @
-                          _mdh_matrix(0, shank_length, 0, 0) @
-                          Odometry(((0, 0, -1),
-                                    (-1, 0, 0),
-                                    (0, 1, 0))))
-        return transformation
+        tf = (Odometry(((0, 0, 1),
+                        (-1, 0, 0),
+                        (0, -1, 0)),
+                       self.HIP_OFFSETS[leg]) @
+              _mdh_matrix(0, 0, 0, a1) @
+              _mdh_matrix(0, shoulder_length, 0, np.pi / 2) @
+              _mdh_matrix(-np.pi / 2, 0, 0, a2) @
+              _mdh_matrix(0, thigh_length, 0, a3) @
+              _mdh_matrix(0, shank_length, 0, 0) @
+              Odometry(((0, 0, -1),
+                        (-1, 0, 0),
+                        (0, 1, 0))))
+        return tf
+
+    def endEffectorPosition(self, leg: int, angles: ARRAY_LIKE) -> np.ndarray:
+        """Calculate the position and orientation of the end-effector (foot) in HIP frame"""
+
+        l1, l2, l3 = self.LINK_LENGTHS
+        if self.LEG_NAMES[leg].endswith('L'):
+            l1 *= -1
+        a1, a2, a3 = angles
+        s1, c1 = math.sin(a1), math.cos(a1)
+        s2, c2 = math.sin(a2), math.cos(a2)
+        s23, c23 = math.sin(a2 + a3), math.cos(a2 + a3)
+        return np.array((
+            (-l3 * s23 - l2 * s2),
+            (l3 * s1 * c23 + l2 * s1 * c2 - l1 * c1),
+            (-l3 * c1 * c23 - l1 * s1 - l2 * c1 * c2)
+        ))
 
     def _getContactStates(self) -> list[bool, ...]:
         """
