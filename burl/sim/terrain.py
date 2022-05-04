@@ -11,7 +11,8 @@ from scipy.interpolate import interp2d
 
 from burl.utils import unit, vec_cross
 
-__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain', 'PlainHF', 'Steps', 'Slopes', 'Stairs', 'Hills']
+__all__ = ['Terrain', 'Plain', 'HeightFieldTerrain',
+           'PlainHF', 'Steps', 'Slopes', 'Stairs', 'Hills', 'Pyramid']
 
 
 class Terrain(object):
@@ -241,8 +242,8 @@ class Slopes(HeightFieldTerrain):
 
 class Stairs(HeightFieldTerrain):
     @classmethod
-    def make(cls, size, resolution, slope, slope_width, axis='+x'):
-        return cls(cls.make_heightfield(size, resolution, slope, slope_width, axis))
+    def make(cls, size, resolution, stair_height, stair_width, axis='+x'):
+        return cls(cls.make_heightfield(size, resolution, stair_height, stair_width, axis))
 
     @classmethod
     def make_heightfield(cls, size, resolution, stair_height, stair_width, axis):
@@ -268,6 +269,37 @@ class Stairs(HeightFieldTerrain):
         elif axis == '-y':
             return np.flipud(height_field_data.T)
         raise RuntimeError('Unknown axis')
+
+
+class Pyramid(HeightFieldTerrain):
+    @classmethod
+    def make(cls, size, resolution, stair_height, stair_width, platform_size, block_size):
+        return cls(cls.make_heightfield(size, resolution, stair_height, stair_width, platform_size, block_size))
+
+    @classmethod
+    def make_heightfield(cls, size, resolution, stair_height, stair_width, platform_size, block_size):
+        data_size = int(size / resolution) + 1
+
+        block_size = int(block_size / resolution)
+        stair_width = int(stair_width / resolution)
+        platform_size = int(platform_size / resolution)
+        block_data = np.zeros((block_size, block_size))
+        start_x = start_y = 0
+        stop_x = stop_y = block_size
+        height = 0
+        while (stop_x - start_x) > platform_size and (stop_y - start_y) > platform_size:
+            start_x += stair_width
+            stop_x -= stair_width
+            start_y += stair_width
+            stop_y -= stair_width
+            height += stair_height
+            block_data[start_x: stop_x, start_y: stop_y] = height
+        num_blocks = 2 * math.ceil(data_size / 2 / block_size - 0.5) + 1
+        blocks_data = np.tile(block_data, (num_blocks, num_blocks))
+        start_x = blocks_data.shape[0] - data_size
+        start_y = blocks_data.shape[1] - data_size
+        height_field_data = blocks_data[start_x:data_size + start_x, start_y:data_size + start_y]
+        return HeightField(height_field_data, size, resolution)
 
 
 class Hills(HeightFieldTerrain):

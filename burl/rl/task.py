@@ -4,7 +4,7 @@ from typing import Type
 from burl.rl.curriculum import CURRICULUM_PROTOTYPE, CentralizedCurriculum
 from burl.rl.reward import *
 from burl.sim.plugins import Plugin, StatisticsCollector, InfoRenderer, VideoRecorder
-from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slopes, Stairs
+from burl.sim.terrain import Terrain, Plain, Hills, Steps, Slopes, Stairs, Pyramid
 from burl.utils import g_cfg, make_part, log_info
 
 __all__ = ['BasicTask', 'RandomLinearCmdTask', 'RandomCmdTask', 'get_task', 'CentralizedTask']
@@ -52,12 +52,14 @@ class BasicTask(RewardRegistry):
             terrain_obj = Plain()
         elif terrain_type == 'hills':
             terrain_obj = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
-        elif terrain_type == 'slope':
+        elif terrain_type == 'slopes':
             terrain_obj = Slopes.make(20, 0.05, 0.17, 2.0)
         elif terrain_type == 'steps':
             terrain_obj = Steps.make(20, 0.05, 1.0, 0.4)
         elif terrain_type == 'stairs':
             terrain_obj = Stairs.make(20, 0.05, 0.15, 0.3)
+        elif terrain_type == 'pyramid':
+            terrain_obj = Pyramid.make(30, 0.1, -0.05, 0.2, 2., 10.)
         elif terrain_type == 'curriculum':
             return self.plugin_utils['generate_terrain'](self.env.client)
         else:

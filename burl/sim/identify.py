@@ -1,15 +1,11 @@
-import os
+import math
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, random_split, ConcatDataset
 
-import burl
-
 __all__ = ['ActuatorNet', 'ActuatorNetWithHistory']
-
-RSC_DIR = os.path.join(burl.rsc_path, 'motor_data')
 
 
 class ActuatorNet(nn.Module):
@@ -89,7 +85,8 @@ class RobotDataset(Dataset):
 
 
 class RobotDatasetWithHistory(Dataset):
-    def __init__(self, path, slices=None):
+    def __init__(self, path, history_interval=5, slices=None):
+        print(path)
         self.data = np.load(path)
         if slices:
             self.error = self.data['angle_error'][slices, :].astype(np.float32)
@@ -99,13 +96,13 @@ class RobotDatasetWithHistory(Dataset):
             self.error = self.data['angle_error'].astype(np.float32)
             self.velocity = self.data['motor_velocity'].astype(np.float32)
             self.torque = self.data['motor_torque'].astype(np.float32)
-        self.X = np.stack((self.error[10:-1, ].flatten(),
-                           self.error[5:-6, ].flatten(),
-                           self.error[:-11, ].flatten(),
-                           self.velocity[10:-1, ].flatten(),
-                           self.velocity[5:-6, ].flatten(),
-                           self.velocity[:-11, ].flatten()), axis=1)
-        self.Y = np.expand_dims(self.torque[11:, ].flatten(), axis=1)
+        self.X = np.stack((self.error[2 * history_interval:-1, ].flatten(),
+                           self.error[history_interval:-1 - history_interval, ].flatten(),
+                           self.error[:-1 - 2 * history_interval, ].flatten(),
+                           self.velocity[2 * history_interval:-1, ].flatten(),
+                           self.velocity[history_interval:-1 - history_interval, ].flatten(),
+                           self.velocity[:-1 - 2 * history_interval, ].flatten()), axis=1)
+        self.Y = np.expand_dims(self.torque[1 + 2 * history_interval:, ].flatten(), axis=1)
         self.size = len(self.error)
 
     def __len__(self):
@@ -115,10 +112,11 @@ class RobotDatasetWithHistory(Dataset):
         return self.X[idx], self.Y[idx]
 
 
-def train_actuator_net(actuator_net, dataset_class, lr=1e-3, num_epochs=1000, batch_size=1000, device='cuda'):
+def train_actuator_net(actuator_net, dataset_class, history_interval=5,
+                       lr=1e-3, num_epochs=1000, batch_size=1000, device='cuda'):
     device = torch.device(device)
     dataset_paths = [os.path.join(RSC_DIR, filename) for filename in os.listdir(RSC_DIR)]
-    dataset = ConcatDataset([dataset_class(path) for path in dataset_paths])
+    dataset = ConcatDataset([dataset_class(path, history_interval) for path in dataset_paths if path.endswith('npz')])
     train_len = int(0.8 * len(dataset))
     test_len = len(dataset) - train_len
     train_data, test_data = random_split(dataset, (train_len, test_len))
@@ -157,6 +155,22 @@ def train_actuator_net(actuator_net, dataset_class, lr=1e-3, num_epochs=1000, ba
                        os.path.join(log_dir, f'{i}.pt'))
 
 
+def get_statistics(model, history_interval=5):
+    dataset_paths = [os.path.join(RSC_DIR, filename) for filename in os.listdir(RSC_DIR)]
+    dataset = ConcatDataset([DatasetClass(path, history_interval) for path in dataset_paths if path.endswith('npz')])
+
+    criterion = nn.MSELoss(reduction='sum')
+    test_loader = DataLoader(dataset, 1000, shuffle=True)
+    test_loss = 0.
+    for X, Y in test_loader:
+        X, Y = X.to(device), Y.to(device)
+        loss = criterion(model(X), Y)
+        test_loss += loss.item()
+    mse = test_loss / (len(dataset) - 1)
+    print('MSE:', mse)
+    print('RMSE:', math.sqrt(mse))
+
+
 if __name__ == '__main__':
     import sys
     import os
@@ -164,8 +178,11 @@ if __name__ == '__main__':
     import wandb
 
     sys.path.append(dirname(dirname(dirname(abspath(__file__)))))
+    import burl
     from burl.utils import log_info, init_logger
+    from burl.exp import get_timestamp
 
+    RSC_DIR = os.path.join(burl.rsc_path, 'motor_data')
     np.set_printoptions(3, linewidth=10000, suppress=True)
     use_history_info = True
     train = False
@@ -175,64 +192,55 @@ if __name__ == '__main__':
     if train:
         actuator_net = ActuatorNetClass(hidden_dims=(32, 32, 32))
         train_actuator_net(actuator_net, DatasetClass, lr=1e-4, num_epochs=2000, device=device)
+        get_statistics(actuator_net)
     else:
-        file_name = 'actuator_net_with_history.pt' if use_history_info else 'actuator_net.pt'
-        model_path = os.path.join(burl.rsc_path, file_name)
-        # model_path = find_log('/home/jewel/Workspaces/teacher-student/ident', fmt='*.pt', time='1646')
+        # file_name = 'actuator_net_with_history.pt' if use_history_info else 'actuator_net.pt'
+        # model_path = os.path.join(burl.rsc_path, file_name)
+        model_path = '/home/jewel/Workspaces/teacher-student-main/burl/sim/ident/22-05-04_11-01-40/2000.pt'
         model_info = torch.load(model_path, map_location={'cuda:0': device})
         actuator_net = ActuatorNetClass(hidden_dims=model_info['hidden_dims']).to(device)
         actuator_net.load_state_dict(model_info['model'])
-        # print(actuator_net)
+        get_statistics(actuator_net)
 
-    robot_data_path = os.path.join(RSC_DIR, 'state_cmd_data_NoLoadT0.4.npz')
-    dataset = DatasetClass(robot_data_path)
-    motor_idx = 2
-    # slices = slice(10, -10)
-    slices = slice(5000, 6000)
-    if not use_history_info:
-        error = dataset.error[slices, motor_idx]
-        error_rate = dataset.error_rate[slices, motor_idx]
-        velocity = dataset.velocity[slices, motor_idx]
-        torque = dataset.torque[slices, motor_idx]
-        predicted = actuator_net.calc_torque(error, error_rate, velocity)
-    else:
-        error = dataset.error[slices, motor_idx]
-        error_his1 = dataset.error[slice(slices.start - 5, slices.stop - 5), motor_idx]
-        error_his2 = dataset.error[slice(slices.start - 10, slices.stop - 10), motor_idx]
-        velocity = dataset.velocity[slices, motor_idx]
-        velocity_his1 = dataset.velocity[slice(slices.start - 5, slices.stop - 5), motor_idx]
-        velocity_his2 = dataset.velocity[slice(slices.start - 10, slices.stop - 10), motor_idx]
-        error_rate = dataset.data['angle_error_rate'][slices, motor_idx].astype(np.float32)
-        torque = dataset.torque[slices, motor_idx]
-        predicted = actuator_net.calc_torque(error, error_his1, error_his2, velocity, velocity_his1, velocity_his2)
+        dataset = DatasetClass(os.path.join(RSC_DIR, 'state_cmd_data_NoLoadT0.4.npz'))
+        motor_idx = 2
+        slices = slice(5000, 5500)
+        if not use_history_info:
+            error = dataset.error[slices, motor_idx]
+            error_rate = dataset.error_rate[slices, motor_idx]
+            velocity = dataset.velocity[slices, motor_idx]
+            torque = dataset.torque[slices, motor_idx]
+            predicted = actuator_net.calc_torque(error, error_rate, velocity)
+        else:
+            error = dataset.error[slices, motor_idx]
+            error_his1 = dataset.error[slice(slices.start - 5, slices.stop - 5), motor_idx]
+            error_his2 = dataset.error[slice(slices.start - 10, slices.stop - 10), motor_idx]
+            velocity = dataset.velocity[slices, motor_idx]
+            velocity_his1 = dataset.velocity[slice(slices.start - 5, slices.stop - 5), motor_idx]
+            velocity_his2 = dataset.velocity[slice(slices.start - 10, slices.stop - 10), motor_idx]
+            error_rate = dataset.data['angle_error_rate'][slices, motor_idx].astype(np.float32)
+            torque = dataset.torque[slices.start + 1:slices.stop + 1, motor_idx]
+            predicted = actuator_net.calc_torque(error, error_his1, error_his2, velocity, velocity_his1, velocity_his2)
 
-    criterion = nn.MSELoss(reduction='sum')
-    test_loader = DataLoader(dataset, 1000, shuffle=True)
-    test_loss = 0.
-    for X, Y in test_loader:
-        X, Y = X.to(device), Y.to(device)
-        loss = criterion(actuator_net(X), Y)
-        test_loss += loss.item()
-    print(test_loss / len(dataset))
+        import matplotlib.pyplot as plt
 
-    import matplotlib.pyplot as plt
-
-    plt.figure(dpi=200)
-    plt.subplot(4, 1, 1)
-    plt.plot(error)
-    plt.ylabel('error')
-    plt.xticks([])
-    plt.subplot(4, 1, 2)
-    plt.plot(error_rate)
-    plt.xticks([])
-    plt.ylabel('error_rate')
-    plt.subplot(4, 1, 3)
-    plt.plot(velocity)
-    plt.xticks([])
-    plt.ylabel('velocity')
-    plt.subplot(4, 1, 4)
-    plt.plot(torque, linewidth=1)
-    plt.ylabel('torque')
-    plt.plot(predicted, 'r', linewidth=0.5)
-    plt.legend(['raw', 'pred'])
-    plt.show()
+        fig, ax = plt.subplots(3, 1, figsize=(9.6, 6.4), gridspec_kw={'height_ratios': [1, 1, 2]})
+        ax[0].plot(error)
+        ax[0].set_ylabel('error(rad)', rotation=0)
+        ax[0].yaxis.set_label_coords(-0.05, 0.99)
+        ax[0].set_xticks([])
+        ax[1].plot(velocity)
+        ax[1].set_xticks([])
+        ax[1].set_ylabel('velocity(rad$\cdot$s$^{-1}$)', rotation=0)
+        ax[1].yaxis.set_label_coords(-0.03, 1.03)
+        ax[2].set_xlabel('sample point number')
+        ax[2].set_ylabel('torque')
+        ax[2].set_ylabel('torque(N$\cdot$m)', rotation=0)
+        ax[2].yaxis.set_label_coords(-0.03, 0.99)
+        ax[2].plot(torque, linewidth=1)
+        ax[2].plot(predicted, linewidth=1, linestyle='--')
+        ax[2].plot(error * 150 - velocity * 4, linewidth=1, linestyle='dashdot')
+        ax[2].set_ylim(-20, 25)
+        ax[2].legend(['measured', 'identified', 'vanilla pd'])
+        fig.show()
+        fig.savefig('acnet.pdf')
