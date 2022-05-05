@@ -506,7 +506,8 @@ class FixedTgEnv(IkEnv):
         obs.terrain_scan = np.concatenate([z - self.getTerrainScan(x, y, r.rpy.y) for x, y, z in foot_pos])
         obs.terrain_slopes = np.concatenate([self.getTerrainSlopeInfo(x, y, r.rpy.y) for x, y, _ in foot_pos])
         obs.contact_states = r.getContactStates()[1:]
-        obs.foot_contact_forces = r.getFootContactForces()
+        # obs.foot_contact_forces = r.getFootContactForces().reshape(-1)
+        obs.foot_contact_forces = np.concatenate(r.rotateFromWorldToBase(*r.getFootContactForces()))
         obs.foot_friction_coeffs = r.getFootFriction()
         obs.external_force = self._external_force
         obs.external_torque = self._external_torque

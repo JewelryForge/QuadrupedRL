@@ -53,9 +53,9 @@ class BasicTask(RewardRegistry):
         elif terrain_type == 'hills':
             terrain_obj = Hills.make(30, 0.1, (0.4, 20), (0.02, 1))
         elif terrain_type == 'slopes':
-            terrain_obj = Slopes.make(20, 0.05, 0.17, 2.0)
+            terrain_obj = Slopes.make(20, 0.05, 0.17, 3.0)
         elif terrain_type == 'steps':
-            terrain_obj = Steps.make(20, 0.05, 1.0, 0.4)
+            terrain_obj = Steps.make(20, 0.05, 1.0, 0.1)
         elif terrain_type == 'stairs':
             terrain_obj = Stairs.make(20, 0.05, 0.15, 0.3)
         elif terrain_type == 'pyramid':

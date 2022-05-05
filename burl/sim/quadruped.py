@@ -529,7 +529,7 @@ class Quadruped(object):
         return self.getObservationHistory(idx=-2, noisy=False).contact_states[(self._foot_ids,)]
 
     def getFootContactForces(self):
-        return self._observation.foot_states.forces.reshape(-1)
+        return self._observation.foot_states.forces
 
     def getFootPositionInBaseFrame(self, leg):
         joint_pos = self.getJointPositions(noisy=False)
