@@ -302,9 +302,9 @@ class TerrainCurriculumDistribution(CurriculumDistribution):
 
     def __init__(self, comm: mp.Queue, difficulty_getter, max_difficulty):
         super().__init__(comm, difficulty_getter, max_difficulty)
-        self.max_roughness = 0.4
-        self.max_slope = 15 / 180 * math.pi
-        self.max_step_height = 0.2
+        self.max_roughness = 0.2
+        self.max_slope = 10 / 180 * math.pi
+        self.max_step_height = 0.1
         self.terrain = None
         self.episode_linear_reward = 0.
         self.episode_sim_count = 0
