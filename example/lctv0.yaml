@@ -1,0 +1,27 @@
+terrain: plain
+perturb: True
+
+reward_coeff: 0.05
+reward_cfg:
+  UnifiedLinearReward: 0.34
+  YawRateReward: 0.08
+  VerticalLinearPenalty: 0.04
+  RollPitchRatePenalty: 0.04
+  BodyPosturePenalty: 0.04
+  FootSlipPenalty: 0.04
+  BodyCollisionPenalty: 0.04
+  JointConstraintPenalty: 0.04
+  TorquePenalty: 0.02
+  JointMotionPenalty: 0.04
+  ActionSmoothnessReward: 0.04
+  ClearanceOverTerrainReward: 0.02
+  BodyHeightReward: 0.0
+
+#  VelocityReward: 0.75
+#  BodyMotionPenalty: 1.0
+#  FootClearanceReward: 0.003
+#  BodyCollisionPenalty: 0.1
+#  JointMotionPenalty: 0.001
+#  TargetSmoothnessReward: 0.003
+#  TorquePenalty: 1.0e-6
+#  SlipPenalty: 0.003
