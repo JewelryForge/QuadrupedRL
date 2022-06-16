@@ -2,15 +2,14 @@ import collections
 import math
 import os
 import os.path
-from dataclasses import field, dataclass
-from typing import Optional, Deque, Union, List, Tuple, Any
+from typing import Optional, Deque, Union, List
 
 import numpy as np
 import pybullet as pyb
 
 from qdpgym import tf, utils as ut
 from qdpgym.sim import rsc_dir
-from qdpgym.sim.abc import ARRAY_LIKE, Terrain, Quadruped, QuadrupedHandle
+from qdpgym.sim.abc import ARRAY_LIKE, Terrain, Quadruped, QuadrupedHandle, LocomotionInfo
 from qdpgym.sim.abc import Snapshot, Command
 from qdpgym.sim.blt.utils import DynamicsInfo
 from qdpgym.sim.common.motor import PdMotorSim, ActuatorNetSim
@@ -122,15 +121,6 @@ class Aliengo(Quadruped):
     JOINT_LIMITS = ((-1.22, 1.22), (None, None), (-2.77, -0.7)) * 4
     TORQUE_LIMITS = 44.4
 
-    @dataclass
-    class LocomotionInfo:
-        time: float = 0.
-        last_stance_states: Any = field(default_factory=lambda: [None] * 4)
-        max_foot_heights: np.ndarray = field(default_factory=lambda: np.zeros(4))
-        foot_clearances: np.ndarray = field(default_factory=lambda: np.zeros(4))
-        strides: List[Tuple[float, float]] = field(default_factory=lambda: [(0., 0.)] * 4)
-        slips: List[float] = field(default_factory=lambda: [0.] * 4)
-
     def __init__(self, frequency: int, motor: str, noisy=True):
         self._freq = frequency
         if motor == 'pd':
@@ -158,7 +148,7 @@ class Aliengo(Quadruped):
         self._state_history: Deque[Snapshot] = collections.deque(maxlen=100)
         self._cmd: Optional[Command] = None
         self._cmd_history: Deque[Command] = collections.deque(maxlen=100)
-        self._locom: Optional[Aliengo.LocomotionInfo] = None
+        self._locom: Optional[LocomotionInfo] = None
 
         self._init_yaw = 0.
         self._init_pose = np.array((0., 0., self.STANCE_HEIGHT)), np.array((0., 0., 0., 1.))
@@ -244,7 +234,7 @@ class Aliengo(Quadruped):
         self._state = self._cmd = None
         self._state_history.clear()
         self._cmd_history.clear()
-        self._locom = Aliengo.LocomotionInfo()
+        self._locom = LocomotionInfo()
         if self._noisy is not None:
             self._noisy.reset()
 
@@ -275,11 +265,15 @@ class Aliengo(Quadruped):
         self._state = self._cmd = None
         self._state_history.clear()
         self._cmd_history.clear()
-        self._locom = Aliengo.LocomotionInfo()
+        self._locom = LocomotionInfo()
         if self._noisy is not None:
             self._noisy.reset()
 
-    def update_observation(self, random_state, minimal=False):
+    def update_observation(
+        self,
+        random_gen: Optional[np.random.Generator],
+        minimal=False
+    ):
         """Get robot states from pybullet"""
         if minimal:
             # Only update motor observations, for basic locomotion
@@ -311,7 +305,7 @@ class Aliengo(Quadruped):
         )
 
         if self._noisy_on:
-            self._noisy.update_observation(self._state, random_state)
+            self._noisy.update_observation(self._state, random_gen)
         self._state_history.append(self._state)
 
         # self._motor.update_observation(self._state.joints_pos, self._state.joints_vel)
@@ -357,8 +351,10 @@ class Aliengo(Quadruped):
         """
         motor_commands = np.asarray(motor_commands)
         torques = self._motor.apply_position(motor_commands)
-        self._sim_env.setJointMotorControlArray(self._body_id, self._motor_ids,
-                                                pyb.TORQUE_CONTROL, forces=torques)
+        self._sim_env.setJointMotorControlArray(
+            self._body_id, self._motor_ids,
+            pyb.TORQUE_CONTROL, forces=torques
+        )
         self._cmd = Command(
             command=motor_commands,
             torque=torques
@@ -367,8 +363,10 @@ class Aliengo(Quadruped):
         return torques
 
     def apply_torques(self, torques):
-        self._sim_env.setJointMotorControlArray(self._body_id, self._motor_ids,
-                                                pyb.TORQUE_CONTROL, forces=torques)
+        self._sim_env.setJointMotorControlArray(
+            self._body_id, self._motor_ids,
+            pyb.TORQUE_CONTROL, forces=torques
+        )
         self._cmd = Command(torque=torques)
         self._cmd_history.append(self._cmd)
 
@@ -450,11 +448,10 @@ class Aliengo(Quadruped):
         return self._state.joint_vel
 
     def get_joint_acc(self) -> np.ndarray:
-        if len(self._state_history) > 2:
-            prev_joint_vel = self._state_history[-2].joint_vel
-            return (self._state.joint_vel - prev_joint_vel) * self._freq
-
-        return np.zeros(12)
+        if len(self._state_history) <= 2:
+            return np.zeros(12)
+        prev_joint_vel = self._state_history[-2].joint_vel
+        return (self._state.joint_vel - prev_joint_vel) * self._freq
 
     def get_last_command(self) -> np.ndarray:
         return self._cmd.command if self._cmd is not None else None

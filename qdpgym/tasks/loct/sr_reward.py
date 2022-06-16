@@ -15,8 +15,8 @@ def exp_m2(v, k=1):
 
 
 class VelocityReward(Reward):
-    def __init__(self, max_lin=1.0, max_ang=1.0):
-        self.max_lin, self.max_ang = max_lin, max_ang
+    def __init__(self, max_lin=1.0):
+        self.max_lin = max_lin
 
     def __call__(self, robot, env, task):
         lin_cmd = task.cmd[:2]
@@ -35,7 +35,15 @@ class VelocityReward(Reward):
             lin_rew = exp_m2(lin_cmd_mag - prj_vel)
 
         ort_pen = exp_m2(ort_vel, 3)
+        # print(lin_cmd_mag, prj_vel, lin_rew)
+        return (lin_rew + ort_pen) / 2
 
+
+class RotationReward(Reward):
+    def __init__(self, max_ang=1.0):
+        self.max_ang = max_ang
+
+    def __call__(self, robot, env, task):
         ang_cmd = task.cmd[2]
         ang_vel = robot.get_base_rpy_rate()[2]
         ang_cmd_mag = abs(ang_cmd) * self.max_ang
@@ -45,9 +53,8 @@ class VelocityReward(Reward):
             ang_rew = 1.
         else:
             ang_rew = exp_m2(ang_vel - ang_cmd)
-
-        # print(lin_cmd_mag, prj_vel, lin_rew)
-        return lin_rew + ort_pen + ang_rew
+        # print(ang_cmd_mag, ang_vel, ang_rew)
+        return ang_rew
 
 
 class BodyMotionPenalty(Reward):
@@ -78,8 +85,8 @@ class TargetSmoothnessReward(Reward):
         action_history = env.action_history
         actions = [action_history[-i - 1] for i in range(3)]
         return -(
-                ((actions[0] - actions[1]) ** 2).sum() +
-                ((actions[0] - 2 * actions[1] + actions[2]) ** 2).sum()
+            ((actions[0] - actions[1]) ** 2).sum() +
+            ((actions[0] - 2 * actions[1] + actions[2]) ** 2).sum()
         )
 
 

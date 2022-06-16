@@ -8,8 +8,8 @@ import pybullet_data as pyb_data
 from pybullet_utils.bullet_client import BulletClient
 
 from qdpgym.sim.abc import Task, Environment, ARRAY_LIKE
-from qdpgym.sim.blt.quadruped import Aliengo
-from qdpgym.sim.blt.terrain import TerrainBase
+from .quadruped import Aliengo
+from .terrain import TerrainBase
 from qdpgym.utils import PadWrapper, tf
 
 
@@ -162,10 +162,10 @@ class QuadrupedEnv(Environment):
         return self._num_substeps
 
     @property
-    def identifier(self):
+    def identifier(self) -> str:
         return self._identifier
 
-    def step(self, action: ARRAY_LIKE):
+    def step(self, action: ARRAY_LIKE) -> Tuple[Any, float, bool, dict]:
         if self._check_debug_reset_param():
             return self.reset(), 0., True, {}
 
@@ -234,13 +234,13 @@ class QuadrupedEnv(Environment):
     def get_relative_robot_height(self) -> float:
         return self._robot.get_base_pos()[2] - self._interact_terrain_height
 
-    def get_interact_terrain_normal(self):
+    def get_interact_terrain_normal(self) -> np.ndarray:
         return self._interact_terrain_normal
 
     def get_interact_terrain_rot(self) -> np.ndarray:
         return tf.Rotation.from_zaxis(self._interact_terrain_normal)
 
-    def get_perturbation(self, in_robot_frame=False):
+    def get_perturbation(self, in_robot_frame=False) -> Optional[np.ndarray]:
         if self._perturbation is None:
             return None
         elif in_robot_frame:
@@ -252,7 +252,7 @@ class QuadrupedEnv(Environment):
             perturbation = self._perturbation
         return perturbation
 
-    def set_perturbation(self, value=None):
+    def set_perturbation(self, value=None) -> None:
         if value is None:
             self._perturbation = None
         else:

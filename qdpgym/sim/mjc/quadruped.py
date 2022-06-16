@@ -2,7 +2,7 @@ import collections
 import copy
 import math
 import os
-from typing import Optional, Deque
+from typing import Optional, Deque, Tuple
 
 import dm_control.mujoco as mjlib
 import numpy as np
@@ -12,11 +12,11 @@ from dm_control.locomotion.walkers import base
 
 from qdpgym import tf, utils as ut
 from qdpgym.sim import rsc_dir
-from qdpgym.sim.abc import Command, Snapshot
+from qdpgym.sim.abc import Command, Snapshot, LocomotionInfo
 from qdpgym.sim.abc import Quadruped, QuadrupedHandle, ARRAY_LIKE
 from qdpgym.sim.common.motor import PdMotorSim, ActuatorNetSim
 from qdpgym.sim.common.noisyhandle import NoisyHandle
-from .terrain import Arena
+from .terrain import TerrainBase
 
 
 class AliengoObservableMj(composer.Observables):
@@ -239,6 +239,7 @@ class Aliengo(Quadruped):
         self._state_history: Deque[Snapshot] = collections.deque(maxlen=100)
         self._cmd: Optional[Command] = None
         self._cmd_history: Deque[Command] = collections.deque(maxlen=100)
+        self._locom: Optional[LocomotionInfo] = None
 
         self._random_dynamics = False
         self._latency_range = None
@@ -273,7 +274,7 @@ class Aliengo(Quadruped):
 
         self._init_pose = (x, y, yaw)
 
-    def add_to(self, arena: Arena):
+    def add_to(self, arena: TerrainBase):
         if self._entity.parent is arena:
             attached = mjcf.get_attachment_frame(self._entity.mjcf_model)
         else:
@@ -316,25 +317,36 @@ class Aliengo(Quadruped):
         if self._random_dynamics:
             self._entity.initialize_episode_mjcf(random_state)
 
-    def init_physics(self, physics, random_state: np.random.RandomState, cfg=None):
+    def init_physics(
+        self,
+        physics: mjcf.Physics,
+        random_gen: np.random.Generator,
+        cfg: Tuple[float, ...] = None
+    ):
         self._physics = physics
         self._entity.after_compile(physics)
         if cfg is None:
             cfg = self.STANCE_CONFIG
         self._entity.configure_joints(physics, cfg)
         if self._noisy_on and self._latency_range is not None:
-            self._noisy.latency = random_state.uniform(*self._latency_range)
+            self._noisy.latency = random_gen.uniform(*self._latency_range)
 
-    def update_observation(self, random_state, minimal=False):
+    def update_observation(
+        self,
+        random_gen: Optional[np.random.Generator],
+        minimal=False
+    ):
         """Get robot states from mujoco"""
         if minimal:
             # Only update motor observations, for basic locomotion
-            self._motor.update_observation(self._handle.joint_pos(self._physics),
-                                           self._handle.joint_vel(self._physics))
+            self._motor.update_observation(
+                self._handle.joint_pos(self._physics),
+                self._handle.joint_vel(self._physics)
+            )
             return
 
         contact_info = self._entity.collect_contacts(self._physics)
-        self._state = Snapshot(
+        s = self._state = Snapshot(
             position=self._handle.position(self._physics),
             orientation=self._handle.orientation(self._physics),
             rotation=self._handle.rotation(self._physics),
@@ -351,16 +363,48 @@ class Aliengo(Quadruped):
             leg_contacts=np.array(contact_info[1]),
             contact_forces=contact_info[2]
         )
-        self._state.rpy_rate = tf.get_rpy_rate_from_ang_vel(self._state.rpy, self._state.angular_vel)
-        self._state.force_sensor = np.array(
-            [self._state.rotation.T @ force for force in self._state.contact_forces]
+        s.rpy_rate = tf.get_rpy_rate_from_ang_vel(s.rpy, s.angular_vel)
+        s.force_sensor = np.array(
+            [s.rotation.T @ force for force in s.contact_forces]
         )
         if self._noisy_on:
-            self._noisy.update_observation(self._state, random_state)
-        self._state_history.append(self._state)
+            self._noisy.update_observation(s, random_gen)
+        self._state_history.append(s)
 
         # self._motor.update_observation(self._state.joint_pos, self._state.joint_vel)
-        self._motor.update_observation(self.noisy.get_joint_pos(), self.noisy.get_joint_vel())
+        if self._noisy_on:
+            n = self._noisy.not_delayed
+            self._motor.update_observation(n.joint_pos, n.joint_vel)
+        else:
+            self._motor.update_observation(s.joint_pos, s.joint_vel)
+
+        l = self._locom
+        l.time += 1 / self._freq
+        rolling_vel = s.joint_vel[((1, 4, 7, 10),)] + s.joint_vel[((2, 5, 8, 11),)]
+        for i, (contact, foot_pos, rv) in enumerate(
+            zip(s.leg_contacts[((2, 5, 8, 11),)], s.foot_pos, rolling_vel)
+        ):
+            if not contact:
+                l.strides[i] = (0., 0.)
+                l.slips[i] = l.foot_clearances[i] = 0.
+                l.max_foot_heights[i] = max(l.max_foot_heights[i], foot_pos[2])
+                continue
+            if l.last_stance_states[i] is not None:
+                time, pos = l.last_stance_states[i]
+                duration = l.time - time
+                if duration >= 0.05:
+                    # Take as stride
+                    l.strides[i] = (foot_pos - pos)[:2]
+                    l.slips[i] = 0.
+                    l.foot_clearances[i] = l.max_foot_heights[i] - pos[2]
+                else:
+                    # Take as slip and estimate slip velocity
+                    l.slips[i] = abs(tf.vnorm((foot_pos - pos)[:2]) -
+                                     self.FOOT_RADIUS * rv * duration)
+                    l.strides[i] = (0., 0.)
+                    l.foot_clearances[i] = 0.
+            l.max_foot_heights[i] = foot_pos[2]
+            l.last_stance_states[i] = (l.time, foot_pos)
 
     def apply_command(self, motor_commands: ARRAY_LIKE):
         """
@@ -445,11 +489,26 @@ class Aliengo(Quadruped):
     def get_force_sensor(self):
         return self._state.force_sensor
 
+    def get_slip_vel(self):
+        return np.array(self._locom.slips) * self._freq
+
+    def get_strides(self):
+        return np.array(self._locom.strides)
+
+    def get_clearances(self):
+        return self._locom.foot_clearances
+
     def get_joint_pos(self) -> np.ndarray:
         return self._state.joint_pos
 
     def get_joint_vel(self) -> np.ndarray:
         return self._state.joint_vel
+
+    def get_joint_acc(self) -> np.ndarray:
+        if len(self._state_history) <= 2:
+            return np.zeros(12)
+        prev_joint_vel = self._state_history[-2].joint_vel
+        return (self._state.joint_vel - prev_joint_vel) * self._freq
 
     def get_last_command(self) -> np.ndarray:
         return self._cmd.command if self._cmd is not None else None

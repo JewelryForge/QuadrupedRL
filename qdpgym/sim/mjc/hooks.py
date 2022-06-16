@@ -7,7 +7,7 @@ from qdpgym.sim.abc import Hook
 from qdpgym.sim.mjc.viewer import ViewerMj
 
 
-class ViewerMjHook(Hook):
+class ViewerHook(Hook):
     def __init__(self):
         self._viewer: Optional[ViewerMj] = None
 
@@ -20,9 +20,10 @@ class ViewerMjHook(Hook):
             force = perturb[:3]
             magnitude = tf.vnorm(force)
             mat = tf.Rotation.from_zaxis(force / magnitude)
-            self._viewer.add_marker(type=mjlib.mjtGeom.mjGEOM_ARROW,
-                                    pos=robot.get_base_pos(), mat=mat,
-                                    size=[0.01, 0.01, magnitude / 20],
-                                    rgba=(1., 0., 0., 1.))
+            self._viewer.add_marker(
+                type=mjlib.mjtGeom.mjGEOM_ARROW,
+                pos=robot.get_base_pos(), mat=mat,
+                size=[0.01, 0.01, magnitude / 20],
+                rgba=(1., 0., 0., 1.)
+            )
         self._viewer.render()
-

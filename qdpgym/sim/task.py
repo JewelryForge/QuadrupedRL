@@ -1,7 +1,4 @@
-import collections
 from typing import Optional, Callable, List, Any
-
-import numpy as np
 
 from .abc import Task, Hook, Quadruped, Environment
 
@@ -150,7 +147,7 @@ class BasicTask(NullTask):
         self._reward_registry = RewardRegistry()
         self._substep_reward_on = substep_reward_on
         self._reward = 0.
-        self._reward_details = collections.defaultdict(float)
+        self._reward_details = {}
         self._substep_cnt = 0
 
         super().__init__()
@@ -175,8 +172,11 @@ class BasicTask(NullTask):
         if self._substep_reward_on:
             reward, reward_details = self._reward_registry.calc_reward(detailed=True)
             self._reward += reward
-            for k, v in reward_details.items():
-                self._reward_details[k] += v
+            if self._reward_details:
+                for k, v in reward_details.items():
+                    self._reward_details[k] += v
+            else:
+                self._reward_details = reward_details.copy()
             self._substep_cnt += 1
         super().after_substep()
 

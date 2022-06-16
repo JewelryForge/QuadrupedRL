@@ -80,7 +80,16 @@ def soft_constrain(thr, upper):
     return _reshape
 
 
-class UnifiedLinearReward(Reward):
+def expm2_resh(upper):
+    w = upper / SQRT_LOG10
+
+    def _reshape(v):
+        return np.exp(-(v / w) ** 2)
+
+    return _reshape
+
+
+class LinearVelocityReward(Reward):
     def __init__(self, forward=1.5, lateral=1.0, ort_upper=0.3, ort_weight=0.33):
         self.forward, self.lateral = forward, lateral
         self.coeff = forward * lateral
@@ -118,6 +127,19 @@ class YawRateReward(Reward):
             return self.reshape_pos(yaw_rate / yaw_cmd)
         else:
             return 1 - self.reshape_neg(abs(yaw_rate))
+
+
+class RotationReward(Reward):
+    def __init__(self, max_ang=1.0, reception=1.0):
+        self.max_ang = max_ang
+        self.reshape = expm2_resh(reception)
+
+    def __call__(self, robot, env, task):
+        ang_cmd = task.cmd[2]
+        ang_vel = robot.get_base_rpy_rate()[2]
+        ang_rew = self.reshape(ang_vel - ang_cmd * self.max_ang)
+        # print(ang_cmd, ang_vel, ang_rew)
+        return ang_rew
 
 
 class RollPitchRatePenalty(Reward):

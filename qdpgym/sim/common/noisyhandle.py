@@ -43,9 +43,13 @@ class NoisyHandle(QuadrupedHandle):
             return self._obs_buffer[-1]
         return self._obs
 
-    def update_observation(self, state: Snapshot, random_state):
+    def update_observation(
+        self,
+        state: Snapshot,
+        random_gen: np.random.Generator
+    ):
         """Add noise on observation"""
-        add_noise = random_state.normal
+        add_noise = random_gen.normal
         obs = Snapshot(
             rpy=add_noise(state.rpy, 1e-2),
             velocimeter=add_noise(state.velocimeter, 5e-2),

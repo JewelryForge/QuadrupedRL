@@ -15,11 +15,11 @@ def _process_size(size):
         return tuple(size)
 
 
-class Arena(composer.Arena, Terrain, metaclass=abc.ABCMeta):
+class TerrainBase(composer.Arena, Terrain, metaclass=abc.ABCMeta):
     pass
 
 
-class TexturedTerrainBase(Arena):
+class TexturedTerrainBase(TerrainBase, metaclass=abc.ABCMeta):
     reflectance = 0.2
 
     def _build(self, size, name=None):

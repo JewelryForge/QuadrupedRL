@@ -20,7 +20,8 @@ from torch.optim.lr_scheduler import LambdaLR
 from example.loct.network import ActorNet
 from example.utils import init_actor_critic, MyWandbLogger
 from qdpgym import sim
-from qdpgym.tasks.loct import RandomCommanderHookV0, RandomCommanderHookV1, LocomotionV0, CommandRewardAnalyser
+from qdpgym.tasks.loct import RandomCommanderHookV0, RandomCommanderHookV05, RandomCommanderHookV1, \
+    LocomotionV0, CommandRewardAnalyser
 from qdpgym.utils import get_timestamp, AutoInc
 
 
@@ -69,7 +70,7 @@ if __name__ == "__main__":
     with open(args.task, encoding='utf-8') as f:
         task_cfg = yaml.load(f, Loader=yaml.SafeLoader)
 
-    cmd_rew_analyser = CommandRewardAnalyser()
+    cmd_rew_analyser = CommandRewardAnalyser(200)
 
 
     def make_loct_env(cfg, train=True):
@@ -89,10 +90,10 @@ if __name__ == "__main__":
             task.add_hook(sim.RandomPerturbHook())
         if train:
             task.add_hook(
-                cmd_rew_analyser('UnifiedLinearReward'),
+                cmd_rew_analyser('RotationReward'),
                 'CommandRewardAnalyser'
             )
-        task.add_hook(RandomCommanderHookV0())
+        task.add_hook(RandomCommanderHookV05())
         for reward, weight in cfg['reward_cfg'].items():
             task.add_reward(reward, weight)
 
@@ -221,8 +222,17 @@ if __name__ == "__main__":
         policy, test_envs
     ) if test_envs is not None else None
 
+
+    def analyse_callback():
+        fig1, fig2 = cmd_rew_analyser.analyse()
+        return {
+            'curricula/reward': wandb.Image(fig1, mode='L'),
+            'curricula/weight': wandb.Image(fig2, mode='L'),
+        }
+
+
     logger.add_callback(
-        lambda: {'curricula/cmd_rew': wandb.Image(cmd_rew_analyser.analyse(), mode='L')}
+        analyse_callback, 'test'
     )
 
 

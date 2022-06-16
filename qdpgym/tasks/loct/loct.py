@@ -3,10 +3,12 @@ import math
 import queue
 import sys
 import time
-from typing import Optional
+from typing import Optional, Union
 
 import gym.spaces
 import numpy as np
+from rtree import Rtree
+from sklearn.linear_model import LinearRegression
 
 import qdpgym.tasks.loct.reward as all_rewards
 # import qdpgym.tasks.loct.sr_reward as all_rewards
@@ -475,6 +477,12 @@ class RandomCommanderHookV0(Hook):
             self._interval = random.uniform(*self._interval_range)
 
 
+class RandomCommanderHookV05(RandomCommanderHookV0):
+    def get_random_cmd(self, random_state):
+        angular_cmd = random_state.uniform(-1., 1.)
+        return np.array((0., 0., angular_cmd))
+
+
 class RandomCommanderHookV1(RandomCommanderHookV0):
     def get_random_cmd(self, random_state):
         angular_cmd = random_state.uniform(-1., 1.)
@@ -520,24 +528,128 @@ class CommandRewardCollectorHook(CommHook):
             self._counter = 0
 
 
-class CommandRewardAnalyser(CommHookFactory):
-    def __init__(self):
-        super().__init__(CommandRewardCollectorHook)
-        self._history = collections.deque(maxlen=500)
+class GradIS1D(object):
+    def __init__(self, min_key, max_key, max_len):
+        self._rtree = Rtree()
+        self._min_key = min_key
+        self._max_key = max_key
+        self._interval = max_key - min_key
+        self._max_len = max_len
+        # bounding box of the whole space
+        self._rtree.insert(-1, (min_key, min_key, max_key, max_key))
 
-    def analyse(self) -> np.ndarray:
+        self._cur_len = 0
+        self._total_len = 0
+        self._buffer = []
+        self._weights = []  # save grad weights
+        self._weight_sum = 0.
+
+    @property
+    def particles(self):
+        return zip(self._buffer, self._weights)
+
+    def insert(self, key, value):
+        self._rtree.insert(self._total_len, (key, key), value)
+        if self._cur_len < self._max_len:
+            self._buffer.append(key)
+            self._weights.append(1.0)
+            self._weight_sum += 1.0
+            self._cur_len += 1
+        else:
+            idx = self._total_len % self._max_len
+            prev_key = self._buffer[idx]
+            self._rtree.delete(
+                self._total_len - self._max_len,
+                (prev_key, prev_key)
+            )
+            self._buffer[idx] = key
+            grad_weight = self.get_grad_weight(key)
+            self._weight_sum += grad_weight - self._weights[idx]
+            self._weights[idx] = grad_weight
+
+        self._total_len += 1
+
+    def get_grad_weight(self, key) -> float:
+        neighbors = self.get_neighbors(key, self._interval / 10)
+        if len(neighbors) < 5:
+            return 1.0
+        else:
+            x, y = np.array(neighbors).T
+            reg = LinearRegression()
+            reg.fit(x.reshape(-1, 1), y)
+            return np.exp(abs(reg.coef_[0]))
+
+    def get_neighbors(self, key, radius):
+        neighbors = []
+        for item in self._rtree.intersection(
+            (key - radius, key - radius,
+             key + radius, key + radius), objects=True
+        ):
+            if item.id != -1:
+                neighbors.append((item.bbox[0], item.object))
+        return neighbors
+
+    def sample(
+        self,
+        random_gen: Union[np.random.Generator, np.random.RandomState],
+        uniform_prob: float = 0.,
+        normal_var: float = None,
+    ):
+        if not self.is_full() or random_gen.random() < uniform_prob:
+            return random_gen.uniform(self._min_key, self._max_key)
+        else:
+            # importance sampling
+            weights = np.array(self._weights) / self._weight_sum
+            sample = random_gen.choice(self._buffer, p=weights)
+            return (
+                sample + random_gen.normal(0, normal_var)
+                if normal_var else sample
+            )
+
+    def is_full(self):
+        return self._cur_len == self._max_len
+
+    def __len__(self):
+        return self._cur_len
+
+    def __iter__(self):
+        for item in self._rtree.intersection(
+            (self._min_key, self._min_key,
+             self._max_key, self._max_key), objects=True
+        ):
+            if item.id != -1:
+                yield item.bbox[0], item.object
+
+    def __repr__(self):
+        return self._rtree.__repr__()
+
+
+class CommandRewardAnalyser(CommHookFactory):
+    def __init__(self, buffer_size=500):
+        super().__init__(CommandRewardCollectorHook)
+        self._history = GradIS1D(-1., 1., buffer_size)
+        self._prepare = True
+
+    def analyse(self):
         try:
             while True:
-                self._history.append(self._comm.get(block=False))
+                env_id, info = self._comm.get(block=False)
+                d_yaw = info['command'][2]
+                self._history.insert(d_yaw, info['reward'])
         except queue.Empty:
             pass
-        fig = np.zeros((200, 200))
-        for env_id, info in self._history:
-            x, y, _ = info['command']
-            coord_x = 100 + int(-y * 75)
-            coord_y = 100 + int(-x * 75)
-            fig[coord_x, coord_y] = np.clip(info['reward'], 0.2, 1.)
-        return fig
+
+        fig1 = np.zeros((200, 200))
+        for cmd, reward in self._history:
+            x = 100 + int(-cmd * 75)
+            fig1[100, x] = np.clip(reward, 0., 1.) * 0.8 + 0.2
+
+        fig2 = np.zeros((200, 200))
+        for cmd, weight in self._history.particles:
+            x = 100 + int(-cmd * 75)
+            fig2[100, x] = np.clip((weight - 1.) * 0.5, 0., 1.) * 0.8 + 0.2
+
+        return fig1, fig2
 
 
 class GamepadCommanderHook(Hook):

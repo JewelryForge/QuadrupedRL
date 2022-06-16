@@ -1,5 +1,4 @@
 import argparse
-import os
 from collections import defaultdict
 from typing import Callable, List, Union, Optional, Any, Dict
 
@@ -9,8 +8,7 @@ import torch
 import wandb
 from tianshou.data import Batch
 from tianshou.env import ShmemVectorEnv, VectorEnvNormObs
-from tianshou.utils import RunningMeanStd, TensorboardLogger, BaseLogger
-from torch.utils.tensorboard import SummaryWriter
+from tianshou.utils import RunningMeanStd, BaseLogger
 
 
 class NormObsWrapper(gym.Wrapper):
@@ -141,7 +139,8 @@ class MyWandbLogger(BaseLogger):
 
         self._reward_info = defaultdict(float)
         self._reward_counter = 0
-        self._callbacks: List[Callable[[], dict]] = []
+        self._callbacks_train: List[Callable[[], dict]] = []
+        self._callbacks_test: List[Callable[[], dict]] = []
 
     def collect_reward_info(self, **kwargs) -> Batch:
         if 'rew' in kwargs:
@@ -163,8 +162,19 @@ class MyWandbLogger(BaseLogger):
         if save_checkpoint_fn:
             save_checkpoint_fn(epoch, env_step, gradient_step)
 
-    def add_callback(self, callback: Callable[[], dict]):
-        self._callbacks.append(callback)
+    def add_callback(
+        self, callback: Callable[[], dict],
+        period='train'
+    ) -> None:
+        if period == 'train':
+            self._callbacks_train.append(callback)
+        elif period == 'test':
+            self._callbacks_test.append(callback)
+        elif period == 'both':
+            self._callbacks_train.append(callback)
+            self._callbacks_test.append(callback)
+        else:
+            raise ValueError(f'Unknown period {period}')
 
     def log_train_data(self, collect_result: dict, step: int) -> None:
         """Use writer to log statistics generated during training.
@@ -184,7 +194,29 @@ class MyWandbLogger(BaseLogger):
                     log_data[f'train/reward_info/{k}'] = v / self._reward_counter
                 self._reward_info.clear()
                 self._reward_counter = 0
-                for callback in self._callbacks:
+                for callback in self._callbacks_train:
                     log_data.update(callback())
                 self.write("train/env_step", step, log_data)
                 self.last_log_train_step = step
+
+    def log_test_data(self, collect_result: dict, step: int) -> None:
+
+        """Use writer to log statistics generated during evaluating.
+
+        :param collect_result: a dict containing information of data collected in
+            evaluating stage, i.e., returns of collector.collect().
+        :param int step: stands for the timestep the collect_result being logged.
+        """
+        assert collect_result["n/ep"] > 0
+        if step - self.last_log_test_step >= self.test_interval:
+            log_data = {
+                "test/env_step": step,
+                "test/reward": collect_result["rew"],
+                "test/length": collect_result["len"],
+                "test/reward_std": collect_result["rew_std"],
+                "test/length_std": collect_result["len_std"],
+            }
+            for callback in self._callbacks_test:
+                log_data.update(callback())
+            self.write("test/env_step", step, log_data)
+            self.last_log_test_step = step

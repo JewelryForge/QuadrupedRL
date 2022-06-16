@@ -1,7 +1,7 @@
 import abc
-import dataclasses
+from dataclasses import dataclass, field
 import multiprocessing as mp
-from typing import Union, Type
+from typing import Union, Type, List, Any, Tuple
 
 import gym
 import numpy as np
@@ -153,7 +153,7 @@ class Terrain(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-@dataclasses.dataclass
+@dataclass
 class Snapshot(object):
     position: np.ndarray = None
     orientation: np.ndarray = None
@@ -175,7 +175,17 @@ class Snapshot(object):
     rpy_rate: np.ndarray = None
 
 
-@dataclasses.dataclass
+@dataclass
+class LocomotionInfo:
+    time: float = 0.
+    last_stance_states: Any = field(default_factory=lambda: [None] * 4)
+    max_foot_heights: np.ndarray = field(default_factory=lambda: np.zeros(4))
+    foot_clearances: np.ndarray = field(default_factory=lambda: np.zeros(4))
+    strides: List[Tuple[float, float]] = field(default_factory=lambda: [(0., 0.)] * 4)
+    slips: List[float] = field(default_factory=lambda: [0.] * 4)
+
+
+@dataclass
 class Command:
     command: np.ndarray = None
     torque: np.ndarray = None
