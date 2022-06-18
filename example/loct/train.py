@@ -20,9 +20,8 @@ from torch.optim.lr_scheduler import LambdaLR
 from example.loct.network import ActorNet
 from example.utils import init_actor_critic, MyWandbLogger
 from qdpgym import sim
-from qdpgym.tasks.loct import RandomCommanderHookV0, RandomCommanderHookV05, RandomCommanderHookV1, \
-    LocomotionV0, CommandRewardAnalyser
-from qdpgym.utils import get_timestamp, AutoInc
+from qdpgym.tasks import loct
+from qdpgym.utils import get_timestamp
 
 
 def parse_args():
@@ -70,14 +69,14 @@ if __name__ == "__main__":
     with open(args.task, encoding='utf-8') as f:
         task_cfg = yaml.load(f, Loader=yaml.SafeLoader)
 
-    cmd_rew_analyser = CommandRewardAnalyser(200)
+    commander_core = loct.ISCommanderCore('RotationReward', 100)
+    commander_core.start_process()
 
 
     def make_loct_env(cfg, train=True):
         torch.set_num_threads(1)
         robot = sim.Aliengo(500, 'actuator_net', noisy=True)
-        task = LocomotionV0()
-        # task = LocomotionPMTG()
+        task = loct.LocomotionV0()
 
         if cfg['terrain'] == 'random':
             arena = sim.NullTerrain()
@@ -89,11 +88,10 @@ if __name__ == "__main__":
         if cfg['perturb']:
             task.add_hook(sim.RandomPerturbHook())
         if train:
-            task.add_hook(
-                cmd_rew_analyser('RotationReward'),
-                'CommandRewardAnalyser'
-            )
-        task.add_hook(RandomCommanderHookV05())
+            task.add_hook(commander_core.make_collector())
+            task.add_hook(commander_core.make_commander())
+        else:
+            task.add_hook(loct.RandomRotationCommanderHook())
         for reward, weight in cfg['reward_cfg'].items():
             task.add_reward(reward, weight)
 
@@ -224,7 +222,7 @@ if __name__ == "__main__":
 
 
     def analyse_callback():
-        fig1, fig2 = cmd_rew_analyser.analyse()
+        fig1, fig2 = commander_core.analyse()
         return {
             'curricula/reward': wandb.Image(fig1, mode='L'),
             'curricula/weight': wandb.Image(fig2, mode='L'),

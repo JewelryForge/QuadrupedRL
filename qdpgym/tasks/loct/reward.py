@@ -130,7 +130,7 @@ class YawRateReward(Reward):
 
 
 class RotationReward(Reward):
-    def __init__(self, max_ang=1.0, reception=1.0):
+    def __init__(self, max_ang=2.0, reception=1.0):
         self.max_ang = max_ang
         self.reshape = expm2_resh(reception)
 
