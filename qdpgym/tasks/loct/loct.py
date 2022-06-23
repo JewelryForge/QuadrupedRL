@@ -7,6 +7,7 @@ import time
 from typing import Optional
 
 import gym.spaces
+import matplotlib.pyplot as plt
 import numpy as np
 
 import qdpgym.tasks.loct.reward as all_rewards
@@ -14,14 +15,14 @@ import qdpgym.tasks.loct.reward as all_rewards
 from qdpgym.sim.abc import Quadruped, Environment, QuadrupedHandle, Hook, CommHook, CommHookFactory
 from qdpgym.sim.common.tg import TgStateMachine, vertical_tg
 from qdpgym.sim.task import BasicTask
-from qdpgym.utils import tf, log, PadWrapper
-from .utils import GradIS1D
+from qdpgym.utils import tf, log, PadWrapper, plt_figure_to_numpy
+from .utils import GradIS1D, AlpIS
 
 
 class LocomotionV0(BasicTask):
     ALL_REWARDS = all_rewards
 
-    observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(211,))
+    observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(210,))
     action_space = gym.spaces.Box(low=-1., high=1., shape=(12,))
 
     def __init__(self, substep_reward_on=True):
@@ -85,11 +86,8 @@ class LocomotionV0(BasicTask):
         r: Quadruped = self._robot
         e: Environment = self._env
         n: QuadrupedHandle = r.noisy
-        if (self._cmd[:2] == 0.).all():
-            cmd_obs = np.concatenate(((0.,), self._cmd))
-        else:
-            cmd_obs = np.concatenate(((1.,), self._cmd))
 
+        cmd_obs = self._cmd
         roll_pitch = n.get_base_rpy()[:2]
         base_linear = n.get_velocimeter()
         base_angular = n.get_gyro()
@@ -188,7 +186,7 @@ class LocomotionV0(BasicTask):
             (0.01, 0.01, 0.02) * 4,  # contact force
             (1.,) * 4,  # friction,
             (0.1, 0.1, 0.1, 0.4, 0.2, 0.2),  # perturbation
-            (1.,) * 4,  # command
+            (1.,) * 3,  # command
             (2., 2.),  # roll pitch
             (2.,) * 3,  # linear
             (2.,) * 3,  # angular
@@ -211,7 +209,7 @@ class LocomotionV0(BasicTask):
             (0., 0., 30.) * 4,  # contact force
             (0.,) * 4,  # friction,
             (0.,) * 6,  # perturbation
-            (0.,) * 4,  # command
+            (0.,) * 3,  # command
             (0., 0.),  # roll pitch
             (0.,) * 3,  # linear
             (0.,) * 3,  # angular
@@ -584,7 +582,7 @@ class ISCommanderCore(object):
         self._command_comm = mp.Queue()
         self._random_state = np.random.RandomState(seed)
 
-        self._history = GradIS1D(-1., 1., buffer_size, 1.5)
+        self._history = GradIS1D(-1., 1., buffer_size, 1.0)
         self._conn1, self._conn2 = mp.Pipe(duplex=True)
 
         self._process = mp.Process(
@@ -625,10 +623,10 @@ class ISCommanderCore(object):
                             normal_var=0.05
                         ))
                     )
-                    _, info = self._statistics_comm.get(block=False)
-                    d_yaw = info['command'][2]
-                    self._history.insert(d_yaw, info['reward'])
-                    # print(self._history)
+                _, info = self._statistics_comm.get(block=False)
+                d_yaw = info['command'][2]
+                self._history.insert(d_yaw, info['reward'])
+                # print(self._history)
             except queue.Empty:
                 pass
 
@@ -643,9 +641,81 @@ class ISCommanderCore(object):
         self._conn1.send('particles')
         for cmd, weight in self._conn1.recv():
             x = 100 + int(-cmd * 75)
-            fig2[100, x] = np.clip((weight - 1.) * 0.5, 0., 1.) * 0.8 + 0.2
+            fig2[100, x] = np.clip(weight * 0.2, 0., 1.) * 0.8 + 0.2
 
         return fig1, fig2
+
+
+class AlpISCommanderCore(object):
+    def __init__(self, reward_name, buffer_size=500, seed=None):
+        self._reward_name = reward_name
+        self._statistics_comm = mp.Queue()
+        self._command_comm = mp.Queue()
+        self._random_state = np.random.RandomState(seed)
+        self._history = AlpIS(1, -1, 1, buffer_size)
+        self._conn1, self._conn2 = mp.Pipe(duplex=True)
+
+        self._process = mp.Process(
+            target=self._server, args=(self._conn2,), daemon=True
+        )
+
+    def make_collector(self):
+        # collector is suggested to be added before commander
+        return CommandRewardCollectorHook(
+            self._statistics_comm, self._reward_name
+        )
+
+    def make_commander(self):
+        return ExternalCommanderHook(self._command_comm)
+
+    def start_process(self):
+        self._process.start()
+
+    def _server(self, conn: mp.connection.Connection):
+        while True:
+            if conn.poll():
+                msg = conn.recv()
+                if msg == 'stop':
+                    break
+                elif msg == 'progresses':
+                    conn.send(list(self._history.progresses))
+                elif msg == 'particles':
+                    conn.send(list(self._history.particles))
+                else:
+                    raise ValueError(f'Unknown message: {msg}')
+                continue
+            try:
+                while self._command_comm.qsize() < 5:
+                    cmd = self._history.sample(self._random_state, 0.2, 0.01)
+                    self._command_comm.put((0., 0., cmd))
+                _, info = self._statistics_comm.get(block=False)
+                d_yaw = info['command'][2]
+                self._history.insert(d_yaw, info['reward'])
+                # print(self._history)
+            except queue.Empty:
+                pass
+
+    def analyse(self):
+        self._conn1.send('progresses')
+        x, y = [], []
+        for cmd, reward in self._conn1.recv():
+            x.append(cmd)
+            y.append(reward)
+        fig, ax = plt.subplots()
+        ax.scatter(x, y)
+        img1 = plt_figure_to_numpy(fig)
+        fig.close()
+
+        self._conn1.send('particles')
+        x, y = [], []
+        for cmd, weight in self._conn1.recv():
+            x.append(cmd)
+            y.append(weight)
+        fig, ax = plt.subplots()
+        ax.scatter(x, y)
+        img2 = plt_figure_to_numpy(fig)
+        fig.close()
+        return img1, img2
 
 
 class GamepadCommanderHook(Hook):

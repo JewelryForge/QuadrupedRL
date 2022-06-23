@@ -49,6 +49,7 @@ def make_loct_env(cfg):
     task.add_hook(GamepadCommanderHook())
     # task.add_hook(sim.HeightSampleVisualizer())
     # task.add_hook(RandomCommanderHookV0())
+    # task.add_hook(sim.VideoRecorderHook())
     task.add_hook(sim.ExtraViewerHook())
     for reward, weight in cfg['reward_cfg'].items():
         task.add_reward(reward, weight)
@@ -75,7 +76,7 @@ def test_ppo(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     # model
-    net_a = ActorNet(78, 133, device=args.device)
+    net_a = ActorNet(78, 132, device=args.device)
     actor = ActorProb(
         net_a,
         env.action_space.shape,

@@ -69,7 +69,8 @@ if __name__ == "__main__":
     with open(args.task, encoding='utf-8') as f:
         task_cfg = yaml.load(f, Loader=yaml.SafeLoader)
 
-    commander_core = loct.ISCommanderCore('RotationReward', 100)
+    # commander_core = loct.ISCommanderCore('RotationReward', 100)
+    commander_core = loct.AlpISCommanderCore('RotationReward')
     commander_core.start_process()
 
 
@@ -89,6 +90,7 @@ if __name__ == "__main__":
             task.add_hook(sim.RandomPerturbHook())
         if train:
             task.add_hook(commander_core.make_collector())
+            # task.add_hook(loct.RandomRotationCommanderHook())
             task.add_hook(commander_core.make_commander())
         else:
             task.add_hook(loct.RandomRotationCommanderHook())
@@ -126,7 +128,7 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     # model
-    net_a = ActorNet(78, 133, device=args.device)
+    net_a = ActorNet(78, 132, device=args.device)
     actor = ActorProb(
         net_a,
         action_shape,
@@ -217,15 +219,16 @@ if __name__ == "__main__":
         exploration_noise=True
     )
     test_collector = Collector(
-        policy, test_envs
+        policy, test_envs,
+        preprocess_fn=logger.collect_reward_info,
     ) if test_envs is not None else None
 
 
     def analyse_callback():
         fig1, fig2 = commander_core.analyse()
         return {
-            'curricula/reward': wandb.Image(fig1, mode='L'),
-            'curricula/weight': wandb.Image(fig2, mode='L'),
+            'curricula/reward': wandb.Image(fig1, mode='RGB'),
+            'curricula/weight': wandb.Image(fig2, mode='RGB'),
         }
 
 

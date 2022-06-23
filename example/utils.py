@@ -135,6 +135,7 @@ class MyWandbLogger(BaseLogger):
             monitor_gym=True,
             config=config,  # type: ignore
             save_code=True,
+            # mode='disabled',
         ) if not wandb.run else wandb.run
 
         self._reward_info = defaultdict(float)
@@ -216,6 +217,10 @@ class MyWandbLogger(BaseLogger):
                 "test/reward_std": collect_result["rew_std"],
                 "test/length_std": collect_result["len_std"],
             }
+            for k, v in self._reward_info.items():
+                log_data[f'test/reward_info/{k}'] = v / self._reward_counter
+            self._reward_info.clear()
+            self._reward_counter = 0
             for callback in self._callbacks_test:
                 log_data.update(callback())
             self.write("test/env_step", step, log_data)

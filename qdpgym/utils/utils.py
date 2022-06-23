@@ -11,7 +11,7 @@ import yaml
 
 __all__ = ['make_part', 'Angle', 'replace_is', 'replace_eq', 'colored_str', 'log',
            'MfTimer', 'get_padded', 'PadWrapper', 'get_timestamp', 'YamlLoader',
-           'print_return', 'AutoInc']
+           'print_return', 'Natural', 'plt_figure_to_numpy']
 
 
 class make_part(functools.partial):
@@ -337,7 +337,7 @@ def print_return(func):
     return wrapper
 
 
-class AutoInc(object):
+class Natural(object):
     idx = -1
 
     def __iter__(self):
@@ -346,3 +346,10 @@ class AutoInc(object):
     def __next__(self):
         self.idx += 1
         return self.idx
+
+
+def plt_figure_to_numpy(fig):
+    fig.canvas.draw()
+    arr = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    arr = arr.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    return arr
